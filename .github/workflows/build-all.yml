@@ -61,13 +61,26 @@ jobs:
     runs-on: ${{ matrix.os }}
 
     steps:
+      # Bewusst KEIN actions/checkout mit ssh-key: der windows-11-arm-Runner hat
+      # kein funktionierendes C:\Windows\System32\OpenSSH\ssh.exe (Checkout schlug
+      # dort mit "Could not read from remote repository" fehl). Ein Klon über Git
+      # Bash nutzt das von Git mitgelieferte ssh und läuft auf ALLEN Runnern.
+      # Ref + Key kommen über env (nicht inline in run:) — Injection-sicher.
       - name: Quellcode auschecken (privates Repo, read-only Deploy-Key)
-        uses: actions/checkout@v4
-        with:
-          repository: subunit-ai/subunit-scai
-          ref: ${{ inputs.ref }}
-          ssh-key: ${{ secrets.SOURCE_DEPLOY_KEY }}
-          path: src
+        shell: bash
+        env:
+          SRC_REF: ${{ inputs.ref }}
+          DEPLOY_KEY: ${{ secrets.SOURCE_DEPLOY_KEY }}
+        run: |
+          set -euo pipefail
+          mkdir -p "$HOME/.ssh"
+          printf '%s\n' "$DEPLOY_KEY" > "$HOME/.ssh/scai_src"
+          chmod 600 "$HOME/.ssh/scai_src"
+          ssh-keyscan -t ed25519,rsa github.com >> "$HOME/.ssh/known_hosts" 2>/dev/null
+          export GIT_SSH_COMMAND="ssh -i $HOME/.ssh/scai_src -o IdentitiesOnly=yes"
+          git clone --depth 1 --branch "$SRC_REF" git@github.com:subunit-ai/subunit-scai.git src
+          rm -f "$HOME/.ssh/scai_src"
+          echo "ausgecheckt: $SRC_REF → $(git -C src rev-parse --short HEAD)"
 
       - name: Node einrichten
         uses: actions/setup-node@v4
