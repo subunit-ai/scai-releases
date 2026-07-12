@@ -1,0 +1,94 @@
+# SCAI — PR-Check (tsc + vite + cargo test) für das PRIVATE Quell-Repo.
+#
+# WARUM hier (im PUBLIC scai-releases) statt im privaten subunit-scai:
+# GitHub rechnet Actions-Minuten nach dem Repo ab, in dem der Workflow LÄUFT.
+# `subunit-scai` ist privat → dessen Actions hängen an der Org-Billing-Sperre
+# (Jobs sterben nach 3s mit 0 Steps). `scai-releases` ist public → KOSTENLOS.
+# Der Quellcode wird per read-only Deploy-Key ausgecheckt (Muster build-all.yml).
+#
+# SICHERHEIT: Trigger ist AUSSCHLIESSLICH workflow_dispatch — Forks können den
+# Workflow nicht mit unseren Secrets starten. Nur wer Schreibrechte auf DIESES
+# Repo hat, kann ihn auslösen.
+#
+# AUSGELÖST VON: scripts/session/ship.sh im Quell-Repo (vor dem Squash-Merge).
+#   gh workflow run pr-check.yml -R subunit-ai/scai-releases -f ref=session/<slug>
+# ship.sh wartet auf die Conclusion dieses Runs und merged nur bei grün.
+
+name: PR Check (Quell-Repo)
+
+on:
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: "Branch/SHA im privaten Quell-Repo (z.B. session/halo-p1-agent)"
+        required: true
+        default: "main"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pr-check-${{ inputs.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    name: tsc + vite + cargo test
+    runs-on: ubuntu-latest
+    steps:
+      # Klon über Git Bash statt actions/checkout+ssh-key (siehe build-all.yml).
+      # Ref + Key über env, nicht inline → Injection-sicher.
+      - name: Quellcode auschecken (privates Repo, read-only Deploy-Key)
+        shell: bash
+        env:
+          SRC_REF: ${{ inputs.ref }}
+          DEPLOY_KEY: ${{ secrets.SOURCE_DEPLOY_KEY }}
+        run: |
+          set -euo pipefail
+          mkdir -p "$HOME/.ssh"
+          printf '%s\n' "$DEPLOY_KEY" > "$HOME/.ssh/scai_src"
+          chmod 600 "$HOME/.ssh/scai_src"
+          ssh-keyscan -t ed25519,rsa github.com >> "$HOME/.ssh/known_hosts" 2>/dev/null
+          export GIT_SSH_COMMAND="ssh -i $HOME/.ssh/scai_src -o IdentitiesOnly=yes"
+          git clone --depth 1 --branch "$SRC_REF" git@github.com:subunit-ai/subunit-scai.git src
+          rm -f "$HOME/.ssh/scai_src"
+          echo "ausgecheckt: $SRC_REF → $(git -C src rev-parse --short HEAD)"
+
+      - name: Node einrichten
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: src/package-lock.json
+
+      - name: Abhängigkeiten installieren
+        working-directory: src
+        run: npm ci
+
+      # Vendored subunit-CLI muss mit Manifest/Signing-Key/Bundle-Wiring synchron
+      # bleiben — schlägt bei veraltetem/handgepatchtem Vendor fehl.
+      - name: CLI-Drift-Wächter
+        working-directory: src
+        run: npm run drift-guard
+
+      - name: Bauen (tsc + vite)
+        working-directory: src
+        run: npm run build
+
+      # Rust-Kompilat + Unit-Tests. Tauri v2 linkt webkit2gtk/gtk auch für
+      # `cargo test` → Systembibliotheken nötig.
+      - name: Tauri-Systemabhängigkeiten
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libgtk-3-dev \
+            libayatana-appindicator3-dev librsvg2-dev libxdo-dev libssl-dev
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: swatinem/rust-cache@v2
+        with:
+          workspaces: src/src-tauri -> target
+
+      - name: cargo test (Sidecar-Trust-Modell + halo + verify-Suite)
+        working-directory: src
+        run: cargo test --manifest-path src-tauri/Cargo.toml --lib
