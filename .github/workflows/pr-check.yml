@@ -71,6 +71,14 @@ jobs:
         working-directory: src
         run: npm run drift-guard
 
+      # Release-Meta: EINE Version in allen 5 Dateien + Changelog-Eintrag für sie.
+      # Ohne den Eintrag bleibt das „Was ist neu"-Popup nach dem Update leer (genau
+      # das passierte bei v0.16.0). Beim Lesen des Diffs sieht man das nicht — die
+      # Maschine schon.
+      - name: Release-Meta-Wächter
+        working-directory: src
+        run: npm run check:release-meta
+
       - name: Bauen (tsc + vite)
         working-directory: src
         run: npm run build
