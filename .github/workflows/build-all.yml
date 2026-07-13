@@ -112,13 +112,96 @@ jobs:
         working-directory: src
         run: npm ci
 
+      # macOS-CODESIGNATUR — der Grund, warum erteilte Berechtigungen ein Update überleben.
+      #
+      # Ohne diesen Schritt signiert Tauri ad-hoc ("-" aus tauri.conf.json). Eine ad-hoc-
+      # Signatur hat KEINE Zertifikatskette, also kann codesign die Designated Requirement
+      # nur an den nackten Code-Hash binden:  designated => cdhash H"dc76bb05…"
+      # Jeder Build erzeugt einen anderen cdhash → für macOS ist das eine ANDERE App →
+      # die TCC-Grants (Mikrofon, Bildschirmaufnahme, Bedienungshilfen, Eingabeüberwachung,
+      # Ordner) passen nicht mehr und sind nach dem Update wertlos. Der Haken in den
+      # Systemeinstellungen bleibt sichtbar stehen, wirkt aber nicht — genau TJs Symptom.
+      #
+      # Mit einer echten Identität leitet codesign die DR aus dem Zertifikat ab:
+      #   designated => identifier "ai.subunit.scai" and certificate leaf = H"…"
+      # Bundle-ID und Leaf-Zert sind über alle Builds identisch → die Grants halten.
+      # Belegt an echo.app, das exakt so signiert wird und seine Grants behält.
+      #
+      # Warum die Keychain-Arbeit hier und nicht via tauri-action: das Zert ist SELBST-
+      # SIGNIERT, und codesign verweigert eine untrusted Identity (CSSMERR_TP_NOT_TRUSTED).
+      # tauri-action importiert ein APPLE_CERTIFICATE zwar, VERTRAUT ihm aber nie —
+      # deshalb machen wir Import + add-trusted-cert selbst und geben tauri-action
+      # bewusst NUR die Identity (kein APPLE_CERTIFICATE, sonst re-importiert es untrusted).
+      - name: macOS-Signatur vorbereiten (stabiles Zert — hält TCC-Grants über Updates)
+        if: runner.os == 'macOS'
+        env:
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          set -euo pipefail
+          if [ -z "${APPLE_CERTIFICATE:-}" ] || [ -z "${APPLE_SIGNING_IDENTITY:-}" ]; then
+            echo "kein Zert konfiguriert — bleibe ad-hoc"
+            exit 0
+          fi
+
+          echo "$APPLE_CERTIFICATE" | base64 -d > /tmp/scai-sign.p12
+          security create-keychain -p ci build.keychain
+          security default-keychain -s build.keychain
+          security unlock-keychain -p ci build.keychain
+          security set-keychain-settings -lut 21600 build.keychain # kein Auto-Lock mitten im Build
+          security import /tmp/scai-sign.p12 -k build.keychain \
+            -P "${APPLE_CERTIFICATE_PASSWORD:-}" -T /usr/bin/codesign
+          security set-key-partition-list -S apple-tool:,apple:,codesign: \
+            -s -k ci build.keychain > /dev/null
+          # Der Vertrauens-Schritt, den tauri-action nicht macht:
+          security find-certificate -c "$APPLE_SIGNING_IDENTITY" -p build.keychain > /tmp/scai-sign.pem
+          sudo security add-trusted-cert -d -r trustRoot -p codeSign \
+            -k /Library/Keychains/System.keychain /tmp/scai-sign.pem
+          rm /tmp/scai-sign.p12
+          echo "gültige Codesigning-Identitäten:"
+          security find-identity -v -p codesigning build.keychain
+
+          # Variablen ERST JETZT scharf schalten — bewusst über GITHUB_ENV statt im
+          # env-Block des tauri-action-Steps: ein nicht gesetztes GitHub-Secret liefert
+          # dort einen LEEREN String, die Variable wäre also trotzdem definiert. Tauri
+          # würde dann mit leerer Identität signieren wollen. "Nicht definiert" ist
+          # eindeutig, "leer" nicht — deshalb setzen wir sie nur, wenn wirklich was da ist.
+          echo "APPLE_SIGNING_IDENTITY=$APPLE_SIGNING_IDENTITY" >> "$GITHUB_ENV"
+
+          # NOTARISIERUNG (später, mit Developer ID): Tauri notarisiert automatisch,
+          # sobald APPLE_ID + APPLE_PASSWORD + APPLE_TEAM_ID gesetzt sind. Beim
+          # selbstsignierten Zert gibt es die nicht → wir reichen sie nicht durch, es
+          # gibt keinen Notarisierungs-Versuch, der Build bleibt un-notarisiert
+          # (Gatekeeper: beim ersten Start Rechtsklick → Öffnen).
+          # Der Umstieg auf Developer ID ist damit ein reiner SECRET-TAUSCH — kein Code.
+          if [ -n "${APPLE_ID:-}" ] && [ -n "${APPLE_PASSWORD:-}" ] && [ -n "${APPLE_TEAM_ID:-}" ]; then
+            echo "Developer-ID-Zugangsdaten vorhanden — Notarisierung wird angefordert"
+            {
+              echo "APPLE_ID=$APPLE_ID"
+              echo "APPLE_PASSWORD=$APPLE_PASSWORD"
+              echo "APPLE_TEAM_ID=$APPLE_TEAM_ID"
+            } >> "$GITHUB_ENV"
+          else
+            echo "keine Notarisierungs-Zugangsdaten — Build bleibt un-notarisiert"
+          fi
+
       - name: Bauen · signieren · Release-Assets hochladen
         uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          # Updater-Signatur (derselbe Key wie beim lokalen Mac-Release).
+          # Updater-Signatur (minisign, derselbe Key wie beim lokalen Mac-Release) —
+          # das ist NUR der Update-Mechanismus, nicht die Code-Signatur der App.
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+          # APPLE_SIGNING_IDENTITY (und ggf. APPLE_ID/_PASSWORD/_TEAM_ID) kommen aus dem
+          # Schritt oben über GITHUB_ENV. Hier bewusst NICHT auflisten: ein env-Eintrag
+          # im Step überschreibt den GITHUB_ENV-Wert — mit einem leeren String, falls das
+          # Secret fehlt. Und APPLE_CERTIFICATE gehört hier ohnehin nie hin (untrusted
+          # Re-Import, siehe oben).
         with:
           projectPath: src
           # Tag/Version kommen aus src-tauri/tauri.conf.json.
