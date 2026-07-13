@@ -79,6 +79,14 @@ jobs:
         working-directory: src
         run: npm run check:release-meta
 
+      # Jedes Plugin muss als eigenständiges Bundle bauen. Der App-Build (vite) deckt
+      # das NICHT ab: die Plugin-Bundles laufen durch esbuild mit anderen Defines.
+      # Gemessen: eine neue `import.meta.env.PROD`-Nutzung in lib/config.ts ließ den
+      # chat-Bau scheitern — bemerkt erst beim Publish, und der ganze Release-Zug stand.
+      - name: Plugin-Bundles bauen (Probe)
+        working-directory: src
+        run: npm run check:plugins
+
       - name: Bauen (tsc + vite)
         working-directory: src
         run: npm run build
