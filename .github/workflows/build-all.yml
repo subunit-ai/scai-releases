@@ -141,10 +141,26 @@ jobs:
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        env:
+          REF: ${{ inputs.ref }}
         run: |
           set -euo pipefail
           if [ -z "${APPLE_CERTIFICATE:-}" ] || [ -z "${APPLE_SIGNING_IDENTITY:-}" ]; then
-            echo "kein Zert konfiguriert — bleibe ad-hoc"
+            # FAIL-CLOSED bei echten Releases. Ein durchgewunkener ad-hoc-Build sieht in
+            # der CI genauso grün aus wie ein signierter — nur dass er bei JEDEM Kunden
+            # sämtliche macOS-Berechtigungen killt, still und unbemerkt. Genau dieser
+            # stille Pfad hat uns das Problem eingebrockt. Für einen Version-Tag ist ein
+            # fehlendes Zertifikat deshalb ein ABBRUCH, kein Achselzucken.
+            case "${REF:-}" in
+              v[0-9]*)
+                echo "::error::Release $REF ohne Code-Signing-Zertifikat — Abbruch."
+                echo "APPLE_CERTIFICATE / APPLE_SIGNING_IDENTITY fehlen in den Repo-Secrets."
+                echo "Ad-hoc signiert = Designated Requirement ist ein cdhash-Pin = jeder"
+                echo "Kunde muss nach dem Update alle Berechtigungen neu erteilen."
+                exit 1
+                ;;
+            esac
+            echo "kein Zert konfiguriert — Testbuild bleibt ad-hoc"
             exit 0
           fi
 
@@ -217,3 +233,43 @@ jobs:
           # → der Updater bedient damit jede Plattform.
           includeUpdaterJson: true
           args: --target ${{ matrix.target }} --bundles ${{ matrix.bundles }}
+
+      # BEWEIS STATT BEHAUPTUNG. Der Keychain-Schritt oben kann grün sein und die App
+      # trotzdem ad-hoc signiert rauskommen (falsche Identity, Tauri ignoriert die env,
+      # Zert nicht vertraut) — und niemand merkt es, weil ein ad-hoc-Build genauso
+      # aussieht wie ein signierter. Wir MESSEN das Ergebnis deshalb am gebauten .app:
+      #
+      #   ad-hoc   → designated => cdhash H"…"        (Hash-Pin, bricht bei JEDEM Update)
+      #   signiert → designated => identifier "…" and certificate leaf = H"…"  (stabil)
+      #
+      # Nur die zweite Form lässt macOS die erteilten TCC-Rechte über ein Update hinweg
+      # wiedererkennen. Ist sie nicht da, ist der Release wertlos — also Abbruch.
+      - name: Signatur am gebauten .app VERIFIZIEREN (nicht glauben — messen)
+        if: runner.os == 'macOS'
+        env:
+          TARGET: ${{ matrix.target }}
+        run: |
+          set -euo pipefail
+          APP=$(find "src/src-tauri/target/$TARGET/release/bundle/macos" -maxdepth 1 -name '*.app' | head -1)
+          if [ -z "$APP" ]; then
+            echo "::error::Kein .app-Bundle gefunden — Verifikation unmöglich."
+            exit 1
+          fi
+          echo "Prüfe: $APP"
+          codesign -dv --verbose=4 "$APP" 2>&1 | tee /tmp/sig.txt
+          echo "── Designated Requirement ──"
+          codesign -d --requirements - "$APP" 2>&1 | tee /tmp/dr.txt
+
+          if grep -q "Signature=adhoc" /tmp/sig.txt; then
+            echo "::error::Das ausgelieferte .app ist AD-HOC signiert. Alle Kunden-Berechtigungen würden beim Update sterben."
+            exit 1
+          fi
+          if grep -q "cdhash" /tmp/dr.txt && ! grep -q "certificate leaf" /tmp/dr.txt; then
+            echo "::error::Designated Requirement ist ein cdhash-Pin statt zertifikatsbasiert — Berechtigungen überleben kein Update."
+            exit 1
+          fi
+          if ! grep -q "certificate leaf\|anchor apple generic" /tmp/dr.txt; then
+            echo "::error::Designated Requirement enthält keine Zertifikats-Bindung."
+            exit 1
+          fi
+          echo "OK — Signatur ist zertifikatsgebunden, TCC-Grants überleben Updates."

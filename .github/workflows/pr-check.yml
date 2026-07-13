@@ -87,6 +87,15 @@ jobs:
         working-directory: src
         run: npm run check:plugins
 
+      # SCAI wurde als Demo gebaut und wird als Enterprise-Produkt verkauft. Seeds
+      # ("Max Mustermann"), echte Kundennamen und Attrappen-Antworten dürfen nicht wieder
+      # einsickern. Der Wächter hängt bewusst HIER und nicht nur im Quell-Repo: dessen
+      # Actions sind billing-gesperrt (jeder Lauf stirbt nach ~4 s mit 0 Steps), der Step
+      # dort läuft also nie. Diese Pipeline ist die einzige, die wirklich prüft.
+      - name: Keine Demo-Daten im Produktcode
+        working-directory: src
+        run: npm run check:no-demo-data
+
       - name: Bauen (tsc + vite)
         working-directory: src
         run: npm run build
