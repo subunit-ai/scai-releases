@@ -273,3 +273,46 @@ jobs:
             exit 1
           fi
           echo "OK — Signatur ist zertifikatsgebunden, TCC-Grants überleben Updates."
+
+  # ── latest.json vollständig + rennfrei zusammenbauen ─────────────────────────
+  # WARUM (Details: scripts/assemble-latest-json.py): Die build-Matrix oben läuft
+  # PARALLEL, und jeder Job lädt per includeUpdaterJson sein eigenes latest.json ins
+  # Release (read-modify-write ohne Lock). Der letzte Upload gewinnt → das Manifest
+  # enthält oft nur 1-2 Plattformen, der Rest (z.B. darwin-aarch64) fehlt und deren
+  # Nutzer bekommen NIE ein Update angeboten. (Eingetreten bei v0.40.0.) Dieser Job
+  # läuft NACH allen Builds und baut EIN vollständiges Manifest aus ALLEN .sig-Assets
+  # des Release — deterministisch, ein einziger Upload, kein Race.
+  assemble-manifest:
+    name: latest.json vollständig zusammenbauen
+    needs: build
+    # Nur für echte Release-Tags (vX.Y.Z) — Test-Builds von einem Branch/SHA brauchen
+    # kein Updater-Manifest und hätten keine eindeutige Version.
+    if: startsWith(inputs.ref, 'v')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Assembler-Script holen (dieses Repo)
+        uses: actions/checkout@v4
+
+      - name: Alle Release-Signaturen laden · Manifest bauen · hochladen
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ inputs.ref }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          VERSION="${TAG#v}"
+          BASE="https://github.com/$REPO/releases/download/$TAG"
+          NOTES="SCAI $TAG — Installer für macOS (Apple Silicon & Intel), Windows (x64 & ARM64) und Linux.
+
+          Auto-Update ist für alle Plattformen verdrahtet (latest.json)."
+          mkdir -p sigs
+          # Alle Updater-Signaturen des gerade gebauten Release holen.
+          gh release download "$TAG" -R "$REPO" -p '*.sig' -D sigs --clobber
+          echo "Geladene Signaturen:"; ls -1 sigs
+          python3 scripts/assemble-latest-json.py sigs "$VERSION" "$BASE" "$NOTES" latest.json
+          echo "── erzeugtes Manifest ──"
+          python3 -c "import json;d=json.load(open('latest.json'));print('version',d['version'],'· plattformen',sorted(d['platforms']))"
+          # Das (evtl. unvollständige) latest.json der parallelen Jobs ersetzen.
+          gh release upload "$TAG" latest.json -R "$REPO" --clobber
+          echo "✅ vollständiges latest.json auf $TAG hochgeladen."
