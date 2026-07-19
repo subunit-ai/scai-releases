@@ -173,10 +173,16 @@ jobs:
             -P "${APPLE_CERTIFICATE_PASSWORD:-}" -T /usr/bin/codesign
           security set-key-partition-list -S apple-tool:,apple:,codesign: \
             -s -k ci build.keychain > /dev/null
-          # Der Vertrauens-Schritt, den tauri-action nicht macht:
+          # Der Vertrauens-Schritt, den tauri-action nicht macht. Seit dem Umstieg auf
+          # das Apple-Development-Zert (2026-07-19, Team Y23NYAZM6M — bringt teamid:-
+          # Partition = Schlüsselbund-Freigaben überleben Updates) validiert die Kette
+          # über das im p12 mitgelieferte WWDR-G3-Zwischenzert + Apple-Root des Runners
+          # von selbst; der trustRoot-Pin ist nur noch der Fallback für ein etwaiges
+          # self-signed Zert und darf den Build deshalb NIE mehr abbrechen.
           security find-certificate -c "$APPLE_SIGNING_IDENTITY" -p build.keychain > /tmp/scai-sign.pem
           sudo security add-trusted-cert -d -r trustRoot -p codeSign \
-            -k /Library/Keychains/System.keychain /tmp/scai-sign.pem
+            -k /Library/Keychains/System.keychain /tmp/scai-sign.pem \
+            || echo "trustRoot-Pin übersprungen (Apple-gekettetes Zert braucht ihn nicht)"
           rm /tmp/scai-sign.p12
           echo "gültige Codesigning-Identitäten:"
           security find-identity -v -p codesigning build.keychain
@@ -273,3 +279,46 @@ jobs:
             exit 1
           fi
           echo "OK — Signatur ist zertifikatsgebunden, TCC-Grants überleben Updates."
+
+  # ── latest.json vollständig + rennfrei zusammenbauen ─────────────────────────
+  # WARUM (Details: scripts/assemble-latest-json.py): Die build-Matrix oben läuft
+  # PARALLEL, und jeder Job lädt per includeUpdaterJson sein eigenes latest.json ins
+  # Release (read-modify-write ohne Lock). Der letzte Upload gewinnt → das Manifest
+  # enthält oft nur 1-2 Plattformen, der Rest (z.B. darwin-aarch64) fehlt und deren
+  # Nutzer bekommen NIE ein Update angeboten. (Eingetreten bei v0.40.0.) Dieser Job
+  # läuft NACH allen Builds und baut EIN vollständiges Manifest aus ALLEN .sig-Assets
+  # des Release — deterministisch, ein einziger Upload, kein Race.
+  assemble-manifest:
+    name: latest.json vollständig zusammenbauen
+    needs: build
+    # Nur für echte Release-Tags (vX.Y.Z) — Test-Builds von einem Branch/SHA brauchen
+    # kein Updater-Manifest und hätten keine eindeutige Version.
+    if: startsWith(inputs.ref, 'v')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Assembler-Script holen (dieses Repo)
+        uses: actions/checkout@v4
+
+      - name: Alle Release-Signaturen laden · Manifest bauen · hochladen
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ inputs.ref }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          VERSION="${TAG#v}"
+          BASE="https://github.com/$REPO/releases/download/$TAG"
+          NOTES="SCAI $TAG — Installer für macOS (Apple Silicon & Intel), Windows (x64 & ARM64) und Linux.
+
+          Auto-Update ist für alle Plattformen verdrahtet (latest.json)."
+          mkdir -p sigs
+          # Alle Updater-Signaturen des gerade gebauten Release holen.
+          gh release download "$TAG" -R "$REPO" -p '*.sig' -D sigs --clobber
+          echo "Geladene Signaturen:"; ls -1 sigs
+          python3 scripts/assemble-latest-json.py sigs "$VERSION" "$BASE" "$NOTES" latest.json
+          echo "── erzeugtes Manifest ──"
+          python3 -c "import json;d=json.load(open('latest.json'));print('version',d['version'],'· plattformen',sorted(d['platforms']))"
+          # Das (evtl. unvollständige) latest.json der parallelen Jobs ersetzen.
+          gh release upload "$TAG" latest.json -R "$REPO" --clobber
+          echo "✅ vollständiges latest.json auf $TAG hochgeladen."
