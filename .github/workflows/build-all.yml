@@ -279,3 +279,82 @@ jobs:
             exit 1
           fi
           echo "OK — Signatur ist zertifikatsgebunden, TCC-Grants überleben Updates."
+
+  # latest.json FINALISIEREN — Schutz gegen das Merge-Race der tauri-action.
+  # includeUpdaterJson merged per Download→Ergänzen→Upload; enden zwei Matrix-Jobs
+  # fast gleichzeitig, gewinnt der letzte Schreiber und Plattform-Einträge gehen
+  # verloren (v0.58.0: windows-aarch64 fehlte trotz grünem ARM64-Job — Assets lagen
+  # vollständig im Release). Dieser Job läuft NACH allen Builds und rekonstruiert
+  # die platforms-Map deterministisch aus den .sig-Assets (Ground-Truth im Release).
+  # Idempotent: ein bereits vollständiges Manifest wird unverändert bestätigt.
+  manifest:
+    name: latest.json finalisieren
+    needs: build
+    if: always()
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Manifest aus .sig-Assets rekonstruieren
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SRC_REF: ${{ inputs.ref }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          # Tag bestimmen: dispatch-ref wenn es wie ein Versions-Tag aussieht,
+          # sonst das jüngste Release (ref=main-Fall).
+          if [[ "$SRC_REF" =~ ^v[0-9] ]]; then TAG="$SRC_REF"; else
+            TAG=$(gh release list -R "$REPO" --limit 1 --json tagName --jq '.[0].tagName')
+          fi
+          if ! gh release view "$TAG" -R "$REPO" >/dev/null 2>&1; then
+            echo "::warning::Kein Release $TAG — nichts zu finalisieren (alle Builds rot?)."
+            exit 0
+          fi
+          echo "Finalisiere latest.json für $TAG"
+          mkdir -p /tmp/sigs && cd /tmp/sigs
+          gh release download "$TAG" -R "$REPO" --pattern '*.sig' || true
+          gh release download "$TAG" -R "$REPO" --pattern 'latest.json' --output existing.json || true
+          python3 - "$TAG" "$REPO" <<'PY'
+          import json, os, sys, datetime
+          tag, repo = sys.argv[1], sys.argv[2]
+          base = f"https://github.com/{repo}/releases/download/{tag}"
+          # Suffix → Plattform-Keys (exakt die 11 Keys der bisherigen Releases).
+          def keys_for(asset):
+              if asset.endswith(".app.tar.gz"):
+                  arch = "aarch64" if "aarch64" in asset else "x86_64"
+                  return [f"darwin-{arch}", f"darwin-{arch}-app"]
+              if asset.endswith(".AppImage"): return ["linux-x86_64", "linux-x86_64-appimage"]
+              if asset.endswith(".deb"): return ["linux-x86_64-deb"]
+              if asset.endswith("-setup.exe"):
+                  arch = "aarch64" if "arm64" in asset else "x86_64"
+                  return [f"windows-{arch}", f"windows-{arch}-nsis"]
+              return []
+          platforms = {}
+          for sig in sorted(os.listdir(".")):
+              if not sig.endswith(".sig"): continue
+              asset = sig[:-4]
+              signature = open(sig).read().strip()
+              for k in keys_for(asset):
+                  platforms[k] = {"signature": signature, "url": f"{base}/{asset}"}
+          notes, pub = f"SCAI {tag}", datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%fZ")
+          existing = {}
+          try:
+              existing = json.load(open("existing.json", encoding="utf-8-sig"))
+              notes = existing.get("notes", notes); pub = existing.get("pub_date", pub)
+          except Exception: pass
+          manifest = {"version": tag.lstrip("v"), "notes": notes, "pub_date": pub, "platforms": platforms}
+          if len(platforms) < 11:
+              missing = sorted(set(existing.get("platforms", {})) - set(platforms))
+              print(f"::warning::Nur {len(platforms)}/11 Plattform-Keys aus .sig-Assets (Plattform-Build rot?). Fehlend ggü. Bestand: {missing}")
+          if existing.get("platforms") == platforms and existing.get("version") == manifest["version"]:
+              print("Manifest bereits vollständig und identisch — kein Upload nötig.")
+              open("SKIP_UPLOAD", "w").close()
+          else:
+              json.dump(manifest, open("latest.json", "w"), indent=2)
+              print(f"Neu geschrieben: {len(platforms)} Plattform-Keys.")
+          PY
+          if [ ! -f SKIP_UPLOAD ]; then
+            gh release upload "$TAG" latest.json -R "$REPO" --clobber
+            echo "latest.json hochgeladen."
+          fi
+          # Beweis über die API (CDN kann Sekunden nachhängen): Asset muss existieren.
+          gh release view "$TAG" -R "$REPO" --json assets --jq '.assets[] | select(.name=="latest.json") | "latest.json \(.size) bytes"'
