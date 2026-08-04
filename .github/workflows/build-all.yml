@@ -32,8 +32,80 @@ permissions:
   contents: write # Release anlegen + Assets hochladen (in DIESEM Repo)
 
 jobs:
+  # RELEASE EINMAL ANLEGEN — vor der Matrix, gegen das Anlege-Rennen.
+  #
+  # tauri-action legt das Release selbst an, wenn es fehlt: erst `view`, dann `create`.
+  # Bei fünf parallelen Matrix-Jobs prüfen alle fünf gleichzeitig „gibt es das schon?",
+  # alle fünf sagen nein, einer gewinnt — die anderen sterben an
+  #   Validation Failed: {"code":"already_exists","field":"tag_name"}
+  # und zwar NACH dem Bauen und Signieren, mit fertigen Artefakten in der Hand.
+  # Gemessen bei v0.102.0: macOS (Apple Silicon) fiel so aus, dmg war gebaut und signiert.
+  # Wen es trifft, ist reiner Zufall — beim nächsten Mal eine andere Plattform.
+  #
+  # Verwandt, aber nicht dasselbe: das latest.json-Merge-Race weiter unten (Job `manifest`).
+  # Beide Rennen entstehen daraus, dass die Matrix-Jobs sich EIN Release teilen.
+  release:
+    name: Release anlegen
+    runs-on: ubuntu-22.04
+    outputs:
+      tag: ${{ steps.ermitteln.outputs.tag }}
+    steps:
+      - name: Version aus dem Quell-Repo lesen
+        id: ermitteln
+        shell: bash
+        env:
+          SRC_REF: ${{ inputs.ref }}
+          DEPLOY_KEY: ${{ secrets.SOURCE_DEPLOY_KEY }}
+        run: |
+          set -euo pipefail
+          mkdir -p "$HOME/.ssh"
+          printf '%s\n' "$DEPLOY_KEY" > "$HOME/.ssh/scai_src"
+          chmod 600 "$HOME/.ssh/scai_src"
+          ssh-keyscan -t ed25519,rsa github.com >> "$HOME/.ssh/known_hosts" 2>/dev/null
+          export GIT_SSH_COMMAND="ssh -i $HOME/.ssh/scai_src -o IdentitiesOnly=yes"
+          git clone --depth 1 --branch "$SRC_REF" git@github.com:subunit-ai/subunit-scai.git src
+          rm -f "$HOME/.ssh/scai_src"
+          # Dieselbe Quelle, aus der tauri-action `v__VERSION__` auflöst.
+          VERSION=$(node -p "require('./src/src-tauri/tauri.conf.json').version")
+          # Format erzwingen, bevor der Wert in einen Befehl wandert: der String kommt
+          # zwar aus unserem eigenen Repo, aber ein Wert, der später ein Argument wird,
+          # gehört validiert und nicht geglaubt. Fail-closed statt kreativ.
+          if ! printf '%s' "$VERSION" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+([-.][0-9A-Za-z.]+)?$'; then
+            echo "::error::Unplausible Version in tauri.conf.json: '$VERSION'"
+            exit 1
+          fi
+          echo "tag=v${VERSION}" >> "$GITHUB_OUTPUT"
+          echo "Version aus tauri.conf.json: v${VERSION}"
+
+      - name: Release sicherstellen (idempotent)
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          TAG: ${{ steps.ermitteln.outputs.tag }}
+          PRERELEASE: ${{ inputs.prerelease }}
+        run: |
+          set -euo pipefail
+          if gh release view "$TAG" -R "$REPO" >/dev/null 2>&1; then
+            echo "Release $TAG existiert bereits — nichts zu tun (Re-Run oder Nachbau)."
+            exit 0
+          fi
+          FLAGS=()
+          [ "$PRERELEASE" = "true" ] && FLAGS+=(--prerelease)
+          # Kein --verify-tag: der Tag lebt im QUELL-Repo, nicht hier. GitHub legt ihn
+          # beim Anlegen auf dem Default-Branch-HEAD dieses Repos an — genau das tut
+          # tauri-action auch, wir nehmen ihm nur das Rennen ab.
+          gh release create "$TAG" -R "$REPO" \
+            --title "SCAI $TAG" \
+            --notes "SCAI $TAG — Installer für macOS (Apple Silicon & Intel), Windows (x64 & ARM64) und Linux.
+
+          Auto-Update ist für alle Plattformen verdrahtet (\`latest.json\`)." \
+            "${FLAGS[@]}"
+          echo "Release $TAG angelegt — die Matrix-Jobs finden es jetzt vor."
+
   build:
     name: ${{ matrix.label }}
+    needs: release
     strategy:
       fail-fast: false # eine kaputte Plattform darf die anderen nicht mitreißen
       matrix:
