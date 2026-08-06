@@ -3,18 +3,61 @@
 # WARUM hier (im PUBLIC scai-releases) statt im privaten subunit-scai:
 # GitHub rechnet Actions-Minuten nach dem Repo ab, in dem der Workflow LÄUFT.
 # `subunit-scai` ist privat → dessen Actions hängen an der Org-Billing-Sperre
-# (Jobs sterben nach 3s mit 0 Steps). `scai-releases` ist public → KOSTENLOS.
-# Der Quellcode wird per read-only Deploy-Key ausgecheckt (Muster build-all.yml).
+# (Jobs sterben nach 3s mit 0 Steps). Zusätzlich stehen dort die Actions auf
+# Repo-Ebene auf `enabled: false` (bewusst, Commit 1889186 vom 13.07.) — ein
+# Workflow im Quell-Repo würde nicht einmal registriert. `scai-releases` ist
+# public → kostenlos. Der Quellcode wird per read-only Deploy-Key ausgecheckt
+# (Muster: build-all.yml).
 #
 # SICHERHEIT: Trigger ist AUSSCHLIESSLICH workflow_dispatch — Forks können den
 # Workflow nicht mit unseren Secrets starten. Nur wer Schreibrechte auf DIESES
-# Repo hat, kann ihn auslösen.
+# Repo hat, kann ihn auslösen. NIEMALS `pull_request` oder `pull_request_target`
+# ergänzen: beides gäbe fremden Forks einen Pfad zu Secrets und zum rust-cache.
+#
+# ─── LEAK-POLITIK: dieser Log ist für jeden GitHub-Nutzer lesbar ──────────────
+# Das Repo ist public, also kann jeder den kompletten Job-Log lesen. Was hier
+# ausgegeben wird, ist veröffentlicht. Bewusst getroffene Entscheidungen:
+#   1. KEIN Artefakt-Upload, KEIN Coverage-Report, KEIN `env`/`printenv`-Dump,
+#      kein `cat` von Quelldateien. Nichts aus `src/` verlässt den Runner.
+#   2. `check:no-demo-data` wird STUMMGESCHALTET (Ausgabe in eine Datei, nicht
+#      in den Log): der Wächter druckt bei einem Treffer bis zu 110 Zeichen der
+#      privaten Quellzeile PLUS den Hinweis, dass darin ein echter Kundenname
+#      steht. Ein einziger roter Lauf hätte genau das veröffentlicht, was der
+#      Wächter aus dem Produkt halten soll. (`::add-mask::` wäre der FALSCHE
+#      Fix — dafür müssten die Klarnamen in diese öffentliche Datei.)
+#   3. `cargo test … -q` statt `--lib` pur: der grüne Lauf druckte sonst alle
+#      ~358 Testnamen — ein lesbares Inhaltsverzeichnis unseres Sicherheits-
+#      modells (Kill-Gate, Plugin-Signaturprüfung, Injection-Abwehr). Mit `-q`
+#      nur Punkte; Fehlerdetails (Testname, Panic, left/right) bleiben erhalten.
+#      Verifiziert an einem Wegwerf-Crate, grün wie rot.
+#   4. Der Checkout-Step echot NUR noch die Short-SHA, nicht mehr `$SRC_REF`.
+#      Unsere Branch-Slugs (`session/<vorhaben>`) sind die unveröffentlichte
+#      Roadmap eines Enterprise-Produkts. Verifiziert: im anonym abgerufenen
+#      HTML der Run-Seite taucht kein Slug auf — der Log-Echo war die einzige
+#      Stelle, die ihn öffentlich machte.
+#   5. BEWUSST GETRAGEN, nicht schließbar: rote `tsc`- und `cargo`-Läufe drucken
+#      privaten Quelltext (TypeScript-Fehler mit Codeausschnitt, assert-Werte).
+#      Ein Gate ohne Fehlermeldung wäre wertlos. Wer dieses Muster in ein
+#      anderes Repo kopiert, muss dieses Urteil bewusst mitfällen.
+#   6. `ACTIONS_STEP_DEBUG`/`ACTIONS_RUNNER_DEBUG` NICHT als Repo-Variable
+#      setzen — Debug-Logging protokolliert Step-Eingaben und Dateipfade.
 #
 # AUSGELÖST VON: scripts/session/ship.sh im Quell-Repo (vor dem Squash-Merge).
-#   gh workflow run pr-check.yml -R subunit-ai/scai-releases -f ref=session/<slug>
+#   gh workflow run pr-check.yml -R subunit-ai/scai-releases \
+#     -f ref=session/<slug> -f nonce=<zufall>
 # ship.sh wartet auf die Conclusion dieses Runs und merged nur bei grün.
+# Der `nonce` landet im Lauf-Titel und ist die EINZIGE Möglichkeit für ship.sh,
+# den EIGENEN Lauf zu erkennen: bei parallel shippenden Sessions (das SCAI-
+# Worktree-Modell erzeugt genau das) nahm die alte `gh run list --limit 1`-Logik
+# den jüngsten fremden Lauf — und merged auf dessen Grün. `nonce` ist optional,
+# damit ein ship.sh ohne den Parameter weiter funktioniert.
+#
+# Runbook (Deploy-Key, Secrets, Rot-Probe): u1-brain/workspace/docs/runbook-ci-gate-subunit-scai.md
 
 name: PR Check (Quell-Repo)
+
+# Kein Slug im Titel — nur der zufällige Korrelations-Nonce. Siehe Leak-Politik 4.
+run-name: PR Check · ${{ inputs.nonce }}
 
 on:
   workflow_dispatch:
@@ -23,6 +66,10 @@ on:
         description: "Branch/SHA im privaten Quell-Repo (z.B. session/halo-p1-agent)"
         required: true
         default: "main"
+      nonce:
+        description: "Korrelations-Marke von ship.sh (Zufallswert, erscheint im Lauf-Titel)"
+        required: false
+        default: ""
 
 permissions:
   contents: read
@@ -35,6 +82,9 @@ jobs:
   check:
     name: tsc + vite + cargo test
     runs-on: ubuntu-latest
+    # Obergrenze über dem gemessenen Ausreißer (36m12s am 04.08., kalter
+    # rust-cache). Ein hängender Job soll rot werden, nicht ewig Queue belegen.
+    timeout-minutes: 45
     steps:
       # Klon über Git Bash statt actions/checkout+ssh-key (siehe build-all.yml).
       # Ref + Key über env, nicht inline → Injection-sicher.
@@ -46,13 +96,19 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p "$HOME/.ssh"
-          printf '%s\n' "$DEPLOY_KEY" > "$HOME/.ssh/scai_src"
-          chmod 600 "$HOME/.ssh/scai_src"
+          KEY="$HOME/.ssh/scai_src"
+          # trap statt `rm` am Step-Ende: unter `set -e` bricht der Step bei einem
+          # fehlgeschlagenen Klon ab — das rm liefe dann NIE und der Schlüssel
+          # bliebe für den Rest des Jobs auf der Platte liegen, während direkt
+          # danach `npm ci` fremde postinstall-Skripte ausführt.
+          trap 'rm -f "$KEY"' EXIT
+          printf '%s\n' "$DEPLOY_KEY" > "$KEY"
+          chmod 600 "$KEY"
           ssh-keyscan -t ed25519,rsa github.com >> "$HOME/.ssh/known_hosts" 2>/dev/null
-          export GIT_SSH_COMMAND="ssh -i $HOME/.ssh/scai_src -o IdentitiesOnly=yes"
+          export GIT_SSH_COMMAND="ssh -i $KEY -o IdentitiesOnly=yes"
           git clone --depth 1 --branch "$SRC_REF" git@github.com:subunit-ai/subunit-scai.git src
-          rm -f "$HOME/.ssh/scai_src"
-          echo "ausgecheckt: $SRC_REF → $(git -C src rev-parse --short HEAD)"
+          # Bewusst OHNE $SRC_REF: der Slug ist unveröffentlichte Roadmap.
+          echo "ausgecheckt → $(git -C src rev-parse --short HEAD)"
 
       - name: Node einrichten
         uses: actions/setup-node@v4
@@ -90,11 +146,22 @@ jobs:
       # SCAI wurde als Demo gebaut und wird als Enterprise-Produkt verkauft. Seeds
       # ("Max Mustermann"), echte Kundennamen und Attrappen-Antworten dürfen nicht wieder
       # einsickern. Der Wächter hängt bewusst HIER und nicht nur im Quell-Repo: dessen
-      # Actions sind billing-gesperrt (jeder Lauf stirbt nach ~4 s mit 0 Steps), der Step
-      # dort läuft also nie. Diese Pipeline ist die einzige, die wirklich prüft.
+      # Actions sind abgeschaltet + billing-gesperrt, der Step dort läuft also nie.
+      # Diese Pipeline ist die einzige, die wirklich prüft.
+      #
+      # STUMM: Die Trefferliste enthält private Quellzeilen samt echter Klarnamen
+      # (Leak-Politik 2). Sie bleibt auf dem Runner; der Log sagt nur DASS es
+      # gerissen hat und wie man es lokal in 2 Sekunden reproduziert.
       - name: Keine Demo-Daten im Produktcode
         working-directory: src
-        run: npm run check:no-demo-data
+        shell: bash
+        run: |
+          set -uo pipefail
+          if ! npm run --silent check:no-demo-data > "$RUNNER_TEMP/no-demo-data.log" 2>&1; then
+            echo "::error title=Demo-Daten im Produktcode::check:no-demo-data hat angeschlagen. Die Fundstellen werden BEWUSST nicht geloggt — dieser Log ist öffentlich, die Treffer enthalten private Quellzeilen mit echten Klarnamen. Lokal reproduzieren: npm run check:no-demo-data"
+            exit 1
+          fi
+          echo "✓ keine Demo-Daten im Produktcode"
 
       - name: Bauen (tsc + vite)
         working-directory: src
@@ -114,6 +181,8 @@ jobs:
         with:
           workspaces: src/src-tauri -> target
 
+      # `-q`: Punkte statt 358 Testnamen (Leak-Politik 3). Fehlerdetails bleiben.
+      # `--lib` bleibt bewusst eng — nur Unit-Tests, hält den Lauf bei ~23 s warm.
       - name: cargo test (Sidecar-Trust-Modell + halo + verify-Suite)
         working-directory: src
-        run: cargo test --manifest-path src-tauri/Cargo.toml --lib
+        run: cargo test --manifest-path src-tauri/Cargo.toml --lib -q
