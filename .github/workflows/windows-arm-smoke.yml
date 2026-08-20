@@ -1,0 +1,79 @@
+# SCAI — read-only Windows ARM64 source smoke test.
+#
+# This deliberately does not create a release, upload artifacts, or publish anything.
+# It proves that an arbitrary private source ref can install and build on the
+# windows-11-arm runner used by the release lane.
+
+name: Windows ARM64 smoke
+
+on:
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: "Branch, tag oder SHA im privaten Quell-Repo"
+        required: true
+        default: "main"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: windows-arm-smoke-${{ inputs.ref }}
+  cancel-in-progress: true
+
+jobs:
+  smoke:
+    name: Windows ARM64 build smoke
+    runs-on: windows-11-arm
+    steps:
+      # Wie in build-all.yml/pr-check.yml: Git Bash statt actions/checkout mit
+      # SSH-Key, weil der windows-11-arm-Runner kein verlässliches System-OpenSSH
+      # bereitstellt. Der private Key bleibt ausschließlich im Step-Prozess.
+      - name: Quellcode auschecken (privates Repo, read-only Deploy-Key)
+        shell: bash
+        env:
+          SRC_REF: ${{ inputs.ref }}
+          DEPLOY_KEY: ${{ secrets.SOURCE_DEPLOY_KEY }}
+        run: |
+          set -euo pipefail
+          key_file="$HOME/.ssh/scai_src"
+          cleanup() { rm -f "$key_file"; }
+          trap cleanup EXIT
+          mkdir -p "$HOME/.ssh"
+          printf '%s\n' "$DEPLOY_KEY" > "$key_file"
+          chmod 600 "$key_file"
+          ssh-keyscan -t ed25519,rsa github.com >> "$HOME/.ssh/known_hosts" 2>/dev/null
+          export GIT_SSH_COMMAND="ssh -i $key_file -o IdentitiesOnly=yes"
+
+          # Fetch by ref into an empty repository so branch, tag, and commit SHA
+          # inputs all use the same path. No source ref is interpolated into a
+          # shell expression; it remains one quoted git argument.
+          git init src
+          git -C src remote add origin git@github.com:subunit-ai/subunit-scai.git
+          git -C src fetch --depth 1 origin "$SRC_REF"
+          git -C src checkout --detach FETCH_HEAD
+          echo "ausgecheckt: $SRC_REF → $(git -C src rev-parse --short HEAD)"
+
+      - name: Node einrichten
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: src/package-lock.json
+
+      - name: Rust einrichten (aarch64-pc-windows-msvc)
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-pc-windows-msvc
+
+      - name: Abhängigkeiten installieren
+        working-directory: src
+        run: npm ci
+
+      - name: Frontend bauen (tsc + vite)
+        working-directory: src
+        run: npm run build
+
+      - name: Rust ARM64 prüfen (locked)
+        working-directory: src
+        run: cargo check --manifest-path src-tauri/Cargo.toml --target aarch64-pc-windows-msvc --locked
