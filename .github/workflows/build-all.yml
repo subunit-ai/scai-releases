@@ -414,9 +414,29 @@ jobs:
               notes = existing.get("notes", notes); pub = existing.get("pub_date", pub)
           except Exception: pass
           manifest = {"version": tag.lstrip("v"), "notes": notes, "pub_date": pub, "platforms": platforms}
-          if len(platforms) < 11:
-              missing = sorted(set(existing.get("platforms", {})) - set(platforms))
-              print(f"::warning::Nur {len(platforms)}/11 Plattform-Keys aus .sig-Assets (Plattform-Build rot?). Fehlend ggü. Bestand: {missing}")
+          required = {
+              "darwin-aarch64", "darwin-aarch64-app",
+              "darwin-x86_64", "darwin-x86_64-app",
+              "windows-aarch64", "windows-aarch64-nsis",
+              "windows-x86_64", "windows-x86_64-nsis",
+              "linux-x86_64", "linux-x86_64-appimage", "linux-x86_64-deb",
+          }
+          missing = sorted(required - set(platforms))
+          unexpected = sorted(set(platforms) - required)
+          if missing or unexpected:
+              print(f"::error::Updater-Zielmatrix unvollständig/falsch — fehlend: {missing}; unerwartet: {unexpected}")
+              raise SystemExit(1)
+          checks = {
+              "darwin-aarch64": "aarch64",
+              "darwin-x86_64": "x64",
+              "windows-aarch64": "arm64",
+              "windows-x86_64": "x64",
+          }
+          wrong = sorted(k for k, marker in checks.items() if marker not in platforms[k]["url"])
+          if wrong:
+              print(f"::error::Updater-Ziele zeigen auf die falsche Architektur: {wrong}")
+              raise SystemExit(1)
+          print("Geräteauswahl belegt: macOS ARM/Intel + Windows ARM64/x64 + Linux x64 vollständig.")
           if existing.get("platforms") == platforms and existing.get("version") == manifest["version"]:
               print("Manifest bereits vollständig und identisch — kein Upload nötig.")
               open("SKIP_UPLOAD", "w").close()
