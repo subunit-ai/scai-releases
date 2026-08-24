@@ -35,14 +35,14 @@
     },
     "subunit_auth": {
       "repository": "https://github.com/subunit-ai/subunit-auth",
-      "sha": "624b8becd8e74c3b87de84fe3f7f2783628adbdd",
+      "sha": "3f07c0ce8b478f7409aca2929d83bdd941e90814",
       "branch": "session/a7-consent-evidence",
       "pr_url": "https://github.com/subunit-ai/subunit-auth/pull/12",
       "merge_status": "open"
     },
     "echo": {
       "repository": "https://github.com/subunit-ai/echo",
-      "sha": "6c0e9122e0b5e6ff997b0a57b2d079579ed67f96",
+      "sha": "b21199b4a0d525085396114da638305f2d754a23",
       "branch": "session/a7-participant-consent",
       "pr_url": "https://github.com/subunit-ai/echo/pull/23",
       "merge_status": "open"
@@ -115,8 +115,10 @@
       "evidence": [
         "https://github.com/subunit-ai/subunit-scai/pull/418",
         "https://github.com/subunit-ai/subunit-auth/pull/12",
+        "https://github.com/subunit-ai/subunit-auth/actions/runs/32789577520",
         "https://github.com/subunit-ai/u1-chat/pull/19",
-        "https://github.com/subunit-ai/echo/pull/23"
+        "https://github.com/subunit-ai/echo/pull/23",
+        "https://github.com/subunit-ai/echo/actions/runs/32789577439"
       ],
       "acceptance": "Qualifizierter Legal/DPO-Owner und unabhängiger Judge genehmigen Datenflüsse, AVV/TOMs, DPIA und Use-Case-Grenzen"
     },
@@ -230,7 +232,7 @@
       "id": "merge-and-ci",
       "owner": "Subunit Engineering",
       "resolution": "Private-Repo-CI-Billing freigeben oder gleichwertige unveränderliche Remote-CI bereitstellen; u1-chat #18 vor dem darauf gestapelten #19 integrieren; danach Atlas #62, subunit-auth #12 und Echo #23 reviewen, mergen und CI gegen exakt die resultierenden SHAs erfolgreich ausführen",
-      "evidence_required": "Grüne Backend-Remote-CI-Läufe ohne Billing-Abbruch, korrekte u1-chat-Integrationskette und tatsächliche Backend-Merge-SHAs; lokale Zusatzbelege: u1-chat 470/470 dreimal, Atlas A6 81/81 plus TypeScript, subunit-auth 105/105 und Echo 77/77 grün"
+      "evidence_required": "Grüne Backend-Remote-CI-Läufe ohne Billing-Abbruch, korrekte u1-chat-Integrationskette und tatsächliche Backend-Merge-SHAs; Auth Run 32789577520 und Echo Run 32789577439 sind bereits exakt an die neuen Heads gebunden, wurden aber mit 0 Steps nur vom Billing-Gate abgewiesen; lokale Zusatzbelege: u1-chat 470/470 dreimal, Atlas A6 81/81 plus TypeScript, subunit-auth 105/105 und Echo 77/77 grün"
     },
     {
       "id": "artifacts-and-operations",
