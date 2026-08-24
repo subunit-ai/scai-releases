@@ -20,16 +20,21 @@ on:
   workflow_dispatch:
     inputs:
       ref:
-        description: "Ref im Quell-Repo (Tag, Branch oder SHA)"
+        description: "Menschenlesbarer Quell-Ref für die Release-Evidenz"
         required: true
         default: "main"
+      source_sha:
+        description: "Unveränderlicher vollständiger SHA im privaten Quell-Repo"
+        required: true
       prerelease:
         description: "Als Vorab-Version markieren"
         type: boolean
         default: false
 
 permissions:
-  contents: write # Release anlegen + Assets hochladen (in DIESEM Repo)
+  contents: write # Draft-Release anlegen + Assets erst nach allen Gates veröffentlichen
+  id-token: write # kurzlebige Sigstore-Identität für GitHub Artifact Attestations
+  attestations: write
 
 jobs:
   # RELEASE EINMAL ANLEGEN — vor der Matrix, gegen das Anlege-Rennen.
@@ -49,22 +54,35 @@ jobs:
     runs-on: ubuntu-22.04
     outputs:
       tag: ${{ steps.ermitteln.outputs.tag }}
+      source_sha: ${{ steps.ermitteln.outputs.source_sha }}
     steps:
       - name: Version aus dem Quell-Repo lesen
         id: ermitteln
         shell: bash
         env:
-          SRC_REF: ${{ inputs.ref }}
+          SOURCE_SHA: ${{ inputs.source_sha }}
           DEPLOY_KEY: ${{ secrets.SOURCE_DEPLOY_KEY }}
         run: |
           set -euo pipefail
+          if ! printf '%s' "$SOURCE_SHA" | grep -Eq '^[0-9a-f]{40}$'; then
+            echo "::error::source_sha muss ein vollständiger kleingeschriebener 40-Zeichen-Git-SHA sein."
+            exit 1
+          fi
           mkdir -p "$HOME/.ssh"
           printf '%s\n' "$DEPLOY_KEY" > "$HOME/.ssh/scai_src"
           chmod 600 "$HOME/.ssh/scai_src"
           ssh-keyscan -t ed25519,rsa github.com >> "$HOME/.ssh/known_hosts" 2>/dev/null
           export GIT_SSH_COMMAND="ssh -i $HOME/.ssh/scai_src -o IdentitiesOnly=yes"
-          git clone --depth 1 --branch "$SRC_REF" git@github.com:subunit-ai/subunit-scai.git src
+          git init src
+          git -C src remote add origin git@github.com:subunit-ai/subunit-scai.git
+          git -C src fetch --depth 1 origin "$SOURCE_SHA"
+          git -C src checkout --detach FETCH_HEAD
           rm -f "$HOME/.ssh/scai_src"
+          ACTUAL_SHA=$(git -C src rev-parse HEAD)
+          if [ "$ACTUAL_SHA" != "$SOURCE_SHA" ]; then
+            echo "::error::Checkout-Drift: erwartet $SOURCE_SHA, erhalten $ACTUAL_SHA"
+            exit 1
+          fi
           # Dieselbe Quelle, aus der tauri-action `v__VERSION__` auflöst.
           VERSION=$(node -p "require('./src/src-tauri/tauri.conf.json').version")
           # Format erzwingen, bevor der Wert in einen Befehl wandert: der String kommt
@@ -75,7 +93,8 @@ jobs:
             exit 1
           fi
           echo "tag=v${VERSION}" >> "$GITHUB_OUTPUT"
-          echo "Version aus tauri.conf.json: v${VERSION}"
+          echo "source_sha=${ACTUAL_SHA}" >> "$GITHUB_OUTPUT"
+          echo "Version aus tauri.conf.json: v${VERSION}; Source-Pin: ${ACTUAL_SHA}"
 
       - name: Release sicherstellen (idempotent)
         shell: bash
@@ -84,10 +103,22 @@ jobs:
           REPO: ${{ github.repository }}
           TAG: ${{ steps.ermitteln.outputs.tag }}
           PRERELEASE: ${{ inputs.prerelease }}
+          SOURCE_SHA: ${{ steps.ermitteln.outputs.source_sha }}
+          SOURCE_REF: ${{ inputs.ref }}
         run: |
           set -euo pipefail
           if gh release view "$TAG" -R "$REPO" >/dev/null 2>&1; then
-            echo "Release $TAG existiert bereits — nichts zu tun (Re-Run oder Nachbau)."
+            IS_DRAFT=$(gh release view "$TAG" -R "$REPO" --json isDraft --jq .isDraft)
+            BODY=$(gh release view "$TAG" -R "$REPO" --json body --jq .body)
+            if [ "$IS_DRAFT" != "true" ]; then
+              echo "::error::Release $TAG ist bereits veröffentlicht — Assets werden niemals überschrieben."
+              exit 1
+            fi
+            if ! printf '%s' "$BODY" | grep -Fq "Source-SHA: $SOURCE_SHA"; then
+              echo "::error::Draft $TAG gehört nicht zum angeforderten Source-SHA $SOURCE_SHA."
+              exit 1
+            fi
+            echo "Passender Draft $TAG existiert — sicherer idempotenter Re-Run."
             exit 0
           fi
           FLAGS=()
@@ -96,12 +127,16 @@ jobs:
           # beim Anlegen auf dem Default-Branch-HEAD dieses Repos an — genau das tut
           # tauri-action auch, wir nehmen ihm nur das Rennen ab.
           gh release create "$TAG" -R "$REPO" \
+            --draft \
             --title "SCAI $TAG" \
             --notes "SCAI $TAG — Installer für macOS (Apple Silicon & Intel), Windows (x64 & ARM64) und Linux.
 
-          Auto-Update ist für alle Plattformen verdrahtet (\`latest.json\`)." \
+          Source-Ref: $SOURCE_REF
+          Source-SHA: $SOURCE_SHA
+
+          Auto-Update ist für alle Plattformen verdrahtet (\`latest.json\`). Der Draft wird erst nach Build-, Signatur-, SBOM- und Provenance-Verifikation veröffentlicht." \
             "${FLAGS[@]}"
-          echo "Release $TAG angelegt — die Matrix-Jobs finden es jetzt vor."
+          echo "Draft $TAG angelegt — öffentlich wird er erst nach allen Gates."
 
   build:
     name: ${{ matrix.label }}
@@ -115,6 +150,7 @@ jobs:
             target: aarch64-apple-darwin
             bundles: app,dmg
             meet_features: --features local-meet
+            signing_args: ""
           - label: macOS (Intel)
             os: macos-latest
             target: x86_64-apple-darwin
@@ -123,18 +159,21 @@ jobs:
             # The stable IPC remains present and reports built=false; cloud Meet,
             # library, Atlas and legacy-protocol import remain fully available.
             meet_features: ""
+            signing_args: ""
           - label: Windows (x64)
             os: windows-latest
             target: x86_64-pc-windows-msvc
             bundles: nsis
             meet_features: --features local-meet
             openssl_triplet: x64-windows-static-md
+            signing_args: --config src-tauri/tauri.windows-signing.json
           - label: Windows (ARM64)
             os: windows-11-arm
             target: aarch64-pc-windows-msvc
             bundles: nsis
             meet_features: --features local-meet
             openssl_triplet: arm64-windows-static-md
+            signing_args: --config src-tauri/tauri.windows-signing.json
           - label: Linux (x64)
             os: ubuntu-22.04
             target: x86_64-unknown-linux-gnu
@@ -143,6 +182,7 @@ jobs:
             # while the compatibility release runner is Ubuntu 22.04/glibc 2.35.
             # Keep the portable package; the local-native gate reports built=false.
             meet_features: ""
+            signing_args: ""
     runs-on: ${{ matrix.os }}
 
     steps:
@@ -154,18 +194,30 @@ jobs:
       - name: Quellcode auschecken (privates Repo, read-only Deploy-Key)
         shell: bash
         env:
-          SRC_REF: ${{ inputs.ref }}
+          SOURCE_SHA: ${{ needs.release.outputs.source_sha }}
           DEPLOY_KEY: ${{ secrets.SOURCE_DEPLOY_KEY }}
         run: |
           set -euo pipefail
+          if ! printf '%s' "$SOURCE_SHA" | grep -Eq '^[0-9a-f]{40}$'; then
+            echo "::error::Ungültiger Source-SHA: $SOURCE_SHA"
+            exit 1
+          fi
           mkdir -p "$HOME/.ssh"
           printf '%s\n' "$DEPLOY_KEY" > "$HOME/.ssh/scai_src"
           chmod 600 "$HOME/.ssh/scai_src"
           ssh-keyscan -t ed25519,rsa github.com >> "$HOME/.ssh/known_hosts" 2>/dev/null
           export GIT_SSH_COMMAND="ssh -i $HOME/.ssh/scai_src -o IdentitiesOnly=yes"
-          git clone --depth 1 --branch "$SRC_REF" git@github.com:subunit-ai/subunit-scai.git src
+          git init src
+          git -C src remote add origin git@github.com:subunit-ai/subunit-scai.git
+          git -C src fetch --depth 1 origin "$SOURCE_SHA"
+          git -C src checkout --detach FETCH_HEAD
           rm -f "$HOME/.ssh/scai_src"
-          echo "ausgecheckt: $SRC_REF → $(git -C src rev-parse --short HEAD)"
+          ACTUAL_SHA=$(git -C src rev-parse HEAD)
+          if [ "$ACTUAL_SHA" != "$SOURCE_SHA" ]; then
+            echo "::error::Checkout-Drift: erwartet $SOURCE_SHA, erhalten $ACTUAL_SHA"
+            exit 1
+          fi
+          echo "ausgecheckt: $ACTUAL_SHA"
 
       - name: Privaten Trace-Kern für Cargo freischalten (read-only)
         shell: bash
@@ -193,19 +245,19 @@ jobs:
           echo "CARGO_NET_GIT_FETCH_WITH_CLI=true" >> "$GITHUB_ENV"
 
       - name: Node einrichten
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4, immutable pin
         with:
           node-version: 22
           cache: npm
           cache-dependency-path: src/package-lock.json
 
       - name: Rust einrichten (Ziel ${{ matrix.target }})
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@4360b52568e2003a75bf9bc1d59f33a8e3fc893c # stable, immutable pin
         with:
           targets: ${{ matrix.target }}
 
       - name: Rust-Cache
-        uses: swatinem/rust-cache@v2
+        uses: swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2, immutable pin
         with:
           workspaces: src/src-tauri -> target
           key: ${{ matrix.target }}
@@ -246,6 +298,47 @@ jobs:
         working-directory: src
         run: npm ci
 
+      - name: Windows-Code-Signing vorbereiten (OV/EV-Zertifikat + RFC-3161-Zeitstempel)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        env:
+          WINDOWS_CERTIFICATE: ${{ secrets.WINDOWS_CERTIFICATE }}
+          WINDOWS_CERTIFICATE_PASSWORD: ${{ secrets.WINDOWS_CERTIFICATE_PASSWORD }}
+          WINDOWS_CERTIFICATE_SUBJECT: ${{ secrets.WINDOWS_CERTIFICATE_SUBJECT }}
+        run: |
+          $ErrorActionPreference = "Stop"
+          if ([string]::IsNullOrWhiteSpace($env:WINDOWS_CERTIFICATE) -or
+              [string]::IsNullOrWhiteSpace($env:WINDOWS_CERTIFICATE_PASSWORD) -or
+              [string]::IsNullOrWhiteSpace($env:WINDOWS_CERTIFICATE_SUBJECT)) {
+            throw "Windows-Code-Signing-Secrets fehlen — kein unsignierter Enterprise-Installer."
+          }
+
+          $pfxPath = Join-Path $env:RUNNER_TEMP "scai-windows-sign.pfx"
+          try {
+            [IO.File]::WriteAllBytes($pfxPath, [Convert]::FromBase64String($env:WINDOWS_CERTIFICATE))
+            $password = ConvertTo-SecureString $env:WINDOWS_CERTIFICATE_PASSWORD -AsPlainText -Force
+            $cert = Import-PfxCertificate -FilePath $pfxPath -CertStoreLocation Cert:\CurrentUser\My -Password $password
+          } finally {
+            Remove-Item $pfxPath -Force -ErrorAction SilentlyContinue
+          }
+          if ($null -eq $cert -or -not $cert.HasPrivateKey) { throw "Importiertes Windows-Zertifikat hat keinen privaten Schlüssel." }
+          if ($cert.Subject -notlike "*$env:WINDOWS_CERTIFICATE_SUBJECT*") {
+            throw "Windows-Signer stimmt nicht mit WINDOWS_CERTIFICATE_SUBJECT überein."
+          }
+
+          $config = @{
+            bundle = @{
+              windows = @{
+                certificateThumbprint = $cert.Thumbprint
+                digestAlgorithm = "sha256"
+                timestampUrl = "http://timestamp.digicert.com"
+                tsp = $true
+              }
+            }
+          }
+          $config | ConvertTo-Json -Depth 5 | Set-Content -Encoding utf8NoBOM "src/src-tauri/tauri.windows-signing.json"
+          "WINDOWS_SIGNER_THUMBPRINT=$($cert.Thumbprint)" >> $env:GITHUB_ENV
+
       # macOS-CODESIGNATUR — der Grund, warum erteilte Berechtigungen ein Update überleben.
       #
       # Ohne diesen Schritt signiert Tauri ad-hoc ("-" aus tauri.conf.json). Eine ad-hoc-
@@ -261,12 +354,10 @@ jobs:
       # Bundle-ID und Leaf-Zert sind über alle Builds identisch → die Grants halten.
       # Belegt an echo.app, das exakt so signiert wird und seine Grants behält.
       #
-      # Warum die Keychain-Arbeit hier und nicht via tauri-action: das Zert ist SELBST-
-      # SIGNIERT, und codesign verweigert eine untrusted Identity (CSSMERR_TP_NOT_TRUSTED).
-      # tauri-action importiert ein APPLE_CERTIFICATE zwar, VERTRAUT ihm aber nie —
-      # deshalb machen wir Import + add-trusted-cert selbst und geben tauri-action
-      # bewusst NUR die Identity (kein APPLE_CERTIFICATE, sonst re-importiert es untrusted).
-      - name: macOS-Signatur vorbereiten (stabiles Zert — hält TCC-Grants über Updates)
+      # Wir importieren das Developer-ID-Zertifikat bewusst einmal selbst und geben
+      # tauri-action nur die Identität. Die Apple-Zertifikatskette muss regulär gültig
+      # sein; selbstsignierte Roots werden nicht mehr als Release-Pfad akzeptiert.
+      - name: macOS-Signatur und Notarisierung vorbereiten (Developer ID)
         if: runner.os == 'macOS'
         env:
           APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
@@ -275,27 +366,22 @@ jobs:
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
-          # Der Tag, auf dem gebaut wird — entscheidet über fail-closed (siehe unten).
-          REF: ${{ inputs.ref }}
         run: |
           set -euo pipefail
           if [ -z "${APPLE_CERTIFICATE:-}" ] || [ -z "${APPLE_SIGNING_IDENTITY:-}" ]; then
-            # FAIL-CLOSED bei echten Releases. Ein durchgewunkener ad-hoc-Build sieht in
-            # der CI genauso grün aus wie ein signierter — nur dass er bei JEDEM Kunden
-            # sämtliche macOS-Berechtigungen killt, still und unbemerkt. Genau dieser
-            # stille Pfad hat uns das Problem eingebrockt. Für einen Version-Tag ist ein
-            # fehlendes Zertifikat deshalb ein ABBRUCH, kein Achselzucken.
-            case "${REF:-}" in
-              v[0-9]*)
-                echo "::error::Release $REF ohne Code-Signing-Zertifikat — Abbruch."
-                echo "APPLE_CERTIFICATE / APPLE_SIGNING_IDENTITY fehlen in den Repo-Secrets."
-                echo "Ad-hoc signiert = Designated Requirement ist ein cdhash-Pin = jeder"
-                echo "Kunde muss nach dem Update alle Berechtigungen neu erteilen."
-                exit 1
-                ;;
-            esac
-            echo "kein Zert konfiguriert — Testbuild bleibt ad-hoc"
-            exit 0
+            echo "::error::APPLE_CERTIFICATE / APPLE_SIGNING_IDENTITY fehlen — kein ad-hoc Release."
+            exit 1
+          fi
+          case "$APPLE_SIGNING_IDENTITY" in
+            "Developer ID Application:"*) ;;
+            *)
+              echo "::error::Marktreife macOS-Artefakte brauchen eine Developer-ID-Application-Identität."
+              exit 1
+              ;;
+          esac
+          if [ -z "${APPLE_ID:-}" ] || [ -z "${APPLE_PASSWORD:-}" ] || [ -z "${APPLE_TEAM_ID:-}" ]; then
+            echo "::error::Notarisierungs-Zugangsdaten fehlen — kein nicht-notarisierter Release."
+            exit 1
           fi
 
           echo "$APPLE_CERTIFICATE" | base64 -d > /tmp/scai-sign.p12
@@ -307,16 +393,6 @@ jobs:
             -P "${APPLE_CERTIFICATE_PASSWORD:-}" -T /usr/bin/codesign
           security set-key-partition-list -S apple-tool:,apple:,codesign: \
             -s -k ci build.keychain > /dev/null
-          # Der Vertrauens-Schritt, den tauri-action nicht macht. Seit dem Umstieg auf
-          # das Apple-Development-Zert (2026-07-19, Team Y23NYAZM6M — bringt teamid:-
-          # Partition = Schlüsselbund-Freigaben überleben Updates) validiert die Kette
-          # über das im p12 mitgelieferte WWDR-G3-Zwischenzert + Apple-Root des Runners
-          # von selbst; der trustRoot-Pin ist nur noch der Fallback für ein etwaiges
-          # self-signed Zert und darf den Build deshalb NIE mehr abbrechen.
-          security find-certificate -c "$APPLE_SIGNING_IDENTITY" -p build.keychain > /tmp/scai-sign.pem
-          sudo security add-trusted-cert -d -r trustRoot -p codeSign \
-            -k /Library/Keychains/System.keychain /tmp/scai-sign.pem \
-            || echo "trustRoot-Pin übersprungen (Apple-gekettetes Zert braucht ihn nicht)"
           rm /tmp/scai-sign.p12
           echo "gültige Codesigning-Identitäten:"
           security find-identity -v -p codesigning build.keychain
@@ -328,25 +404,16 @@ jobs:
           # eindeutig, "leer" nicht — deshalb setzen wir sie nur, wenn wirklich was da ist.
           echo "APPLE_SIGNING_IDENTITY=$APPLE_SIGNING_IDENTITY" >> "$GITHUB_ENV"
 
-          # NOTARISIERUNG (später, mit Developer ID): Tauri notarisiert automatisch,
-          # sobald APPLE_ID + APPLE_PASSWORD + APPLE_TEAM_ID gesetzt sind. Beim
-          # selbstsignierten Zert gibt es die nicht → wir reichen sie nicht durch, es
-          # gibt keinen Notarisierungs-Versuch, der Build bleibt un-notarisiert
-          # (Gatekeeper: beim ersten Start Rechtsklick → Öffnen).
-          # Der Umstieg auf Developer ID ist damit ein reiner SECRET-TAUSCH — kein Code.
-          if [ -n "${APPLE_ID:-}" ] && [ -n "${APPLE_PASSWORD:-}" ] && [ -n "${APPLE_TEAM_ID:-}" ]; then
-            echo "Developer-ID-Zugangsdaten vorhanden — Notarisierung wird angefordert"
-            {
-              echo "APPLE_ID=$APPLE_ID"
-              echo "APPLE_PASSWORD=$APPLE_PASSWORD"
-              echo "APPLE_TEAM_ID=$APPLE_TEAM_ID"
-            } >> "$GITHUB_ENV"
-          else
-            echo "keine Notarisierungs-Zugangsdaten — Build bleibt un-notarisiert"
-          fi
+          # Tauri notarisiert automatisch, sobald diese drei Variablen gesetzt sind.
+          # Sie sind oben fail-closed geprüft; ein Release ohne Notarisierung existiert nicht.
+          {
+            echo "APPLE_ID=$APPLE_ID"
+            echo "APPLE_PASSWORD=$APPLE_PASSWORD"
+            echo "APPLE_TEAM_ID=$APPLE_TEAM_ID"
+          } >> "$GITHUB_ENV"
 
       - name: Bauen · signieren · Release-Assets hochladen
-        uses: tauri-apps/tauri-action@v0
+        uses: tauri-apps/tauri-action@84b9d35b5fc46c1e45415bdb6144030364f7ebc5 # v0, immutable
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           # Updater-Signatur (minisign, derselbe Key wie beim lokalen Mac-Release) —
@@ -367,7 +434,7 @@ jobs:
             SCAI v__VERSION__ — Installer für macOS (Apple Silicon & Intel), Windows (x64 & ARM64) und Linux.
 
             Auto-Update ist für alle Plattformen verdrahtet (`latest.json`).
-          releaseDraft: false
+          releaseDraft: true
           prerelease: ${{ inputs.prerelease }}
           # Merged die Plattform-Einträge aller Matrix-Jobs in EIN latest.json
           # → der Updater bedient damit jede Plattform.
@@ -376,7 +443,7 @@ jobs:
           # Apple Silicon + beide Windows-Architekturen liefern sie aus. Targets,
           # fuer die ort keine kompatible Runtime liefert, behalten dieselbe stabile
           # IPC und melden der UI ehrlich built=false; Cloud-Meet/Bibliothek bleiben.
-          args: --target ${{ matrix.target }} --bundles ${{ matrix.bundles }} ${{ matrix.meet_features }}
+          args: --target ${{ matrix.target }} --bundles ${{ matrix.bundles }} ${{ matrix.meet_features }} ${{ matrix.signing_args }}
 
       # BEWEIS STATT BEHAUPTUNG. Der Keychain-Schritt oben kann grün sein und die App
       # trotzdem ad-hoc signiert rauskommen (falsche Identity, Tauri ignoriert die env,
@@ -416,7 +483,97 @@ jobs:
             echo "::error::Designated Requirement enthält keine Zertifikats-Bindung."
             exit 1
           fi
-          echo "OK — Signatur ist zertifikatsgebunden, TCC-Grants überleben Updates."
+          codesign --verify --deep --strict --verbose=2 "$APP"
+          spctl --assess --type execute --verbose=4 "$APP"
+          DMG=$(find "src/src-tauri/target/$TARGET/release/bundle/dmg" -maxdepth 1 -name '*.dmg' | head -1)
+          if [ -z "$DMG" ]; then
+            echo "::error::Kein DMG für Notarisierungs-Verifikation gefunden."
+            exit 1
+          fi
+          xcrun stapler validate "$DMG"
+          SIGNER=$(sed -n 's/^Authority=//p' /tmp/sig.txt | head -1)
+          if [ -z "$SIGNER" ]; then
+            echo "::error::Code-Signer konnte nicht ausgelesen werden."
+            exit 1
+          fi
+          EVIDENCE="$RUNNER_TEMP/signing-evidence-$TARGET.json"
+          python3 - "$EVIDENCE" "$TARGET" "$SIGNER" "$APP" "$DMG" <<'PY'
+          import hashlib, json, os, sys
+          output, target, signer, app, dmg = sys.argv[1:]
+          def sha256(path):
+              digest = hashlib.sha256()
+              with open(path, "rb") as handle:
+                  for block in iter(lambda: handle.read(1024 * 1024), b""):
+                      digest.update(block)
+              return digest.hexdigest()
+          json.dump({
+              "schema_version": "1.0",
+              "platform": target,
+              "status": "pass",
+              "signer": signer,
+              "app_path": os.path.basename(app),
+              "dmg": os.path.basename(dmg),
+              "dmg_sha256": sha256(dmg),
+              "codesign_verified": True,
+              "gatekeeper_verified": True,
+              "notarization_staple_verified": True,
+          }, open(output, "w"), indent=2)
+          PY
+          echo "OK — Developer-ID-Signatur und Notarisierung sind verifiziert."
+
+      - name: Windows-Authenticode-Signatur und Zeitstempel VERIFIZIEREN
+        if: runner.os == 'Windows'
+        shell: pwsh
+        env:
+          TARGET: ${{ matrix.target }}
+        run: |
+          $ErrorActionPreference = "Stop"
+          $releaseRoot = "src/src-tauri/target/$env:TARGET/release"
+          $files = @(
+            Get-ChildItem -Path $releaseRoot -Filter "*.exe" -File -ErrorAction SilentlyContinue
+            Get-ChildItem -Path "$releaseRoot/bundle/nsis" -Filter "*.exe" -File -ErrorAction SilentlyContinue
+          ) | Sort-Object FullName -Unique
+          if ($files.Count -lt 2) { throw "Anwendung und NSIS-Installer wurden nicht beide gefunden." }
+
+          $evidence = @()
+          foreach ($file in $files) {
+            $signature = Get-AuthenticodeSignature -FilePath $file.FullName
+            if ($signature.Status -ne "Valid") { throw "Ungültige Authenticode-Signatur: $($file.Name) / $($signature.Status)" }
+            if ($null -eq $signature.TimeStamperCertificate) { throw "RFC-3161-Zeitstempel fehlt: $($file.Name)" }
+            if ($signature.SignerCertificate.Thumbprint -ne $env:WINDOWS_SIGNER_THUMBPRINT) {
+              throw "Signer-Drift bei $($file.Name)"
+            }
+            $evidence += @{
+              file = $file.Name
+              sha256 = (Get-FileHash -Algorithm SHA256 -Path $file.FullName).Hash.ToLowerInvariant()
+              signer = $signature.SignerCertificate.Subject
+              signer_thumbprint = $signature.SignerCertificate.Thumbprint
+              timestamp_signer = $signature.TimeStamperCertificate.Subject
+              status = "pass"
+            }
+          }
+          @{
+            schema_version = "1.0"
+            platform = $env:TARGET
+            status = "pass"
+            authenticode_verified = $true
+            timestamp_verified = $true
+            files = $evidence
+          } | ConvertTo-Json -Depth 6 | Set-Content -Encoding utf8NoBOM "$env:RUNNER_TEMP/signing-evidence-$env:TARGET.json"
+
+      - name: Plattform-Signaturbeleg am Draft sichern
+        if: runner.os == 'macOS' || runner.os == 'Windows'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          TAG: ${{ needs.release.outputs.tag }}
+          TARGET: ${{ matrix.target }}
+        run: |
+          set -euo pipefail
+          EVIDENCE="$RUNNER_TEMP/signing-evidence-$TARGET.json"
+          test -s "$EVIDENCE"
+          gh release upload "$TAG" "$EVIDENCE" -R "$REPO" --clobber
 
   # latest.json FINALISIEREN — Schutz gegen das Merge-Race der tauri-action.
   # includeUpdaterJson merged per Download→Ergänzen→Upload; enden zwei Matrix-Jobs
@@ -426,31 +583,104 @@ jobs:
   # die platforms-Map deterministisch aus den .sig-Assets (Ground-Truth im Release).
   # Idempotent: ein bereits vollständiges Manifest wird unverändert bestätigt.
   manifest:
-    name: latest.json finalisieren
-    needs: build
-    if: always()
+    name: Signaturen, SBOM, Provenance und Veröffentlichung
+    needs: [release, build]
+    if: ${{ always() && needs.release.result == 'success' && needs.build.result == 'success' }}
     runs-on: ubuntu-22.04
     steps:
-      - name: Manifest aus .sig-Assets rekonstruieren
+      - name: Release-Evidence-Werkzeuge auschecken
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2, immutable
+
+      - name: Exakten Quell-Pin für SBOM auschecken
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          SRC_REF: ${{ inputs.ref }}
-          REPO: ${{ github.repository }}
+          SOURCE_SHA: ${{ needs.release.outputs.source_sha }}
+          DEPLOY_KEY: ${{ secrets.SOURCE_DEPLOY_KEY }}
         run: |
           set -euo pipefail
-          # Tag bestimmen: dispatch-ref wenn es wie ein Versions-Tag aussieht,
-          # sonst das jüngste Release (ref=main-Fall).
-          if [[ "$SRC_REF" =~ ^v[0-9] ]]; then TAG="$SRC_REF"; else
-            TAG=$(gh release list -R "$REPO" --limit 1 --json tagName --jq '.[0].tagName')
+          test "${#SOURCE_SHA}" -eq 40
+          mkdir -p "$HOME/.ssh"
+          printf '%s\n' "$DEPLOY_KEY" > "$HOME/.ssh/scai_src"
+          chmod 600 "$HOME/.ssh/scai_src"
+          trap 'rm -f "$HOME/.ssh/scai_src"' EXIT
+          ssh-keyscan -t ed25519,rsa github.com >> "$HOME/.ssh/known_hosts" 2>/dev/null
+          export GIT_SSH_COMMAND="ssh -i $HOME/.ssh/scai_src -o IdentitiesOnly=yes"
+          git init src
+          git -C src remote add origin git@github.com:subunit-ai/subunit-scai.git
+          git -C src fetch --depth 1 origin "$SOURCE_SHA"
+          git -C src checkout --detach FETCH_HEAD
+          test "$(git -C src rev-parse HEAD)" = "$SOURCE_SHA"
+
+      - name: Privaten Trace-Kern für Rust-SBOM freischalten (read-only)
+        env:
+          TRACE_DEPLOY_KEY: ${{ secrets.TRACE_SOURCE_DEPLOY_KEY }}
+        run: |
+          set -euo pipefail
+          test -n "${TRACE_DEPLOY_KEY:-}"
+          printf '%s\n' "$TRACE_DEPLOY_KEY" > "$HOME/.ssh/trace_src"
+          chmod 600 "$HOME/.ssh/trace_src"
+          cat >> "$HOME/.ssh/config" <<'EOF'
+          Host github-trace
+            HostName github.com
+            User git
+            IdentityFile ~/.ssh/trace_src
+            IdentitiesOnly yes
+          EOF
+          chmod 600 "$HOME/.ssh/config"
+          git config --global url."git@github-trace:subunit-ai/trace-tauri.git".insteadOf \
+            "https://github.com/subunit-ai/trace-tauri.git"
+          echo "CARGO_NET_GIT_FETCH_WITH_CLI=true" >> "$GITHUB_ENV"
+
+      - name: Rust für reproduzierbare CycloneDX-SBOM einrichten
+        uses: dtolnay/rust-toolchain@4360b52568e2003a75bf9bc1d59f33a8e3fc893c # stable, immutable pin
+
+      - name: Vollständige Node- und Rust-SBOM erzeugen und zusammenführen
+        env:
+          SOURCE_SHA: ${{ needs.release.outputs.source_sha }}
+        run: |
+          set -euo pipefail
+          VERSION=$(node -p "require('./src/src-tauri/tauri.conf.json').version")
+          SOURCE_DATE_EPOCH=$(git -C src show -s --format=%ct HEAD)
+          TIMESTAMP=$(python3 - "$SOURCE_DATE_EPOCH" <<'PY'
+          import datetime, sys
+          print(datetime.datetime.fromtimestamp(int(sys.argv[1]), datetime.timezone.utc).isoformat().replace("+00:00", "Z"))
+          PY
+          )
+          npm exec --yes --package=@cyclonedx/cyclonedx-npm@6.0.1 -- \
+            cyclonedx-npm --package-lock-only --omit dev --spec-version 1.5 \
+            --output-reproducible --validate --output-file "$RUNNER_TEMP/scai-node.cdx.json" \
+            src/package.json
+          cargo install cargo-cyclonedx --version 0.5.9 --locked
+          SOURCE_DATE_EPOCH="$SOURCE_DATE_EPOCH" cargo cyclonedx \
+            --manifest-path src/src-tauri/Cargo.toml --format json --spec-version 1.5 \
+            --all --override-filename scai-rust.cdx
+          RUST_SBOM=$(find src/src-tauri -maxdepth 1 -name 'scai-rust.cdx*.json' -print -quit)
+          test -s "$RUST_SBOM"
+          node scripts/merge-cyclonedx.mjs \
+            "$RUNNER_TEMP/scai-node.cdx.json" "$RUST_SBOM" "$RUNNER_TEMP/scai.cdx.json" \
+            scai "$VERSION" "$SOURCE_SHA" "$TIMESTAMP"
+          jq -e '.bomFormat == "CycloneDX" and .specVersion == "1.5" and (.components | length > 0)' \
+            "$RUNNER_TEMP/scai.cdx.json" >/dev/null
+
+      - name: Draft-Assets laden, Update-Signaturen verifizieren und latest.json finalisieren
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          TAG: ${{ needs.release.outputs.tag }}
+          SOURCE_SHA: ${{ needs.release.outputs.source_sha }}
+        run: |
+          set -euo pipefail
+          IS_DRAFT=$(gh release view "$TAG" -R "$REPO" --json isDraft --jq .isDraft)
+          BODY=$(gh release view "$TAG" -R "$REPO" --json body --jq .body)
+          if [ "$IS_DRAFT" != "true" ] || ! printf '%s' "$BODY" | grep -Fq "Source-SHA: $SOURCE_SHA"; then
+            echo "::error::$TAG ist kein zum Source-Pin gehörender Draft."
+            exit 1
           fi
-          if ! gh release view "$TAG" -R "$REPO" >/dev/null 2>&1; then
-            echo "::warning::Kein Release $TAG — nichts zu finalisieren (alle Builds rot?)."
-            exit 0
-          fi
-          echo "Finalisiere latest.json für $TAG"
-          mkdir -p /tmp/sigs && cd /tmp/sigs
-          gh release download "$TAG" -R "$REPO" --pattern '*.sig' || true
-          gh release download "$TAG" -R "$REPO" --pattern 'latest.json' --output existing.json || true
+          ASSET_DIR="$RUNNER_TEMP/scai-release-$TAG"
+          mkdir -p "$ASSET_DIR"
+          gh release download "$TAG" -R "$REPO" --dir "$ASSET_DIR" --clobber
+          cd "$ASSET_DIR"
+          cp "$RUNNER_TEMP/scai.cdx.json" scai.cdx.json
+          [ -f latest.json ] && cp latest.json existing.json || true
           python3 - "$TAG" "$REPO" <<'PY'
           import json, os, sys, datetime
           tag, repo = sys.argv[1], sys.argv[2]
@@ -503,16 +733,84 @@ jobs:
               print(f"::error::Updater-Ziele zeigen auf die falsche Architektur: {wrong}")
               raise SystemExit(1)
           print("Geräteauswahl belegt: macOS ARM/Intel + Windows ARM64/x64 + Linux x64 vollständig.")
-          if existing.get("platforms") == platforms and existing.get("version") == manifest["version"]:
-              print("Manifest bereits vollständig und identisch — kein Upload nötig.")
-              open("SKIP_UPLOAD", "w").close()
-          else:
-              json.dump(manifest, open("latest.json", "w"), indent=2)
-              print(f"Neu geschrieben: {len(platforms)} Plattform-Keys.")
+          json.dump(manifest, open("latest.json", "w"), indent=2)
+          print(f"Deterministisch geschrieben: {len(platforms)} Plattform-Keys.")
           PY
-          if [ ! -f SKIP_UPLOAD ]; then
-            gh release upload "$TAG" latest.json -R "$REPO" --clobber
-            echo "latest.json hochgeladen."
+
+          node - "$GITHUB_WORKSPACE/src/src-tauri/tauri.conf.json" > updater.pub <<'NODE'
+          const config = require(process.argv[2]);
+          process.stdout.write(Buffer.from(config.plugins.updater.pubkey, "base64").toString("utf8"));
+          NODE
+          sudo apt-get update
+          sudo apt-get install -y minisign
+          SIG_COUNT=0
+          while IFS= read -r -d '' signature; do
+            artifact="${signature%.sig}"
+            test -s "$artifact"
+            minisign -Vm "$artifact" -x "$signature" -p updater.pub
+            SIG_COUNT=$((SIG_COUNT + 1))
+          done < <(find . -maxdepth 1 -type f -name '*.sig' -print0)
+          if [ "$SIG_COUNT" -lt 6 ]; then
+            echo "::error::Nur $SIG_COUNT Updater-Signaturen gefunden; erwartet werden mindestens 6."
+            exit 1
           fi
-          # Beweis über die API (CDN kann Sekunden nachhängen): Asset muss existieren.
-          gh release view "$TAG" -R "$REPO" --json assets --jq '.assets[] | select(.name=="latest.json") | "latest.json \(.size) bytes"'
+          for target in aarch64-apple-darwin x86_64-apple-darwin aarch64-pc-windows-msvc x86_64-pc-windows-msvc; do
+            jq -e --arg target "$target" '.status == "pass" and .platform == $target' \
+              "signing-evidence-$target.json" >/dev/null
+          done
+
+          rm -f existing.json updater.pub
+          find . -maxdepth 1 -type f ! -name SHA256SUMS -print0 \
+            | sort -z | xargs -0 sha256sum | sed 's#  \./#  #' > SHA256SUMS
+          test -s SHA256SUMS
+          gh release upload "$TAG" latest.json scai.cdx.json SHA256SUMS -R "$REPO" --clobber
+          echo "ASSET_DIR=$ASSET_DIR" >> "$GITHUB_ENV"
+
+      - name: SLSA-Provenance für alle Release-Assets attestieren
+        id: provenance
+        uses: actions/attest@508db95dd578ae2727ebd6217d5ba78e4fbda05d # v4.2.1, immutable
+        with:
+          subject-checksums: ${{ env.ASSET_DIR }}/SHA256SUMS
+
+      - name: CycloneDX-SBOM an alle Release-Assets binden
+        id: sbom
+        uses: actions/attest@508db95dd578ae2727ebd6217d5ba78e4fbda05d # v4.2.1, immutable
+        with:
+          subject-checksums: ${{ env.ASSET_DIR }}/SHA256SUMS
+          sbom-path: ${{ env.ASSET_DIR }}/scai.cdx.json
+
+      - name: Provenance und SBOM unabhängig mit gh verifizieren
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          cd "$ASSET_DIR"
+          while read -r digest artifact; do
+            test "${#digest}" -eq 64
+            gh attestation verify "$artifact" --repo "$REPO" \
+              --source-digest "$GITHUB_SHA" \
+              --signer-workflow "$REPO/.github/workflows/build-all.yml" >/dev/null
+            gh attestation verify "$artifact" --repo "$REPO" \
+              --source-digest "$GITHUB_SHA" \
+              --signer-workflow "$REPO/.github/workflows/build-all.yml" \
+              --predicate-type https://cyclonedx.org/bom >/dev/null
+          done < SHA256SUMS
+
+      - name: Draft erst nach allen Gates veröffentlichen
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          TAG: ${{ needs.release.outputs.tag }}
+          PRERELEASE: ${{ inputs.prerelease }}
+        run: |
+          set -euo pipefail
+          FLAGS=(--draft=false)
+          if [ "$PRERELEASE" = "true" ]; then
+            FLAGS+=(--prerelease)
+          else
+            FLAGS+=(--prerelease=false --latest)
+          fi
+          gh release edit "$TAG" -R "$REPO" "${FLAGS[@]}"
+          gh release view "$TAG" -R "$REPO" --json isDraft,isPrerelease,assets \
+            --jq '{draft:.isDraft, prerelease:.isPrerelease, assets:(.assets|length)}'

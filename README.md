@@ -29,10 +29,13 @@ Die App hält sich danach selbst aktuell (Einstellungen → Updates).
 
 `fleet/manifests/` enthält die unveränderlichen Kandidaten-Pins über alle
 SCAI-Dienste. Ein Manifest darf erst `status: pass` tragen, wenn sowohl A1–A8
-als auch die Marktnachweise R0–R3, Artefakt-Signaturen, SBOM/Provenance,
+als auch die Marktnachweise R0–R3, getrennt verifizierte Updater- und native
+Plattformsignaturen, SBOM-Digests/Provenance,
 Governance-Freigaben und Betriebsdrills maschinell vollständig belegt sind.
 
 ```bash
 node scripts/verify-fleet-manifest.mjs
 node --test scripts/verify-fleet-manifest.test.mjs
+node scripts/verify-release-workflow.mjs
+node --test scripts/verify-release-workflow.test.mjs scripts/merge-cyclonedx.test.mjs
 ```

@@ -26,10 +26,23 @@ const PIN_FIELDS = ["repository", "sha", "branch", "pr_url", "merge_status"];
 const GATE_FIELDS = ["title", "release_pin", "status", "owner", "judge", "evidence", "acceptance"];
 const MARKET_GATE_FIELDS = ["title", "status", "owner", "evidence", "acceptance"];
 const SOURCE_CI_FIELDS = ["status", "sha", "run_url", "checks"];
-const ARTIFACT_FIELDS = ["status", "artifact_url", "sha256", "signature_url", "sbom_url", "provenance_url"];
-const GOVERNANCE_FIELDS = ["status", "legal_owner", "dpo_owner", "independent_judge", "decision", "evidence_url"];
-const OPERATIONS_FIELDS = ["status", "environment", "deployed", "health_verified", "recovery_verified", "rollback_verified", "evidence_url"];
-const APPROVAL_FIELDS = ["name", "evidence_url"];
+const ARTIFACT_FIELDS = [
+  "status",
+  "artifact_url",
+  "sha256",
+  "updater_signature_url",
+  "updater_signature_verified",
+  "code_signature_status",
+  "code_signer",
+  "code_signature_evidence_url",
+  "sbom_url",
+  "sbom_sha256",
+  "provenance_url",
+  "provenance_verified",
+];
+const GOVERNANCE_FIELDS = ["status", "release_pin", "legal_owner", "dpo_owner", "independent_judge", "decision", "evidence_url", "evidence_sha256"];
+const OPERATIONS_FIELDS = ["status", "release_pin", "environment", "operator", "independent_judge", "started_at", "completed_at", "deployed", "health_verified", "recovery_verified", "rollback_verified", "evidence_url", "evidence_sha256"];
+const APPROVAL_FIELDS = ["name", "evidence_url", "evidence_sha256"];
 const BLOCKER_FIELDS = ["id", "owner", "resolution", "evidence_required"];
 const FULL_SHA = /^[0-9a-f]{40}$/;
 const SHA256 = /^[0-9a-f]{64}$/;
@@ -62,7 +75,7 @@ export function validateManifest(manifest, filename = "<memory>") {
 
   require(exactKeys(manifest, ROOT_FIELDS), "root fields must match schema exactly");
   require(manifest.$schema === "../manifest.schema.json", "$schema must pin the repository schema");
-  require(manifest.schema_version === "1.0", "schema_version must equal 1.0");
+  require(manifest.schema_version === "1.1", "schema_version must equal 1.1");
   require(RELEASE_ID.test(manifest.release_id ?? ""), "release_id has an invalid format");
   require(["candidate", "pass", "rejected"].includes(manifest.status), "status must be candidate, pass or rejected");
   require(Number.isFinite(Date.parse(manifest.created_at ?? "")), "created_at must be an ISO date-time");
@@ -124,16 +137,32 @@ export function validateManifest(manifest, filename = "<memory>") {
     const artifact = artifacts.platforms?.[platform] ?? {};
     require(exactKeys(artifact, ARTIFACT_FIELDS), `${platform} fields must match schema exactly`);
     require(["open", "pass", "failed"].includes(artifact.status), `${platform}.status is invalid`);
-    for (const key of ["artifact_url", "signature_url", "sbom_url", "provenance_url"]) {
+    for (const key of ["artifact_url", "updater_signature_url", "code_signature_evidence_url", "sbom_url", "provenance_url"]) {
       require(artifact[key] === "" || HTTPS.test(artifact[key] ?? ""), `${platform}.${key} must be empty or HTTPS`);
     }
     require(artifact.sha256 === "" || SHA256.test(artifact.sha256 ?? ""), `${platform}.sha256 must be empty or a full SHA-256`);
+    require(artifact.sbom_sha256 === "" || SHA256.test(artifact.sbom_sha256 ?? ""), `${platform}.sbom_sha256 must be empty or a full SHA-256`);
+    require(typeof artifact.updater_signature_verified === "boolean", `${platform}.updater_signature_verified must be boolean`);
+    require(typeof artifact.provenance_verified === "boolean", `${platform}.provenance_verified must be boolean`);
+    require(["open", "pass", "failed", "not_applicable"].includes(artifact.code_signature_status), `${platform}.code_signature_status is invalid`);
+    require(typeof artifact.code_signer === "string", `${platform}.code_signer must be a string`);
     if (artifact.status === "pass") {
       require(HTTPS.test(artifact.artifact_url ?? ""), `${platform} PASS requires artifact_url`);
       require(SHA256.test(artifact.sha256 ?? ""), `${platform} PASS requires sha256`);
-      require(HTTPS.test(artifact.signature_url ?? ""), `${platform} PASS requires signature_url`);
+      require(HTTPS.test(artifact.updater_signature_url ?? ""), `${platform} PASS requires updater_signature_url`);
+      require(artifact.updater_signature_verified === true, `${platform} PASS requires a verified updater signature`);
       require(HTTPS.test(artifact.sbom_url ?? ""), `${platform} PASS requires sbom_url`);
+      require(SHA256.test(artifact.sbom_sha256 ?? ""), `${platform} PASS requires sbom_sha256`);
       require(HTTPS.test(artifact.provenance_url ?? ""), `${platform} PASS requires provenance_url`);
+      require(artifact.provenance_verified === true, `${platform} PASS requires verified provenance`);
+      if (platform === "linux_x64") {
+        require(artifact.code_signature_status === "not_applicable", "linux_x64 PASS must mark native code signing not_applicable");
+        require(artifact.code_signer === "", "linux_x64 PASS must not claim a native code signer");
+      } else {
+        require(artifact.code_signature_status === "pass", `${platform} PASS requires native code-signature PASS`);
+        require(nonEmpty(artifact.code_signer), `${platform} PASS requires a named code signer`);
+        require(HTTPS.test(artifact.code_signature_evidence_url ?? ""), `${platform} PASS requires code-signature evidence`);
+      }
     }
   }
   if (artifacts.status === "pass") {
@@ -143,30 +172,41 @@ export function validateManifest(manifest, filename = "<memory>") {
   const governance = manifest.governance ?? {};
   require(exactKeys(governance, GOVERNANCE_FIELDS), "governance fields must match schema exactly");
   require(["open", "pass", "failed"].includes(governance.status), "governance.status is invalid");
+  require(governance.release_pin === manifest.release_id, "governance.release_pin must equal release_id");
   require(["open", "approved", "rejected"].includes(governance.decision), "governance.decision is invalid");
   require(governance.evidence_url === "" || HTTPS.test(governance.evidence_url ?? ""), "governance.evidence_url must be empty or HTTPS");
+  require(governance.evidence_sha256 === "" || SHA256.test(governance.evidence_sha256 ?? ""), "governance.evidence_sha256 must be empty or a full SHA-256");
   if (governance.status === "pass") {
     require(nonEmpty(governance.legal_owner), "governance PASS requires legal_owner");
     require(nonEmpty(governance.dpo_owner), "governance PASS requires dpo_owner");
     require(nonEmpty(governance.independent_judge), "governance PASS requires independent_judge");
     require(governance.decision === "approved", "governance PASS requires an approved decision");
     require(HTTPS.test(governance.evidence_url ?? ""), "governance PASS requires HTTPS evidence");
+    require(SHA256.test(governance.evidence_sha256 ?? ""), "governance PASS requires evidence_sha256");
   }
 
   const operations = manifest.operations ?? {};
   require(exactKeys(operations, OPERATIONS_FIELDS), "operations fields must match schema exactly");
   require(["open", "pass", "failed"].includes(operations.status), "operations.status is invalid");
+  require(operations.release_pin === manifest.release_id, "operations.release_pin must equal release_id");
   require(typeof operations.deployed === "boolean", "operations.deployed must be boolean");
   require(typeof operations.health_verified === "boolean", "operations.health_verified must be boolean");
   require(typeof operations.recovery_verified === "boolean", "operations.recovery_verified must be boolean");
   require(typeof operations.rollback_verified === "boolean", "operations.rollback_verified must be boolean");
   require(operations.evidence_url === "" || HTTPS.test(operations.evidence_url ?? ""), "operations.evidence_url must be empty or HTTPS");
+  require(operations.evidence_sha256 === "" || SHA256.test(operations.evidence_sha256 ?? ""), "operations.evidence_sha256 must be empty or a full SHA-256");
   if (operations.status === "pass") {
     require(nonEmpty(operations.environment), "operations PASS requires environment");
+    require(nonEmpty(operations.operator), "operations PASS requires a named operator");
+    require(nonEmpty(operations.independent_judge), "operations PASS requires an independent judge");
+    require(Number.isFinite(Date.parse(operations.started_at ?? "")), "operations PASS requires started_at");
+    require(Number.isFinite(Date.parse(operations.completed_at ?? "")), "operations PASS requires completed_at");
+    require(Date.parse(operations.completed_at ?? "") >= Date.parse(operations.started_at ?? ""), "operations.completed_at must not precede started_at");
     for (const key of ["deployed", "health_verified", "recovery_verified", "rollback_verified"]) {
       require(operations[key] === true, `operations PASS requires ${key}=true`);
     }
     require(HTTPS.test(operations.evidence_url ?? ""), "operations PASS requires HTTPS evidence");
+    require(SHA256.test(operations.evidence_sha256 ?? ""), "operations PASS requires evidence_sha256");
   }
 
   require(exactKeys(manifest.approvals, ["product", "security", "legal"]), "approvals fields must match schema exactly");
@@ -175,6 +215,7 @@ export function validateManifest(manifest, filename = "<memory>") {
     require(exactKeys(approval, APPROVAL_FIELDS), `approvals.${role} fields must match schema exactly`);
     require(typeof approval.name === "string", `approvals.${role}.name must be a string`);
     require(approval.evidence_url === "" || HTTPS.test(approval.evidence_url ?? ""), `approvals.${role}.evidence_url must be empty or HTTPS`);
+    require(approval.evidence_sha256 === "" || SHA256.test(approval.evidence_sha256 ?? ""), `approvals.${role}.evidence_sha256 must be empty or a full SHA-256`);
   }
 
   require(Array.isArray(manifest.blockers), "blockers must be an array");
@@ -200,7 +241,7 @@ export function validateManifest(manifest, filename = "<memory>") {
     require(operations.status === "pass", "PASS requires operations status PASS");
     for (const role of ["product", "security", "legal"]) {
       const approval = manifest.approvals?.[role] ?? {};
-      require(nonEmpty(approval.name) && HTTPS.test(approval.evidence_url ?? ""), `PASS requires named ${role} approval with HTTPS evidence`);
+      require(nonEmpty(approval.name) && HTTPS.test(approval.evidence_url ?? "") && SHA256.test(approval.evidence_sha256 ?? ""), `PASS requires named ${role} approval with HTTPS evidence and SHA-256`);
     }
   }
 

@@ -21,7 +21,7 @@
   ],
   "properties": {
     "$schema": { "type": "string" },
-    "schema_version": { "const": "1.0" },
+    "schema_version": { "const": "1.1" },
     "release_id": { "type": "string", "pattern": "^scai-candidate-[0-9]{4}-[0-9]{2}-[0-9]{2}\\.[0-9]+$" },
     "status": { "enum": ["candidate", "pass", "rejected"] },
     "created_at": { "type": "string", "format": "date-time" },
@@ -121,14 +121,20 @@
     "platformArtifact": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["status", "artifact_url", "sha256", "signature_url", "sbom_url", "provenance_url"],
+      "required": ["status", "artifact_url", "sha256", "updater_signature_url", "updater_signature_verified", "code_signature_status", "code_signer", "code_signature_evidence_url", "sbom_url", "sbom_sha256", "provenance_url", "provenance_verified"],
       "properties": {
         "status": { "enum": ["open", "pass", "failed"] },
         "artifact_url": { "$ref": "#/$defs/uriOrEmpty" },
         "sha256": { "type": "string", "pattern": "^([0-9a-f]{64})?$" },
-        "signature_url": { "$ref": "#/$defs/uriOrEmpty" },
+        "updater_signature_url": { "$ref": "#/$defs/uriOrEmpty" },
+        "updater_signature_verified": { "type": "boolean" },
+        "code_signature_status": { "enum": ["open", "pass", "failed", "not_applicable"] },
+        "code_signer": { "type": "string" },
+        "code_signature_evidence_url": { "$ref": "#/$defs/uriOrEmpty" },
         "sbom_url": { "$ref": "#/$defs/uriOrEmpty" },
-        "provenance_url": { "$ref": "#/$defs/uriOrEmpty" }
+        "sbom_sha256": { "type": "string", "pattern": "^([0-9a-f]{64})?$" },
+        "provenance_url": { "$ref": "#/$defs/uriOrEmpty" },
+        "provenance_verified": { "type": "boolean" }
       }
     },
     "artifacts": {
@@ -154,37 +160,46 @@
     "governance": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["status", "legal_owner", "dpo_owner", "independent_judge", "decision", "evidence_url"],
+      "required": ["status", "release_pin", "legal_owner", "dpo_owner", "independent_judge", "decision", "evidence_url", "evidence_sha256"],
       "properties": {
         "status": { "enum": ["open", "pass", "failed"] },
+        "release_pin": { "type": "string", "minLength": 1 },
         "legal_owner": { "type": "string" },
         "dpo_owner": { "type": "string" },
         "independent_judge": { "type": "string" },
         "decision": { "enum": ["open", "approved", "rejected"] },
-        "evidence_url": { "$ref": "#/$defs/uriOrEmpty" }
+        "evidence_url": { "$ref": "#/$defs/uriOrEmpty" },
+        "evidence_sha256": { "type": "string", "pattern": "^([0-9a-f]{64})?$" }
       }
     },
     "operations": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["status", "environment", "deployed", "health_verified", "recovery_verified", "rollback_verified", "evidence_url"],
+      "required": ["status", "release_pin", "environment", "operator", "independent_judge", "started_at", "completed_at", "deployed", "health_verified", "recovery_verified", "rollback_verified", "evidence_url", "evidence_sha256"],
       "properties": {
         "status": { "enum": ["open", "pass", "failed"] },
+        "release_pin": { "type": "string", "minLength": 1 },
         "environment": { "type": "string" },
+        "operator": { "type": "string" },
+        "independent_judge": { "type": "string" },
+        "started_at": { "type": "string" },
+        "completed_at": { "type": "string" },
         "deployed": { "type": "boolean" },
         "health_verified": { "type": "boolean" },
         "recovery_verified": { "type": "boolean" },
         "rollback_verified": { "type": "boolean" },
-        "evidence_url": { "$ref": "#/$defs/uriOrEmpty" }
+        "evidence_url": { "$ref": "#/$defs/uriOrEmpty" },
+        "evidence_sha256": { "type": "string", "pattern": "^([0-9a-f]{64})?$" }
       }
     },
     "approval": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["name", "evidence_url"],
+      "required": ["name", "evidence_url", "evidence_sha256"],
       "properties": {
         "name": { "type": "string" },
-        "evidence_url": { "$ref": "#/$defs/uriOrEmpty" }
+        "evidence_url": { "$ref": "#/$defs/uriOrEmpty" },
+        "evidence_sha256": { "type": "string", "pattern": "^([0-9a-f]{64})?$" }
       }
     },
     "approvals": {

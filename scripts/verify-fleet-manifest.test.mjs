@@ -38,6 +38,45 @@ test("aggregate artifact PASS cannot hide an open platform", () => {
   assert.match(validateManifest(manifest).join("\n"), /artifacts PASS requires every platform to PASS/);
 });
 
+test("platform PASS cannot conflate updater and native code signatures", () => {
+  const manifest = clone();
+  const artifact = manifest.artifacts.platforms.windows_x64;
+  Object.assign(artifact, {
+    status: "pass",
+    artifact_url: "https://example.invalid/scai.exe",
+    sha256: "a".repeat(64),
+    updater_signature_url: "https://example.invalid/scai.exe.sig",
+    updater_signature_verified: true,
+    sbom_url: "https://example.invalid/scai.cdx.json",
+    sbom_sha256: "b".repeat(64),
+    provenance_url: "https://example.invalid/attestation/1",
+    provenance_verified: true,
+  });
+  const errors = validateManifest(manifest).join("\n");
+  assert.match(errors, /windows_x64 PASS requires native code-signature PASS/);
+  assert.match(errors, /windows_x64 PASS requires a named code signer/);
+  assert.match(errors, /windows_x64 PASS requires code-signature evidence/);
+});
+
+test("operations PASS must be pinned, timed, operated and independently judged", () => {
+  const manifest = clone();
+  Object.assign(manifest.operations, {
+    status: "pass",
+    deployed: true,
+    health_verified: true,
+    recovery_verified: true,
+    rollback_verified: true,
+    evidence_url: "https://example.invalid/ops.json",
+    evidence_sha256: "c".repeat(64),
+  });
+  const errors = validateManifest(manifest).join("\n");
+  assert.match(errors, /operations PASS requires environment/);
+  assert.match(errors, /operations PASS requires a named operator/);
+  assert.match(errors, /operations PASS requires an independent judge/);
+  assert.match(errors, /operations PASS requires started_at/);
+  assert.match(errors, /operations PASS requires completed_at/);
+});
+
 test("a cosmetic top-level PASS fails closed while evidence remains open", () => {
   const manifest = clone();
   manifest.status = "pass";
