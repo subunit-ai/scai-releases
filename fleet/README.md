@@ -29,7 +29,9 @@ fail-closed. Er veröffentlicht, taggt, merged oder deployt nichts.
    bestanden markieren.
    Updater-Signatur und Betriebssystem-Code-Signing sind getrennte Nachweise.
 4. Nach technischer Freigabe baut `build-all.yml` den vollständigen `source_sha`
-   für die zugehörige `release_id`, verifiziert native Signaturen,
+   für die zugehörige `release_id`. Noch vor Source-Checkout und Draft-Erzeugung
+   verweigert der Secret-Preflight einen unvollständig signierbaren Lauf und
+   nennt ausschließlich fehlende Secret-Namen. Danach verifiziert der Workflow native Signaturen,
    Updater-Signaturen, SBOM und Sigstore-Provenance und lässt sämtliche Assets
    bewusst als Draft stehen.
 5. Autorisierte Betriebsdrills können exakt diesen Draft verwenden; ihre

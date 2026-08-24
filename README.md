@@ -34,7 +34,10 @@ Plattformsignaturen, SBOM-Digests/Provenance,
 Governance-Freigaben und Betriebsdrills maschinell vollständig belegt sind.
 
 `build-all.yml` erzeugt für eine vollständige `release_id` und einen exakten
-`source_sha` ausschließlich einen technischen Draft. Es veröffentlicht nie.
+`source_sha` ausschließlich einen technischen Draft. Vor Source-Checkout und
+Draft-Erzeugung prüft es fail-closed, dass sämtliche Quell-, Updater-, Apple-
+und Windows-Signing-Secrets gesetzt sind, ohne deren Werte auszugeben. Es
+veröffentlicht nie.
 Erst `publish-approved.yml` darf den gebundenen Draft veröffentlichen; dafür
 verlangt es ein gemergtes Fleet-Manifest mit `status: pass`, dessen vorab
 bestätigten SHA-256, einen unveränderten Release-Vertrag und erneut geprüfte
