@@ -2,6 +2,9 @@
 
 Installer für **SCAI (Subunit Corporate AI)** und der Feed für den In-App-Auto-Updater (`latest.json`).
 Der Quellcode liegt im privaten Repo `subunit-ai/subunit-scai`; hier landen nur Binaries.
+Release-Builds aktivieren verpflichtend das Cargo-Feature `local-meet`, damit lokale
+Meeting-Aufzeichnung, Sprechertrennung und Windows-Systemaudio in allen ausgelieferten
+SCAI-Paketen enthalten sind.
 
 ## Download
 - **macOS (Apple Silicon):** `SCAI_x.y.z_aarch64.dmg`

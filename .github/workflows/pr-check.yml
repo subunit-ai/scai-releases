@@ -100,13 +100,33 @@ jobs:
         working-directory: src
         run: npm run build
 
+      - name: Chromium für Meet-Seh-Harness
+        working-directory: src
+        run: npx playwright install --with-deps chromium
+
+      - name: Meet-Plugin visuell und interaktiv beweisen
+        working-directory: src
+        env:
+          PROOF_RUN_ID: ci
+        run: node scripts/verify-meet-plugin.mjs
+
+      - name: Meet-Proof-Screenshots sichern
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: scai-meet-proof-${{ github.run_id }}
+          path: ~/.cache/u1-shots/scai-meet-plugin/ci/
+          if-no-files-found: warn
+          retention-days: 14
+
       # Rust-Kompilat + Unit-Tests. Tauri v2 linkt webkit2gtk/gtk auch für
       # `cargo test` → Systembibliotheken nötig.
       - name: Tauri-Systemabhängigkeiten
         run: |
           sudo apt-get update
           sudo apt-get install -y libwebkit2gtk-4.1-dev libgtk-3-dev \
-            libayatana-appindicator3-dev librsvg2-dev libxdo-dev libssl-dev
+            libayatana-appindicator3-dev librsvg2-dev libxdo-dev libssl-dev \
+            libasound2-dev
 
       - uses: dtolnay/rust-toolchain@stable
 
@@ -116,4 +136,4 @@ jobs:
 
       - name: cargo test (Sidecar-Trust-Modell + halo + verify-Suite)
         working-directory: src
-        run: cargo test --manifest-path src-tauri/Cargo.toml --lib
+        run: cargo test --manifest-path src-tauri/Cargo.toml --lib --features local-meet
