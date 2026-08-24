@@ -166,3 +166,85 @@ jobs:
       - name: cargo test (Sidecar-Trust-Modell + halo + verify-Suite)
         working-directory: src
         run: cargo test --manifest-path src-tauri/Cargo.toml --lib --features local-meet
+
+  native-trace:
+    name: SCAI + Trace nativ kompilieren (${{ matrix.label }})
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: macos-15
+            label: macos-arm64
+          - runner: windows-2025
+            label: windows-x64
+            openssl_triplet: x64-windows-static-md
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - name: Quellcode auschecken (privates Repo, read-only Deploy-Key)
+        shell: bash
+        env:
+          SRC_REF: ${{ inputs.ref }}
+          DEPLOY_KEY: ${{ secrets.SOURCE_DEPLOY_KEY }}
+        run: |
+          set -euo pipefail
+          if [ -z "${DEPLOY_KEY:-}" ]; then
+            echo "::error::SOURCE_DEPLOY_KEY fehlt."
+            exit 1
+          fi
+          mkdir -p "$HOME/.ssh"
+          printf '%s\n' "$DEPLOY_KEY" > "$HOME/.ssh/scai_src"
+          chmod 600 "$HOME/.ssh/scai_src"
+          ssh-keyscan -t ed25519,rsa github.com >> "$HOME/.ssh/known_hosts" 2>/dev/null
+          export GIT_SSH_COMMAND="ssh -i $HOME/.ssh/scai_src -o IdentitiesOnly=yes"
+          git clone --depth 1 --branch "$SRC_REF" git@github.com:subunit-ai/subunit-scai.git src
+          rm -f "$HOME/.ssh/scai_src"
+          echo "ausgecheckt: $SRC_REF → $(git -C src rev-parse --short HEAD)"
+
+      - name: Privaten Trace-Kern für Cargo freischalten (read-only)
+        shell: bash
+        env:
+          TRACE_DEPLOY_KEY: ${{ secrets.TRACE_SOURCE_DEPLOY_KEY }}
+        run: |
+          set -euo pipefail
+          if [ -z "${TRACE_DEPLOY_KEY:-}" ]; then
+            echo "::error::TRACE_SOURCE_DEPLOY_KEY fehlt."
+            exit 1
+          fi
+          mkdir -p "$HOME/.ssh"
+          printf '%s\n' "$TRACE_DEPLOY_KEY" > "$HOME/.ssh/trace_src"
+          chmod 600 "$HOME/.ssh/trace_src"
+          cat >> "$HOME/.ssh/config" <<'EOF'
+          Host github-trace
+            HostName github.com
+            User git
+            IdentityFile ~/.ssh/trace_src
+            IdentitiesOnly yes
+          EOF
+          chmod 600 "$HOME/.ssh/config"
+          git config --global url."git@github-trace:subunit-ai/trace-tauri.git".insteadOf \
+            "https://github.com/subunit-ai/trace-tauri.git"
+          echo "CARGO_NET_GIT_FETCH_WITH_CLI=true" >> "$GITHUB_ENV"
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: OpenSSL für Trace-SQLCipher (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        env:
+          OPENSSL_TRIPLET: ${{ matrix.openssl_triplet }}
+        run: |
+          if (-not $env:OPENSSL_TRIPLET) { throw "OpenSSL-vcpkg-Triplet fehlt" }
+          vcpkg install "openssl:$env:OPENSSL_TRIPLET"
+          "OPENSSL_DIR=$env:VCPKG_INSTALLATION_ROOT\installed\$env:OPENSSL_TRIPLET" >> $env:GITHUB_ENV
+
+      - uses: swatinem/rust-cache@v2
+        with:
+          workspaces: src/src-tauri -> target
+          key: trace-native-${{ matrix.label }}
+
+      # Kein Paket, Tag oder Release: dieses Gate kompiliert exakt die nativen
+      # Versandfeatures, damit der private Trace-Pin nicht erst im Release auffällt.
+      - name: SCAI mit nativer Trace-/Meet-Engine prüfen
+        working-directory: src
+        run: cargo check --locked --manifest-path src-tauri/Cargo.toml --features local-meet
