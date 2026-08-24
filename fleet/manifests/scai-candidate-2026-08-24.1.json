@@ -161,10 +161,13 @@
     }
   },
   "source_ci": {
-    "status": "local-pass",
+    "status": "pass",
     "sha": "b174275784eebf141037ca127083fa94121f0d83",
-    "run_url": "",
+    "run_url": "https://github.com/subunit-ai/scai-releases/actions/runs/32778406184",
     "checks": [
+      "Remote PR Check 32778406184: pass on exact SCAI SHA b174275784eebf141037ca127083fa94121f0d83",
+      "Linux: production build, Meet desktop/mobile dark/light visual and malformed-input proof, Web BFF/SSO proof and Cargo suite pass",
+      "macOS ARM64 and Windows x64: native local-meet compile, PKCE session suite and real OS credential-store smoke pass",
       "cargo test --manifest-path src-tauri/Cargo.toml --lib: 441 pass, 0 fail, 16 ignored",
       "npm run build: pass; native broker 30/30; plugin envelope 14/14",
       "npm run build:web and bun test web: 8 pass, 0 fail, 48 assertions",
@@ -205,12 +208,6 @@
     "legal": { "name": "", "evidence_url": "" }
   },
   "blockers": [
-    {
-      "id": "browser-proof",
-      "owner": "Subunit Engineering",
-      "resolution": "Multi-Viewport-Screenshots, Browser-Konsole und Malformed-Input-Proof auf einem lauffähigen Browser-Runner ausführen",
-      "evidence_required": "Grüner CI-Run oder unveränderliches Proof-Artefakt; lokale Chromium-Sandbox blockiert aktuell mit MachPortRendezvousServer Permission denied"
-    },
     {
       "id": "legal-approval",
       "owner": "TJ",
