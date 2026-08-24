@@ -16,7 +16,7 @@
       "repository": "https://github.com/subunit-ai/scai-releases",
       "sha": "7eb8ab398e20b9831d3ae28af679596f59e74a1e",
       "branch": "session/a8-fleet-release",
-      "pr_url": "",
+      "pr_url": "https://github.com/subunit-ai/scai-releases/pull/12",
       "merge_status": "open"
     },
     "u1_chat": {
