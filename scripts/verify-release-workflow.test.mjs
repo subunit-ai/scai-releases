@@ -34,6 +34,16 @@ test("a mutable action reference is rejected", () => {
   assert.match(validateReleaseWorkflow(unsafe).join("\n"), /action reference must be immutable/);
 });
 
+test("a release build that can stream private compiler output is rejected", () => {
+  const unsafe = fixture.replace('run-confidential.sh" "tauri-build-$TARGET"', 'run-publicly.sh" "tauri-build-$TARGET"');
+  assert.match(validateReleaseWorkflow(unsafe).join("\n"), /confidential runner/);
+});
+
+test("a broad release upload cannot replace the explicit asset allowlist", () => {
+  const unsafe = fixture.replace('gh release upload "$TAG" "${ASSETS[@]}"', 'gh release upload "$TAG" "$BUNDLE_ROOT"');
+  assert.match(validateReleaseWorkflow(unsafe).join("\n"), /explicit release asset allowlist/);
+});
+
 test("updater signatures cannot be treated as native platform signing", () => {
   const unsafe = fixture.replace("Get-AuthenticodeSignature", "Get-UnverifiedSignature");
   assert.match(validateReleaseWorkflow(unsafe).join("\n"), /Windows Authenticode signature must be verified/);

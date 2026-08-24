@@ -109,21 +109,25 @@ jobs:
             echo "::error::source_sha muss ein vollständiger kleingeschriebener 40-Zeichen-Git-SHA sein."
             exit 1
           fi
+          key_file="$HOME/.ssh/scai_src"
+          cleanup() { rm -f "$key_file"; }
+          trap cleanup EXIT
           mkdir -p "$HOME/.ssh"
-          printf '%s\n' "$DEPLOY_KEY" > "$HOME/.ssh/scai_src"
-          chmod 600 "$HOME/.ssh/scai_src"
+          printf '%s\n' "$DEPLOY_KEY" > "$key_file"
+          chmod 600 "$key_file"
           ssh-keyscan -t ed25519,rsa github.com >> "$HOME/.ssh/known_hosts" 2>/dev/null
-          export GIT_SSH_COMMAND="ssh -i $HOME/.ssh/scai_src -o IdentitiesOnly=yes"
+          export GIT_SSH_COMMAND="ssh -i $key_file -o IdentitiesOnly=yes"
           git init src
           git -C src remote add origin git@github.com:subunit-ai/subunit-scai.git
           git -C src fetch --depth 1 origin "$SOURCE_SHA"
           git -C src checkout --detach FETCH_HEAD
-          rm -f "$HOME/.ssh/scai_src"
           ACTUAL_SHA=$(git -C src rev-parse HEAD)
           if [ "$ACTUAL_SHA" != "$SOURCE_SHA" ]; then
             echo "::error::Checkout-Drift: erwartet $SOURCE_SHA, erhalten $ACTUAL_SHA"
             exit 1
           fi
+          cleanup
+          trap - EXIT
           # Dieselbe Quelle, aus der tauri-action `v__VERSION__` auflöst.
           VERSION=$(node -p "require('./src/src-tauri/tauri.conf.json').version")
           # Format erzwingen, bevor der Wert in einen Befehl wandert: der String kommt
@@ -237,6 +241,12 @@ jobs:
     runs-on: ${{ matrix.os }}
 
     steps:
+      - name: Öffentlichen Confidential-Runner auschecken
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2, immutable
+        with:
+          path: gate
+          persist-credentials: false
+
       # Bewusst KEIN actions/checkout mit ssh-key: der windows-11-arm-Runner hat
       # kein funktionierendes C:\Windows\System32\OpenSSH\ssh.exe (Checkout schlug
       # dort mit "Could not read from remote repository" fehl). Ein Klon über Git
@@ -253,47 +263,26 @@ jobs:
             echo "::error::Ungültiger Source-SHA: $SOURCE_SHA"
             exit 1
           fi
+          key_file="$HOME/.ssh/scai_src"
+          cleanup() { rm -f "$key_file"; }
+          trap cleanup EXIT
           mkdir -p "$HOME/.ssh"
-          printf '%s\n' "$DEPLOY_KEY" > "$HOME/.ssh/scai_src"
-          chmod 600 "$HOME/.ssh/scai_src"
+          printf '%s\n' "$DEPLOY_KEY" > "$key_file"
+          chmod 600 "$key_file"
           ssh-keyscan -t ed25519,rsa github.com >> "$HOME/.ssh/known_hosts" 2>/dev/null
-          export GIT_SSH_COMMAND="ssh -i $HOME/.ssh/scai_src -o IdentitiesOnly=yes"
+          export GIT_SSH_COMMAND="ssh -i $key_file -o IdentitiesOnly=yes"
           git init src
           git -C src remote add origin git@github.com:subunit-ai/subunit-scai.git
           git -C src fetch --depth 1 origin "$SOURCE_SHA"
           git -C src checkout --detach FETCH_HEAD
-          rm -f "$HOME/.ssh/scai_src"
           ACTUAL_SHA=$(git -C src rev-parse HEAD)
           if [ "$ACTUAL_SHA" != "$SOURCE_SHA" ]; then
             echo "::error::Checkout-Drift: erwartet $SOURCE_SHA, erhalten $ACTUAL_SHA"
             exit 1
           fi
+          cleanup
+          trap - EXIT
           echo "ausgecheckt: $ACTUAL_SHA"
-
-      - name: Privaten Trace-Kern für Cargo freischalten (read-only)
-        shell: bash
-        env:
-          TRACE_DEPLOY_KEY: ${{ secrets.TRACE_SOURCE_DEPLOY_KEY }}
-        run: |
-          set -euo pipefail
-          if [ -z "${TRACE_DEPLOY_KEY:-}" ]; then
-            echo "::error::TRACE_SOURCE_DEPLOY_KEY fehlt."
-            exit 1
-          fi
-          mkdir -p "$HOME/.ssh"
-          printf '%s\n' "$TRACE_DEPLOY_KEY" > "$HOME/.ssh/trace_src"
-          chmod 600 "$HOME/.ssh/trace_src"
-          cat >> "$HOME/.ssh/config" <<'EOF'
-          Host github-trace
-            HostName github.com
-            User git
-            IdentityFile ~/.ssh/trace_src
-            IdentitiesOnly yes
-          EOF
-          chmod 600 "$HOME/.ssh/config"
-          git config --global url."git@github-trace:subunit-ai/trace-tauri.git".insteadOf \
-            "https://github.com/subunit-ai/trace-tauri.git"
-          echo "CARGO_NET_GIT_FETCH_WITH_CLI=true" >> "$GITHUB_ENV"
 
       - name: Node einrichten
         uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4, immutable pin
@@ -347,7 +336,8 @@ jobs:
 
       - name: Abhängigkeiten installieren
         working-directory: src
-        run: npm ci
+        shell: bash
+        run: bash "$GITHUB_WORKSPACE/gate/scripts/run-confidential.sh" release-npm-ci npm ci
 
       - name: Windows-Code-Signing vorbereiten (OV/EV-Zertifikat + RFC-3161-Zeitstempel)
         if: runner.os == 'Windows'
@@ -463,10 +453,46 @@ jobs:
             echo "APPLE_TEAM_ID=$APPLE_TEAM_ID"
           } >> "$GITHUB_ENV"
 
-      - name: Bauen · signieren · Release-Assets hochladen
-        uses: tauri-apps/tauri-action@84b9d35b5fc46c1e45415bdb6144030364f7ebc5 # v0, immutable
+      - name: Privaten Trace-Kern für Cargo freischalten (read-only)
+        shell: bash
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TRACE_DEPLOY_KEY: ${{ secrets.TRACE_SOURCE_DEPLOY_KEY }}
+        run: |
+          set -euo pipefail
+          if [ -z "${TRACE_DEPLOY_KEY:-}" ]; then
+            echo "::error::TRACE_SOURCE_DEPLOY_KEY fehlt."
+            exit 1
+          fi
+          mkdir -p "$HOME/.ssh"
+          printf '%s\n' "$TRACE_DEPLOY_KEY" > "$HOME/.ssh/trace_src"
+          chmod 600 "$HOME/.ssh/trace_src"
+          cat >> "$HOME/.ssh/config" <<'EOF'
+          Host github-trace
+            HostName github.com
+            User git
+            IdentityFile ~/.ssh/trace_src
+            IdentitiesOnly yes
+          EOF
+          chmod 600 "$HOME/.ssh/config"
+          git config --global url."git@github-trace:subunit-ai/trace-tauri.git".insteadOf \
+            "https://github.com/subunit-ai/trace-tauri.git"
+          echo "CARGO_NET_GIT_FETCH_WITH_CLI=true" >> "$GITHUB_ENV"
+
+      # Das frühere tauri-action lief direkt im PUBLIC Workflow-Log. Rust-/TS-
+      # Warnungen und Fehler konnten dadurch einzelne Zeilen aus dem privaten Repo
+      # offenlegen. Der Build läuft jetzt hinter einem Output-Sink; öffentlich
+      # bleiben nur Exit-Code, Log-Digest und explizit allowlistete Release-Dateien.
+      - name: Bauen · signieren · allowlistete Draft-Assets hochladen
+        working-directory: src
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          TAG: ${{ needs.release.outputs.tag }}
+          TARGET: ${{ matrix.target }}
+          BUNDLES: ${{ matrix.bundles }}
+          ENABLE_MEET: ${{ matrix.meet_features != '' }}
+          WINDOWS_SIGNING: ${{ matrix.signing_args != '' }}
           # Updater-Signatur (minisign, derselbe Key wie beim lokalen Mac-Release) —
           # das ist NUR der Update-Mechanismus, nicht die Code-Signatur der App.
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
@@ -476,25 +502,33 @@ jobs:
           # im Step überschreibt den GITHUB_ENV-Wert — mit einem leeren String, falls das
           # Secret fehlt. Und APPLE_CERTIFICATE gehört hier ohnehin nie hin (untrusted
           # Re-Import, siehe oben).
-        with:
-          projectPath: src
-          # Tag/Version kommen aus src-tauri/tauri.conf.json.
-          tagName: v__VERSION__
-          releaseName: SCAI v__VERSION__
-          releaseBody: |
-            SCAI v__VERSION__ — Installer für macOS (Apple Silicon & Intel), Windows (x64 & ARM64) und Linux.
+        run: |
+          set -euo pipefail
+          BUILD_ARGS=(--target "$TARGET" --bundles "$BUNDLES")
+          if [ "$ENABLE_MEET" = "true" ]; then
+            BUILD_ARGS+=(--features local-meet)
+          fi
+          if [ "$WINDOWS_SIGNING" = "true" ]; then
+            BUILD_ARGS+=(--config src-tauri/tauri.windows-signing.json)
+          fi
 
-            Auto-Update ist für alle Plattformen verdrahtet (`latest.json`).
-          releaseDraft: true
-          prerelease: ${{ inputs.prerelease }}
-          # Merged die Plattform-Einträge aller Matrix-Jobs in EIN latest.json
-          # → der Updater bedient damit jede Plattform.
-          includeUpdaterJson: true
-          # Native Aufnahme/Diarisierung ist ein explizites Target-Capability:
-          # Apple Silicon + beide Windows-Architekturen liefern sie aus. Targets,
-          # fuer die ort keine kompatible Runtime liefert, behalten dieselbe stabile
-          # IPC und melden der UI ehrlich built=false; Cloud-Meet/Bibliothek bleiben.
-          args: --target ${{ matrix.target }} --bundles ${{ matrix.bundles }} ${{ matrix.meet_features }} ${{ matrix.signing_args }}
+          bash "$GITHUB_WORKSPACE/gate/scripts/run-confidential.sh" "tauri-build-$TARGET" \
+            npm run tauri build -- "${BUILD_ARGS[@]}"
+
+          BUNDLE_ROOT="src-tauri/target/$TARGET/release/bundle"
+          ASSET_LIST="$RUNNER_TEMP/scai-release-assets-$TARGET.txt"
+          bash "$GITHUB_WORKSPACE/gate/scripts/validate-release-assets.sh" \
+            "$TARGET" "$BUNDLE_ROOT" > "$ASSET_LIST"
+          ASSETS=()
+          while IFS= read -r asset; do
+            test -n "$asset"
+            ASSETS+=("$asset")
+          done < "$ASSET_LIST"
+          rm -f "$ASSET_LIST"
+          test "${#ASSETS[@]}" -gt 0
+
+          gh release upload "$TAG" "${ASSETS[@]}" -R "$REPO" --clobber
+          echo "PASS $TARGET: ${#ASSETS[@]} allowlistete Draft-Assets hochgeladen; keine Build-Ausgabe veröffentlicht."
 
       # BEWEIS STATT BEHAUPTUNG. Der Keychain-Schritt oben kann grün sein und die App
       # trotzdem ad-hoc signiert rauskommen (falsche Identity, Tauri ignoriert die env,
@@ -626,13 +660,18 @@ jobs:
           test -s "$EVIDENCE"
           gh release upload "$TAG" "$EVIDENCE" -R "$REPO" --clobber
 
-  # latest.json FINALISIEREN — Schutz gegen das Merge-Race der tauri-action.
-  # includeUpdaterJson merged per Download→Ergänzen→Upload; enden zwei Matrix-Jobs
-  # fast gleichzeitig, gewinnt der letzte Schreiber und Plattform-Einträge gehen
-  # verloren (v0.58.0: windows-aarch64 fehlte trotz grünem ARM64-Job — Assets lagen
-  # vollständig im Release). Dieser Job läuft NACH allen Builds und rekonstruiert
-  # die platforms-Map deterministisch aus den .sig-Assets (Ground-Truth im Release).
-  # Idempotent: ein bereits vollständiges Manifest wird unverändert bestätigt.
+      - name: Private Trace-Credentials entfernen
+        if: always()
+        shell: bash
+        run: |
+          rm -f "$HOME/.ssh/trace_src"
+          git config --global --unset-all url.git@github-trace:subunit-ai/trace-tauri.git.insteadOf || true
+
+  # latest.json FINALISIEREN — deterministisch aus den fertigen Signatur-Assets.
+  # Matrix-Jobs laden ausschließlich ihre eigenen Installer und .sig-Dateien hoch;
+  # nur dieser nachgelagerte Job schreibt das gemeinsame Updater-Manifest. Damit
+  # kann kein paralleler Plattform-Job einen bereits geschriebenen Eintrag verlieren
+  # (historisch fehlte bei v0.58.0 windows-aarch64 trotz fertigem Asset).
   manifest:
     name: Signaturen, SBOM und Provenance im Draft
     needs: [release, build]
@@ -661,6 +700,9 @@ jobs:
           git -C src checkout --detach FETCH_HEAD
           test "$(git -C src rev-parse HEAD)" = "$SOURCE_SHA"
 
+      - name: Rust für reproduzierbare CycloneDX-SBOM einrichten
+        uses: dtolnay/rust-toolchain@4360b52568e2003a75bf9bc1d59f33a8e3fc893c # stable, immutable pin
+
       - name: Privaten Trace-Kern für Rust-SBOM freischalten (read-only)
         env:
           TRACE_DEPLOY_KEY: ${{ secrets.TRACE_SOURCE_DEPLOY_KEY }}
@@ -680,9 +722,6 @@ jobs:
           git config --global url."git@github-trace:subunit-ai/trace-tauri.git".insteadOf \
             "https://github.com/subunit-ai/trace-tauri.git"
           echo "CARGO_NET_GIT_FETCH_WITH_CLI=true" >> "$GITHUB_ENV"
-
-      - name: Rust für reproduzierbare CycloneDX-SBOM einrichten
-        uses: dtolnay/rust-toolchain@4360b52568e2003a75bf9bc1d59f33a8e3fc893c # stable, immutable pin
 
       - name: Vollständige Node- und Rust-SBOM erzeugen und zusammenführen
         env:
@@ -864,3 +903,9 @@ jobs:
           printf '%s' "$BODY" | grep -Fq "Fleet-Release-ID: $RELEASE_ID"
           jq '{draft:.isDraft, assets:(.assets|length)}' <<<"$RELEASE"
           echo "Technisches Draft-Evidence vollständig; Veröffentlichung bleibt bis Fleet-PASS gesperrt."
+
+      - name: Private Trace-Credentials entfernen
+        if: always()
+        run: |
+          rm -f "$HOME/.ssh/trace_src"
+          git config --global --unset-all url.git@github-trace:subunit-ai/trace-tauri.git.insteadOf || true
