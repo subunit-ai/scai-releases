@@ -10,6 +10,8 @@ on:
       - "scripts/verify-release-workflow.test.mjs"
       - "scripts/merge-cyclonedx.mjs"
       - "scripts/merge-cyclonedx.test.mjs"
+      - "scripts/verify-readiness-evidence.mjs"
+      - "scripts/verify-readiness-evidence.test.mjs"
       - ".github/workflows/build-all.yml"
       - ".github/workflows/fleet-manifest.yml"
   push:
@@ -22,6 +24,8 @@ on:
       - "scripts/verify-release-workflow.test.mjs"
       - "scripts/merge-cyclonedx.mjs"
       - "scripts/merge-cyclonedx.test.mjs"
+      - "scripts/verify-readiness-evidence.mjs"
+      - "scripts/verify-readiness-evidence.test.mjs"
       - ".github/workflows/build-all.yml"
       - ".github/workflows/fleet-manifest.yml"
   workflow_dispatch:
@@ -39,8 +43,10 @@ jobs:
         with:
           node-version: 22
       - name: Validator testen
-        run: node --test scripts/verify-fleet-manifest.test.mjs scripts/verify-release-workflow.test.mjs scripts/merge-cyclonedx.test.mjs
+        run: node --test scripts/verify-fleet-manifest.test.mjs scripts/verify-release-workflow.test.mjs scripts/merge-cyclonedx.test.mjs scripts/verify-readiness-evidence.test.mjs
       - name: Alle Fleet-Manifeste prüfen
         run: node scripts/verify-fleet-manifest.mjs
       - name: Release-Workflow fail-closed prüfen
         run: node scripts/verify-release-workflow.mjs
+      - name: Ops- und Markt-Evidence-Templates prüfen
+        run: node scripts/verify-readiness-evidence.mjs fleet/evidence/operations-template.json fleet/evidence/market-template.json

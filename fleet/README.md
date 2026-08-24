@@ -34,3 +34,15 @@ fail-closed. Er veröffentlicht, taggt, merged oder deployt nichts.
    vollständigen `source_sha`, hält alle Assets bis zum letzten Gate in einem
    Draft und veröffentlicht erst nach nativer Signatur-, Updater-Signatur-,
    SBOM- und Sigstore-Provenance-Verifikation.
+
+## Evidence-Verträge
+
+- `evidence/operations-template.json` bindet Deploy, Health, Recovery und
+  Rollback an denselben Release-/Source-Pin. PASS verlangt Autorisierung,
+  Messwerte, RTO-/Datenverlustziele und einen vom Operator getrennten Judge.
+- `evidence/market-template.json` bindet R0–R3 ebenfalls an Release-ID und
+  vollständigen Source-SHA. PASS verlangt einen qualifizierten Budgetpfad,
+  bezahlte Vorher-/Nachher-Diagnose, einen positiven Pilot-Deckungsbeitrag und
+  drei verschiedene Käufer desselben Outcomes.
+- `scripts/verify-readiness-evidence.mjs` prüft beide Verträge fail-closed. Die
+  Templates bleiben `open`, bis echte autorisierte bzw. externe Evidenz vorliegt.

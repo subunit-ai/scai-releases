@@ -1,0 +1,20 @@
+{
+  "schema_version": "1.0",
+  "report_type": "operations",
+  "release_id": "scai-candidate-2026-08-24.1",
+  "source_sha": "c2dce694959469f8c3736d2e4a2b18488d618834",
+  "status": "open",
+  "authorization": { "approved_by": "", "evidence_url": "" },
+  "environment": { "name": "", "kind": "", "platform": "" },
+  "operator": { "name": "", "role": "" },
+  "independent_judge": { "name": "", "role": "" },
+  "started_at": "",
+  "completed_at": "",
+  "drills": {
+    "deploy": { "status": "open", "evidence_url": "", "observed_release_id": "", "observed_source_sha": "" },
+    "health": { "status": "open", "evidence_url": "", "checks": [] },
+    "recovery": { "status": "open", "evidence_url": "", "scenario": "", "rto_target_seconds": 0, "rto_observed_seconds": 0, "data_loss_target_records": 0, "data_loss_observed_records": 0 },
+    "rollback": { "status": "open", "evidence_url": "", "from_source_sha": "", "to_source_sha": "", "duration_seconds": 0, "health_after_rollback": false }
+  },
+  "decision": { "status": "open", "reason": "" }
+}

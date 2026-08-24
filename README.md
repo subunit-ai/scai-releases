@@ -38,4 +38,5 @@ node scripts/verify-fleet-manifest.mjs
 node --test scripts/verify-fleet-manifest.test.mjs
 node scripts/verify-release-workflow.mjs
 node --test scripts/verify-release-workflow.test.mjs scripts/merge-cyclonedx.test.mjs
+node scripts/verify-readiness-evidence.mjs fleet/evidence/operations-template.json fleet/evidence/market-template.json
 ```
