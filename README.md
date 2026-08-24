@@ -5,6 +5,8 @@ Der Quellcode liegt im privaten Repo `subunit-ai/subunit-scai`; hier landen nur 
 Release-Builds aktivieren verpflichtend das Cargo-Feature `local-meet`, damit lokale
 Meeting-Aufzeichnung, Sprechertrennung und Windows-Systemaudio in allen ausgelieferten
 SCAI-Paketen enthalten sind.
+Für Windows ARM64 baut die Pipeline die nativen whisper.cpp/ggml-Anteile mit
+ClangCL + Ninja; Rust/Tauri bleiben dabei auf `aarch64-pc-windows-msvc`.
 
 ## Download
 - **macOS (Apple Silicon):** `SCAI_x.y.z_aarch64.dmg`
