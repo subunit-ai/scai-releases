@@ -161,16 +161,21 @@
     }
   },
   "source_ci": {
-    "status": "open",
+    "status": "pass",
     "sha": "3c342d0e59f8c7d433b8a90e15d8ee15f138cf91",
-    "run_url": "",
+    "run_url": "https://github.com/subunit-ai/scai-releases/actions/runs/32785133565",
     "checks": [
       "Local post-merge preflight on exact SCAI SHA 3c342d0e59f8c7d433b8a90e15d8ee15f138cf91 (release 0.126.0; mobile modal, action-footer and shell-clearance fixes included)",
       "cargo test --manifest-path src-tauri/Cargo.toml --lib: 444 pass, 0 fail, 16 ignored",
       "npm run build: pass; native broker 30/30; plugin envelope 14/14",
       "npm run build:web and bun test web: 8 pass, 0 fail, 48 assertions",
       "A7 targeted tests: 8 pass, 0 fail",
-      "drift, release-meta, no-demo-data, 28 plugin builds, plugin CSS, fonts, contrast and accent checks: pass"
+      "drift, release-meta, no-demo-data, 28 plugin builds, plugin CSS, fonts, contrast and accent checks: pass",
+      "Remote PR Check 32785133565 checked out exact SCAI SHA 3c342d0 on Linux, macOS ARM64 and Windows x64: all jobs pass",
+      "Remote Rust suite: 444 pass, 0 fail, 4 ignored",
+      "Meet multi-viewport proof: desktop/mobile x light/dark, all modal actions visible, 42 screenshots manually inspected at the repaired mobile gates",
+      "Production web runtime: desktop-dark and mobile-light, 0 browser/HTTP errors",
+      "Native PKCE: 6/6 on macOS ARM64 and 6/6 on Windows x64; real OS credential-store write/read/delete: pass on both"
     ]
   },
   "artifacts": {
@@ -214,12 +219,6 @@
     "legal": { "name": "", "evidence_url": "", "evidence_sha256": "" }
   },
   "blockers": [
-    {
-      "id": "source-ci",
-      "owner": "Subunit Engineering",
-      "resolution": "Remote-CI, Multi-Viewport-Browser-Proof und echte OS-Credential-Store-Smokes gegen den neuen post-merge Source-Pin ausführen",
-      "evidence_required": "Grüner unveränderlicher CI-Lauf auf exakt 3c342d0e59f8c7d433b8a90e15d8ee15f138cf91"
-    },
     {
       "id": "legal-approval",
       "owner": "TJ",
