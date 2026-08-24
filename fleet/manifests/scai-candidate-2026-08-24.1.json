@@ -7,7 +7,7 @@
   "pins": {
     "scai_source": {
       "repository": "https://github.com/subunit-ai/subunit-scai",
-      "sha": "32da55c5b5d43b8763c72985db62746aca498c60",
+      "sha": "b174275784eebf141037ca127083fa94121f0d83",
       "branch": "session/a8-integrated-candidate",
       "pr_url": "https://github.com/subunit-ai/subunit-scai/pull/421",
       "merge_status": "open"
@@ -162,7 +162,7 @@
   },
   "source_ci": {
     "status": "local-pass",
-    "sha": "32da55c5b5d43b8763c72985db62746aca498c60",
+    "sha": "b174275784eebf141037ca127083fa94121f0d83",
     "run_url": "",
     "checks": [
       "cargo test --manifest-path src-tauri/Cargo.toml --lib: 441 pass, 0 fail, 16 ignored",
