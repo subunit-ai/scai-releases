@@ -1,0 +1,54 @@
+name: Fleet-Manifest prüfen
+
+on:
+  pull_request:
+    paths:
+      - "fleet/**"
+      - "scripts/verify-fleet-manifest.mjs"
+      - "scripts/verify-fleet-manifest.test.mjs"
+      - "scripts/verify-release-workflow.mjs"
+      - "scripts/verify-release-workflow.test.mjs"
+      - "scripts/merge-cyclonedx.mjs"
+      - "scripts/merge-cyclonedx.test.mjs"
+      - "scripts/verify-readiness-evidence.mjs"
+      - "scripts/verify-readiness-evidence.test.mjs"
+      - ".github/workflows/build-all.yml"
+      - ".github/workflows/publish-approved.yml"
+      - ".github/workflows/fleet-manifest.yml"
+  push:
+    branches: [main]
+    paths:
+      - "fleet/**"
+      - "scripts/verify-fleet-manifest.mjs"
+      - "scripts/verify-fleet-manifest.test.mjs"
+      - "scripts/verify-release-workflow.mjs"
+      - "scripts/verify-release-workflow.test.mjs"
+      - "scripts/merge-cyclonedx.mjs"
+      - "scripts/merge-cyclonedx.test.mjs"
+      - "scripts/verify-readiness-evidence.mjs"
+      - "scripts/verify-readiness-evidence.test.mjs"
+      - ".github/workflows/build-all.yml"
+      - ".github/workflows/publish-approved.yml"
+      - ".github/workflows/fleet-manifest.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    name: Manifest- und Release-Verträge
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2, immutable
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4, immutable
+        with:
+          node-version: 22
+      - name: Validator testen
+        run: node --test scripts/verify-fleet-manifest.test.mjs scripts/verify-release-workflow.test.mjs scripts/merge-cyclonedx.test.mjs scripts/verify-readiness-evidence.test.mjs
+      - name: Alle Fleet-Manifeste prüfen
+        run: node scripts/verify-fleet-manifest.mjs
+      - name: Release-Workflow fail-closed prüfen
+        run: node scripts/verify-release-workflow.mjs
+      - name: Ops- und Markt-Evidence-Templates prüfen
+        run: node scripts/verify-readiness-evidence.mjs fleet/evidence/operations-template.json fleet/evidence/market-template.json

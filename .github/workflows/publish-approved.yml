@@ -1,0 +1,117 @@
+# SCAI — einen technisch fertigen Draft erst nach vollständigem Fleet-PASS veröffentlichen.
+#
+# Dieser Workflow baut nichts und ergänzt keine Evidenz. Er prüft ausschließlich
+# einen bereits gemergten, unveränderlich gehashten PASS-Vertrag und veröffentlicht
+# genau den dazugehörigen Draft. R0–R3, Legal/DPO/Judge, Artefakte und Betriebsdrills
+# sind dadurch echte Vorbedingungen statt nachgelagerter Dokumentation.
+
+name: Publish approved Fleet release
+
+on:
+  workflow_dispatch:
+    inputs:
+      release_id:
+        description: "Freigegebene Fleet-Release-ID"
+        required: true
+      tag:
+        description: "Zugehöriger Draft-Tag (z. B. v0.126.0)"
+        required: true
+      manifest_sha256:
+        description: "Vorab geprüfter SHA-256 des PASS-Manifests"
+        required: true
+
+permissions:
+  contents: write
+
+concurrency:
+  group: publish-${{ inputs.release_id }}
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    name: Fleet-PASS prüfen und Draft veröffentlichen
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Gemergten Release-Vertrag auschecken
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2, immutable
+        with:
+          fetch-depth: 0
+
+      - name: Eingaben und vollständigen Fleet-PASS verifizieren
+        id: gate
+        env:
+          RELEASE_ID: ${{ inputs.release_id }}
+          TAG: ${{ inputs.tag }}
+          EXPECTED_MANIFEST_SHA256: ${{ inputs.manifest_sha256 }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF" = "refs/heads/$DEFAULT_BRANCH"
+          printf '%s' "$RELEASE_ID" | grep -Eq '^scai-candidate-[0-9]{4}-[0-9]{2}-[0-9]{2}\.[0-9]+$'
+          printf '%s' "$TAG" | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+([-.][0-9A-Za-z.]+)?$'
+          printf '%s' "$EXPECTED_MANIFEST_SHA256" | grep -Eq '^[0-9a-f]{64}$'
+
+          MANIFEST="fleet/manifests/$RELEASE_ID.json"
+          test -f "$MANIFEST"
+          node scripts/verify-fleet-manifest.mjs "$MANIFEST"
+          test "$(jq -r .status "$MANIFEST")" = "pass"
+
+          ACTUAL_MANIFEST_SHA256=$(sha256sum "$MANIFEST" | awk '{print $1}')
+          test "$ACTUAL_MANIFEST_SHA256" = "$EXPECTED_MANIFEST_SHA256"
+
+          CONTRACT_SHA=$(jq -r .pins.scai_release_contract.sha "$MANIFEST")
+          git cat-file -e "$CONTRACT_SHA^{commit}"
+          git merge-base --is-ancestor "$CONTRACT_SHA" "$GITHUB_SHA"
+          for path in \
+            .github/workflows/build-all.yml \
+            .github/workflows/publish-approved.yml \
+            fleet/manifest.schema.json \
+            scripts/verify-fleet-manifest.mjs \
+            scripts/verify-release-workflow.mjs; do
+            git show "$CONTRACT_SHA:$path" > "$RUNNER_TEMP/contract-file"
+            cmp --silent "$RUNNER_TEMP/contract-file" "$path"
+          done
+
+          SOURCE_SHA=$(jq -r .pins.scai_source.sha "$MANIFEST")
+          echo "manifest=$MANIFEST" >> "$GITHUB_OUTPUT"
+          echo "source_sha=$SOURCE_SHA" >> "$GITHUB_OUTPUT"
+
+      - name: Draft, Bindung und sämtliche Asset-Digests verifizieren
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          RELEASE_ID: ${{ inputs.release_id }}
+          TAG: ${{ inputs.tag }}
+          SOURCE_SHA: ${{ steps.gate.outputs.source_sha }}
+        run: |
+          set -euo pipefail
+          RELEASE=$(gh release view "$TAG" -R "$REPO" --json isDraft,body)
+          test "$(jq -r .isDraft <<<"$RELEASE")" = "true"
+          BODY=$(jq -r .body <<<"$RELEASE")
+          printf '%s' "$BODY" | grep -Fq "Source-SHA: $SOURCE_SHA"
+          printf '%s' "$BODY" | grep -Fq "Fleet-Release-ID: $RELEASE_ID"
+
+          ASSET_DIR="$RUNNER_TEMP/scai-publish-$TAG"
+          mkdir -p "$ASSET_DIR"
+          gh release download "$TAG" -R "$REPO" --dir "$ASSET_DIR"
+          test -s "$ASSET_DIR/SHA256SUMS"
+          cd "$ASSET_DIR"
+          sha256sum -c SHA256SUMS
+
+      - name: Geprüften Draft veröffentlichen
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          TAG: ${{ inputs.tag }}
+        run: |
+          set -euo pipefail
+          PRERELEASE=$(gh release view "$TAG" -R "$REPO" --json isPrerelease --jq .isPrerelease)
+          FLAGS=(--draft=false)
+          if [ "$PRERELEASE" = "true" ]; then
+            FLAGS+=(--prerelease)
+          else
+            FLAGS+=(--prerelease=false --latest)
+          fi
+          gh release edit "$TAG" -R "$REPO" "${FLAGS[@]}"
+          gh release view "$TAG" -R "$REPO" --json isDraft,isPrerelease,assets \
+            --jq '{draft:.isDraft, prerelease:.isPrerelease, assets:(.assets|length)}'

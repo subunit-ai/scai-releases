@@ -1,0 +1,16 @@
+{
+  "schema_version": "1.0",
+  "report_type": "market",
+  "release_id": "scai-candidate-2026-08-24.1",
+  "source_sha": "3c342d0e59f8c7d433b8a90e15d8ee15f138cf91",
+  "status": "open",
+  "segment": { "core_segment": "DACH KMU", "employee_min": 10, "employee_max": 500, "geography": "DACH", "outcome": "" },
+  "customers": [],
+  "gates": {
+    "R0": { "status": "open", "evidence": [] },
+    "R1": { "status": "open", "evidence": [] },
+    "R2": { "status": "open", "evidence": [] },
+    "R3": { "status": "open", "evidence": [] }
+  },
+  "decision": { "status": "open", "reason": "" }
+}
