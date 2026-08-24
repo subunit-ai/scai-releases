@@ -228,8 +228,8 @@
     {
       "id": "merge-and-ci",
       "owner": "Subunit Engineering",
-      "resolution": "Alle gepinnten PRs reviewen, mergen und CI gegen exakt den integrierten SHA erfolgreich ausführen",
-      "evidence_required": "Merge-SHAs und grüner unveränderlicher CI-Run"
+      "resolution": "Private-Repo-CI-Billing freigeben oder gleichwertige unveränderliche Remote-CI bereitstellen; u1-chat #18 vor dem darauf gestapelten #19 integrieren; danach alle gepinnten PRs reviewen, mergen und CI gegen exakt die resultierenden SHAs erfolgreich ausführen",
+      "evidence_required": "Grüne Remote-CI-Läufe ohne Billing-Abbruch, korrekte u1-chat-Integrationskette, Merge-SHAs und grüner unveränderlicher Post-Merge-CI-Run"
     },
     {
       "id": "artifacts-and-operations",
