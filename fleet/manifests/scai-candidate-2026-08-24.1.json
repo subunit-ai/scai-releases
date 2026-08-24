@@ -7,7 +7,7 @@
   "pins": {
     "scai_source": {
       "repository": "https://github.com/subunit-ai/subunit-scai",
-      "sha": "bd138ce07213f6297fa10ece712b8346cb9e406f",
+      "sha": "d36f036de0efa9f82b999ff1db6c583b019d65b5",
       "branch": "session/a8-integrated-candidate",
       "pr_url": "https://github.com/subunit-ai/subunit-scai/pull/421",
       "merge_status": "open"
@@ -162,10 +162,10 @@
   },
   "source_ci": {
     "status": "open",
-    "sha": "bd138ce07213f6297fa10ece712b8346cb9e406f",
+    "sha": "d36f036de0efa9f82b999ff1db6c583b019d65b5",
     "run_url": "",
     "checks": [
-      "Local post-merge preflight on exact SCAI SHA bd138ce07213f6297fa10ece712b8346cb9e406f (release 0.126.0; mobile modal layering fix included)",
+      "Local post-merge preflight on exact SCAI SHA d36f036de0efa9f82b999ff1db6c583b019d65b5 (release 0.126.0; mobile modal and shell-clearance fixes included)",
       "cargo test --manifest-path src-tauri/Cargo.toml --lib: 444 pass, 0 fail, 16 ignored",
       "npm run build: pass; native broker 30/30; plugin envelope 14/14",
       "npm run build:web and bun test web: 8 pass, 0 fail, 48 assertions",
@@ -218,7 +218,7 @@
       "id": "source-ci",
       "owner": "Subunit Engineering",
       "resolution": "Remote-CI, Multi-Viewport-Browser-Proof und echte OS-Credential-Store-Smokes gegen den neuen post-merge Source-Pin ausführen",
-      "evidence_required": "Grüner unveränderlicher CI-Lauf auf exakt bd138ce07213f6297fa10ece712b8346cb9e406f"
+      "evidence_required": "Grüner unveränderlicher CI-Lauf auf exakt d36f036de0efa9f82b999ff1db6c583b019d65b5"
     },
     {
       "id": "legal-approval",

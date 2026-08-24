@@ -2,7 +2,7 @@
   "schema_version": "1.0",
   "report_type": "market",
   "release_id": "scai-candidate-2026-08-24.1",
-  "source_sha": "bd138ce07213f6297fa10ece712b8346cb9e406f",
+  "source_sha": "d36f036de0efa9f82b999ff1db6c583b019d65b5",
   "status": "open",
   "segment": { "core_segment": "DACH KMU", "employee_min": 10, "employee_max": 500, "geography": "DACH", "outcome": "" },
   "customers": [],
