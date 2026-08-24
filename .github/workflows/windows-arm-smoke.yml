@@ -81,7 +81,7 @@ jobs:
 
       - name: Rust ARM64 prüfen (locked)
         working-directory: src
-        run: cargo check --manifest-path src-tauri/Cargo.toml --target aarch64-pc-windows-msvc --locked
+        run: cargo check --manifest-path src-tauri/Cargo.toml --target aarch64-pc-windows-msvc --locked --features local-meet
 
       - name: ARM64-Vorschauinstaller bauen
         if: inputs.bundle
@@ -94,7 +94,7 @@ jobs:
           if ([string]::IsNullOrWhiteSpace($env:TAURI_SIGNING_PRIVATE_KEY)) {
             throw "TAURI_SIGNING_PRIVATE_KEY fehlt — kein unsigniertes Update-Artefakt erzeugen."
           }
-          npm run tauri build -- --target aarch64-pc-windows-msvc --bundles nsis
+          npm run tauri build -- --target aarch64-pc-windows-msvc --bundles nsis --features local-meet
 
       - name: ARM64-Vorschauinstaller bereitstellen
         if: inputs.bundle
