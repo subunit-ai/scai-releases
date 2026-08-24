@@ -6,7 +6,8 @@ Release-Builds aktivieren verpflichtend das Cargo-Feature `local-meet`, damit lo
 Meeting-Aufzeichnung, Sprechertrennung und Windows-Systemaudio in allen ausgelieferten
 SCAI-Paketen enthalten sind.
 Für Windows ARM64 baut die Pipeline die nativen whisper.cpp/ggml-Anteile mit
-ClangCL + Ninja; Rust/Tauri bleiben dabei auf `aarch64-pc-windows-msvc`.
+ClangCL + Ninja und aktiviert die von ggml benötigte C++-Exception-Semantik;
+Rust/Tauri bleiben dabei auf `aarch64-pc-windows-msvc`.
 
 ## Download
 - **macOS (Apple Silicon):** `SCAI_x.y.z_aarch64.dmg`
