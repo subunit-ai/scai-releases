@@ -248,3 +248,11 @@ jobs:
       - name: SCAI mit nativer Trace-/Meet-Engine prüfen
         working-directory: src
         run: cargo check --locked --manifest-path src-tauri/Cargo.toml --features local-meet
+
+      # A1 / Native Auth: Ein Linux-Erfolg reicht nicht als Beweis für den
+      # ausgelieferten Desktop-Pfad. Derselbe gepinnte SCAI-Stand muss die
+      # PKCE-/State-/Redirect-Bindung auf unseren echten Release-Runners
+      # (macOS ARM64 und Windows x64) ausführen, nicht nur kompilieren.
+      - name: Native PKCE-Sitzungstests ausführen
+        working-directory: src
+        run: cargo test --locked --manifest-path src-tauri/Cargo.toml --features local-meet auth::tests -- --nocapture
