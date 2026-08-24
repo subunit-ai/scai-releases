@@ -14,7 +14,7 @@
     },
     "scai_release_contract": {
       "repository": "https://github.com/subunit-ai/scai-releases",
-      "sha": "7eb8ab398e20b9831d3ae28af679596f59e74a1e",
+      "sha": "41be82690a9365904256de5c24c7f30b596b6d4c",
       "branch": "session/a8-fleet-release",
       "pr_url": "https://github.com/subunit-ai/scai-releases/pull/12",
       "merge_status": "open"
@@ -234,8 +234,8 @@
     {
       "id": "artifacts-and-operations",
       "owner": "Subunit Release Engineering",
-      "resolution": "Signierte Multi-Plattform-Artefakte, SBOM und Provenance erzeugen sowie autorisierten Deploy-, Health-, Recovery- und Rollback-Drill ausführen",
-      "evidence_required": "Artefakt-Digests, Signatur-/SBOM-/Provenance-URLs und Betriebsprotokoll"
+      "resolution": "Signierte Multi-Plattform-Artefakte, SBOM und Provenance als gebundenen Draft erzeugen, autorisierten Deploy-, Health-, Recovery- und Rollback-Drill ausführen und erst nach vollständigem Fleet-PASS veröffentlichen",
+      "evidence_required": "Artefakt-Digests, Signatur-/SBOM-/Provenance-URLs, Betriebsprotokoll und SHA-256 des gemergten PASS-Manifests"
     },
     {
       "id": "market-evidence",
