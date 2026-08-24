@@ -7,7 +7,7 @@
   "pins": {
     "scai_source": {
       "repository": "https://github.com/subunit-ai/subunit-scai",
-      "sha": "b174275784eebf141037ca127083fa94121f0d83",
+      "sha": "a2d1881b17b8ebd09e21666f42b6e047cae89c19",
       "branch": "session/a8-integrated-candidate",
       "pr_url": "https://github.com/subunit-ai/subunit-scai/pull/421",
       "merge_status": "open"
@@ -161,14 +161,12 @@
     }
   },
   "source_ci": {
-    "status": "pass",
-    "sha": "b174275784eebf141037ca127083fa94121f0d83",
-    "run_url": "https://github.com/subunit-ai/scai-releases/actions/runs/32778406184",
+    "status": "open",
+    "sha": "a2d1881b17b8ebd09e21666f42b6e047cae89c19",
+    "run_url": "",
     "checks": [
-      "Remote PR Check 32778406184: pass on exact SCAI SHA b174275784eebf141037ca127083fa94121f0d83",
-      "Linux: production build, Meet desktop/mobile dark/light visual and malformed-input proof, Web BFF/SSO proof and Cargo suite pass",
-      "macOS ARM64 and Windows x64: native local-meet compile, PKCE session suite and real OS credential-store smoke pass",
-      "cargo test --manifest-path src-tauri/Cargo.toml --lib: 441 pass, 0 fail, 16 ignored",
+      "Local post-merge preflight on exact SCAI SHA a2d1881b17b8ebd09e21666f42b6e047cae89c19",
+      "cargo test --manifest-path src-tauri/Cargo.toml --lib: 444 pass, 0 fail, 16 ignored",
       "npm run build: pass; native broker 30/30; plugin envelope 14/14",
       "npm run build:web and bun test web: 8 pass, 0 fail, 48 assertions",
       "A7 targeted tests: 8 pass, 0 fail",
@@ -208,6 +206,12 @@
     "legal": { "name": "", "evidence_url": "" }
   },
   "blockers": [
+    {
+      "id": "source-ci",
+      "owner": "Subunit Engineering",
+      "resolution": "Remote-CI, Multi-Viewport-Browser-Proof und echte OS-Credential-Store-Smokes gegen den neuen post-merge Source-Pin ausführen",
+      "evidence_required": "Grüner unveränderlicher CI-Lauf auf exakt a2d1881b17b8ebd09e21666f42b6e047cae89c19"
+    },
     {
       "id": "legal-approval",
       "owner": "TJ",
