@@ -7,21 +7,21 @@
   "pins": {
     "scai_source": {
       "repository": "https://github.com/subunit-ai/subunit-scai",
-      "sha": "3c342d0e59f8c7d433b8a90e15d8ee15f138cf91",
-      "branch": "session/a8-integrated-candidate",
+      "sha": "4f5af1ffc239040550902b5aef9b86680a091d2c",
+      "branch": "main",
       "pr_url": "https://github.com/subunit-ai/subunit-scai/pull/421",
-      "merge_status": "open"
+      "merge_status": "merged"
     },
     "scai_release_contract": {
       "repository": "https://github.com/subunit-ai/scai-releases",
-      "sha": "41be82690a9365904256de5c24c7f30b596b6d4c",
-      "branch": "session/a8-fleet-release",
-      "pr_url": "https://github.com/subunit-ai/scai-releases/pull/12",
+      "sha": "9d20ba5e038f10e48e49f58d7c90b63014ebb1cd",
+      "branch": "session/a8-fleet-post-merge",
+      "pr_url": "https://github.com/subunit-ai/scai-releases/pull/13",
       "merge_status": "open"
     },
     "u1_chat": {
       "repository": "https://github.com/subunit-ai/u1-chat",
-      "sha": "d8e18143370427055d63294c3f3570ebeba6b998",
+      "sha": "fa73886ca15d9c45de1ba39d15def85c5d65c46f",
       "branch": "session/a7-regulated-use",
       "pr_url": "https://github.com/subunit-ai/u1-chat/pull/19",
       "merge_status": "open"
@@ -126,7 +126,11 @@
       "status": "open",
       "owner": "Subunit Release Engineering",
       "judge": "",
-      "evidence": ["https://github.com/subunit-ai/subunit-scai/pull/421"],
+      "evidence": [
+        "https://github.com/subunit-ai/subunit-scai/pull/421",
+        "https://github.com/subunit-ai/scai-releases/actions/runs/32787488475",
+        "https://github.com/subunit-ai/scai-releases/pull/13"
+      ],
       "acceptance": "Alle Pins gemergt, CI und signierte Artefakte grün, SBOM/Provenance verifiziert, Health/Recovery/Rollback bestanden"
     }
   },
@@ -162,20 +166,17 @@
   },
   "source_ci": {
     "status": "pass",
-    "sha": "3c342d0e59f8c7d433b8a90e15d8ee15f138cf91",
-    "run_url": "https://github.com/subunit-ai/scai-releases/actions/runs/32785133565",
+    "sha": "4f5af1ffc239040550902b5aef9b86680a091d2c",
+    "run_url": "https://github.com/subunit-ai/scai-releases/actions/runs/32787488475",
     "checks": [
-      "Local post-merge preflight on exact SCAI SHA 3c342d0e59f8c7d433b8a90e15d8ee15f138cf91 (release 0.126.0; mobile modal, action-footer and shell-clearance fixes included)",
-      "cargo test --manifest-path src-tauri/Cargo.toml --lib: 444 pass, 0 fail, 16 ignored",
-      "npm run build: pass; native broker 30/30; plugin envelope 14/14",
-      "npm run build:web and bun test web: 8 pass, 0 fail, 48 assertions",
-      "A7 targeted tests: 8 pass, 0 fail",
-      "drift, release-meta, no-demo-data, 28 plugin builds, plugin CSS, fonts, contrast and accent checks: pass",
-      "Remote PR Check 32785133565 checked out exact SCAI SHA 3c342d0 on Linux, macOS ARM64 and Windows x64: all jobs pass",
-      "Remote Rust suite: 444 pass, 0 fail, 4 ignored",
-      "Meet multi-viewport proof: desktop/mobile x light/dark, all modal actions visible, 42 screenshots manually inspected at the repaired mobile gates",
-      "Production web runtime: desktop-dark and mobile-light, 0 browser/HTTP errors",
-      "Native PKCE: 6/6 on macOS ARM64 and 6/6 on Windows x64; real OS credential-store write/read/delete: pass on both"
+      "Remote PR Check 32787488475 completed successfully and checked out exact SCAI merge SHA 4f5af1f on Linux, macOS ARM64 and Windows x64",
+      "Release metadata v0.126.0, TypeScript/Vite build, drift, no-demo-data, 28 plugin probes, broker 30/30 and plugin envelope 14/14: pass",
+      "Rust suite: 444 pass, 0 fail, 4 ignored",
+      "Meet visual and interaction proof: desktop/mobile x light/dark; 42 screenshots uploaded; sampled repaired mobile modal, task footer, local-processing, consent and production-web surfaces manually inspected",
+      "Screenshot artifact 9542066552: 42 files, GitHub digest sha256:7ce916cf0b24332aef07dbb4b68da3b19fcd7164093ef2ee6348911dc4e8a76e",
+      "Production web runtime desktop-dark and mobile-light: 0 browser/HTTP errors",
+      "Native PKCE: 6/6 on macOS ARM64 and 6/6 on Windows x64",
+      "Real OS credential-store write/read/delete: pass on macOS Keychain and Windows Credential Manager"
     ]
   },
   "artifacts": {
@@ -228,14 +229,14 @@
     {
       "id": "merge-and-ci",
       "owner": "Subunit Engineering",
-      "resolution": "Private-Repo-CI-Billing freigeben oder gleichwertige unveränderliche Remote-CI bereitstellen; u1-chat #18 vor dem darauf gestapelten #19 integrieren; danach alle gepinnten PRs reviewen, mergen und CI gegen exakt die resultierenden SHAs erfolgreich ausführen",
-      "evidence_required": "Grüne Remote-CI-Läufe ohne Billing-Abbruch, korrekte u1-chat-Integrationskette, Merge-SHAs und grüner unveränderlicher Post-Merge-CI-Run"
+      "resolution": "Private-Repo-CI-Billing freigeben oder gleichwertige unveränderliche Remote-CI bereitstellen; u1-chat #18 vor dem darauf gestapelten #19 integrieren; danach Atlas #62, subunit-auth #12 und Echo #23 reviewen, mergen und CI gegen exakt die resultierenden SHAs erfolgreich ausführen; PR #13 als Merge-Commit integrieren, damit der gepinnte Release-Contract-Commit Vorfahr bleibt",
+      "evidence_required": "Grüne Backend-Remote-CI-Läufe ohne Billing-Abbruch, korrekte u1-chat-Integrationskette, tatsächliche Backend-Merge-SHAs und gemergter Release-Contract-Pin; lokale Zusatzbelege: u1-chat 470/470 dreimal, Atlas A6 81/81 plus TypeScript, subunit-auth 105/105 und Echo 77/77 grün"
     },
     {
       "id": "artifacts-and-operations",
       "owner": "Subunit Release Engineering",
-      "resolution": "Signierte Multi-Plattform-Artefakte, SBOM und Provenance als gebundenen Draft erzeugen, autorisierten Deploy-, Health-, Recovery- und Rollback-Drill ausführen und erst nach vollständigem Fleet-PASS veröffentlichen",
-      "evidence_required": "Artefakt-Digests, Signatur-/SBOM-/Provenance-URLs, Betriebsprotokoll und SHA-256 des gemergten PASS-Manifests"
+      "resolution": "Fehlende Apple-Notarisierungs-Secrets APPLE_ID, APPLE_PASSWORD und APPLE_TEAM_ID sowie Windows-Code-Signing-Secrets WINDOWS_CERTIFICATE, WINDOWS_CERTIFICATE_PASSWORD und WINDOWS_CERTIFICATE_SUBJECT autorisiert konfigurieren; danach signierte Multi-Plattform-Artefakte, SBOM und Provenance als gebundenen Draft erzeugen, autorisierten Deploy-, Health-, Recovery- und Rollback-Drill ausführen und erst nach vollständigem Fleet-PASS veröffentlichen",
+      "evidence_required": "Erfolgreicher Secret-Preflight ohne Ausgabe von Werten, Artefakt-Digests, Signatur-/SBOM-/Provenance-URLs, Betriebsprotokoll und SHA-256 des gemergten PASS-Manifests"
     },
     {
       "id": "market-evidence",
