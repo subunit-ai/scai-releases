@@ -19,6 +19,16 @@ test("a public pre-build release is rejected", () => {
   assert.match(validateReleaseWorkflow(unsafe).join("\n"), /release must be created as a draft/);
 });
 
+test("a draft cannot be created before every signing secret exists", () => {
+  const unsafe = fixture.replace("name: Release-Secret-Preflight", "name: Unchecked-Secrets");
+  assert.match(validateReleaseWorkflow(unsafe).join("\n"), /release secrets must be checked before/);
+});
+
+test("a bound signing secret must also be required by the preflight", () => {
+  const unsafe = fixture.replace("APPLE_ID APPLE_PASSWORD APPLE_TEAM_ID", "APPLE_PASSWORD APPLE_TEAM_ID");
+  assert.match(validateReleaseWorkflow(unsafe).join("\n"), /preflight must require APPLE_ID/);
+});
+
 test("a mutable action reference is rejected", () => {
   const unsafe = fixture.replace(/actions\/attest@[0-9a-f]{40}/, "actions/attest@v4");
   assert.match(validateReleaseWorkflow(unsafe).join("\n"), /action reference must be immutable/);

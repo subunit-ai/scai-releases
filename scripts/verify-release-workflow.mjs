@@ -12,6 +12,32 @@ export function validateReleaseWorkflow(workflow) {
 
   require(has(/source_sha:\s*\n(?:\s+.*\n){0,4}?\s+required:\s*true/m), "source_sha input must be required");
   require(has(/release_id:\s*\n(?:\s+.*\n){0,4}?\s+required:\s*true/m), "release_id input must be required");
+  const secretPreflightIndex = workflow.indexOf("name: Release-Secret-Preflight");
+  const sourceCheckoutIndex = workflow.indexOf("name: Version aus dem Quell-Repo lesen");
+  require(secretPreflightIndex >= 0 && sourceCheckoutIndex > secretPreflightIndex, "all release secrets must be checked before source checkout or draft creation");
+  const secretPreflight = secretPreflightIndex >= 0 && sourceCheckoutIndex > secretPreflightIndex
+    ? workflow.slice(secretPreflightIndex, sourceCheckoutIndex)
+    : "";
+  const requiredSecretList = secretPreflight.match(/REQUIRED_RELEASE_SECRETS=\(\s*([\s\S]*?)\s*\)/)?.[1] ?? "";
+  for (const name of [
+    "SOURCE_DEPLOY_KEY",
+    "TRACE_SOURCE_DEPLOY_KEY",
+    "APPLE_CERTIFICATE",
+    "APPLE_CERTIFICATE_PASSWORD",
+    "APPLE_SIGNING_IDENTITY",
+    "APPLE_ID",
+    "APPLE_PASSWORD",
+    "APPLE_TEAM_ID",
+    "WINDOWS_CERTIFICATE",
+    "WINDOWS_CERTIFICATE_PASSWORD",
+    "WINDOWS_CERTIFICATE_SUBJECT",
+    "TAURI_SIGNING_PRIVATE_KEY",
+    "TAURI_SIGNING_PRIVATE_KEY_PASSWORD",
+  ]) {
+    require(secretPreflight.includes(`${name}: \${{ secrets.${name} }}`), `release secret preflight must bind ${name}`);
+    require(new RegExp(`(^|\\s)${name}(\\s|$)`).test(requiredSecretList), `release secret preflight must require ${name}`);
+  }
+  require(secretPreflight.includes('MISSING_RELEASE_SECRETS+=("$secret_name")'), "release secret preflight must fail closed on empty secrets");
   require((workflow.match(/git -C src fetch --depth 1 origin "\$SOURCE_SHA"/g) ?? []).length >= 2, "source checkout must fetch the immutable SHA in build and evidence jobs");
   require(!has(/git clone[^\n]*--branch/), "branch-based source checkout is forbidden");
   require(has(/gh release create "\$TAG"[\s\S]{0,200}?--draft/), "release must be created as a draft");

@@ -60,6 +60,43 @@ jobs:
       tag: ${{ steps.ermitteln.outputs.tag }}
       source_sha: ${{ steps.ermitteln.outputs.source_sha }}
     steps:
+      - name: Release-Secret-Preflight
+        shell: bash
+        env:
+          SOURCE_DEPLOY_KEY: ${{ secrets.SOURCE_DEPLOY_KEY }}
+          TRACE_SOURCE_DEPLOY_KEY: ${{ secrets.TRACE_SOURCE_DEPLOY_KEY }}
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          WINDOWS_CERTIFICATE: ${{ secrets.WINDOWS_CERTIFICATE }}
+          WINDOWS_CERTIFICATE_PASSWORD: ${{ secrets.WINDOWS_CERTIFICATE_PASSWORD }}
+          WINDOWS_CERTIFICATE_SUBJECT: ${{ secrets.WINDOWS_CERTIFICATE_SUBJECT }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          REQUIRED_RELEASE_SECRETS=(
+            SOURCE_DEPLOY_KEY TRACE_SOURCE_DEPLOY_KEY
+            APPLE_CERTIFICATE APPLE_CERTIFICATE_PASSWORD APPLE_SIGNING_IDENTITY
+            APPLE_ID APPLE_PASSWORD APPLE_TEAM_ID
+            WINDOWS_CERTIFICATE WINDOWS_CERTIFICATE_PASSWORD WINDOWS_CERTIFICATE_SUBJECT
+            TAURI_SIGNING_PRIVATE_KEY TAURI_SIGNING_PRIVATE_KEY_PASSWORD
+          )
+          MISSING_RELEASE_SECRETS=()
+          for secret_name in "${REQUIRED_RELEASE_SECRETS[@]}"; do
+            if [ -z "${!secret_name:-}" ]; then
+              MISSING_RELEASE_SECRETS+=("$secret_name")
+            fi
+          done
+          if [ "${#MISSING_RELEASE_SECRETS[@]}" -ne 0 ]; then
+            printf '::error::Fehlendes Release-Secret: %s\n' "${MISSING_RELEASE_SECRETS[@]}"
+            exit 1
+          fi
+          echo "Alle erforderlichen Release-Secrets sind gesetzt; Werte wurden nicht ausgegeben."
+
       - name: Version aus dem Quell-Repo lesen
         id: ermitteln
         shell: bash
