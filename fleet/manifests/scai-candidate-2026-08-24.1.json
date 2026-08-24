@@ -15,9 +15,9 @@
     "scai_release_contract": {
       "repository": "https://github.com/subunit-ai/scai-releases",
       "sha": "9d20ba5e038f10e48e49f58d7c90b63014ebb1cd",
-      "branch": "session/a8-fleet-post-merge",
+      "branch": "main",
       "pr_url": "https://github.com/subunit-ai/scai-releases/pull/13",
-      "merge_status": "open"
+      "merge_status": "merged"
     },
     "u1_chat": {
       "repository": "https://github.com/subunit-ai/u1-chat",
@@ -229,8 +229,8 @@
     {
       "id": "merge-and-ci",
       "owner": "Subunit Engineering",
-      "resolution": "Private-Repo-CI-Billing freigeben oder gleichwertige unveränderliche Remote-CI bereitstellen; u1-chat #18 vor dem darauf gestapelten #19 integrieren; danach Atlas #62, subunit-auth #12 und Echo #23 reviewen, mergen und CI gegen exakt die resultierenden SHAs erfolgreich ausführen; PR #13 als Merge-Commit integrieren, damit der gepinnte Release-Contract-Commit Vorfahr bleibt",
-      "evidence_required": "Grüne Backend-Remote-CI-Läufe ohne Billing-Abbruch, korrekte u1-chat-Integrationskette, tatsächliche Backend-Merge-SHAs und gemergter Release-Contract-Pin; lokale Zusatzbelege: u1-chat 470/470 dreimal, Atlas A6 81/81 plus TypeScript, subunit-auth 105/105 und Echo 77/77 grün"
+      "resolution": "Private-Repo-CI-Billing freigeben oder gleichwertige unveränderliche Remote-CI bereitstellen; u1-chat #18 vor dem darauf gestapelten #19 integrieren; danach Atlas #62, subunit-auth #12 und Echo #23 reviewen, mergen und CI gegen exakt die resultierenden SHAs erfolgreich ausführen",
+      "evidence_required": "Grüne Backend-Remote-CI-Läufe ohne Billing-Abbruch, korrekte u1-chat-Integrationskette und tatsächliche Backend-Merge-SHAs; lokale Zusatzbelege: u1-chat 470/470 dreimal, Atlas A6 81/81 plus TypeScript, subunit-auth 105/105 und Echo 77/77 grün"
     },
     {
       "id": "artifacts-and-operations",
