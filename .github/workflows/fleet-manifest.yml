@@ -13,6 +13,7 @@ on:
       - "scripts/verify-readiness-evidence.mjs"
       - "scripts/verify-readiness-evidence.test.mjs"
       - ".github/workflows/build-all.yml"
+      - ".github/workflows/publish-approved.yml"
       - ".github/workflows/fleet-manifest.yml"
   push:
     branches: [main]
@@ -27,6 +28,7 @@ on:
       - "scripts/verify-readiness-evidence.mjs"
       - "scripts/verify-readiness-evidence.test.mjs"
       - ".github/workflows/build-all.yml"
+      - ".github/workflows/publish-approved.yml"
       - ".github/workflows/fleet-manifest.yml"
   workflow_dispatch:
 

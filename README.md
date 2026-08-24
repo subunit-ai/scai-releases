@@ -33,6 +33,13 @@ als auch die Marktnachweise R0–R3, getrennt verifizierte Updater- und native
 Plattformsignaturen, SBOM-Digests/Provenance,
 Governance-Freigaben und Betriebsdrills maschinell vollständig belegt sind.
 
+`build-all.yml` erzeugt für eine vollständige `release_id` und einen exakten
+`source_sha` ausschließlich einen technischen Draft. Es veröffentlicht nie.
+Erst `publish-approved.yml` darf den gebundenen Draft veröffentlichen; dafür
+verlangt es ein gemergtes Fleet-Manifest mit `status: pass`, dessen vorab
+bestätigten SHA-256, einen unveränderten Release-Vertrag und erneut geprüfte
+Asset-Digests.
+
 ```bash
 node scripts/verify-fleet-manifest.mjs
 node --test scripts/verify-fleet-manifest.test.mjs

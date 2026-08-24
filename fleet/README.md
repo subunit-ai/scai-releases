@@ -28,12 +28,19 @@ fail-closed. Er veröffentlicht, taggt, merged oder deployt nichts.
 3. Evidenz nur nach realer Verifikation ergänzen; keine geplanten Resultate als
    bestanden markieren.
    Updater-Signatur und Betriebssystem-Code-Signing sind getrennte Nachweise.
-4. Erst nach allen internen und externen Nachweisen auf `pass` umstellen.
-5. Ein separater, autorisierter Release-Prozess darf anschließend den exakt
-   gepinnten Stand bauen und ausrollen. `build-all.yml` nimmt dafür einen
-   vollständigen `source_sha`, hält alle Assets bis zum letzten Gate in einem
-   Draft und veröffentlicht erst nach nativer Signatur-, Updater-Signatur-,
-   SBOM- und Sigstore-Provenance-Verifikation.
+4. Nach technischer Freigabe baut `build-all.yml` den vollständigen `source_sha`
+   für die zugehörige `release_id`, verifiziert native Signaturen,
+   Updater-Signaturen, SBOM und Sigstore-Provenance und lässt sämtliche Assets
+   bewusst als Draft stehen.
+5. Autorisierte Betriebsdrills können exakt diesen Draft verwenden; ihre
+   Ergebnisse und alle übrigen internen und externen Nachweise werden erst nach
+   realer Verifikation eingetragen.
+6. Erst wenn der Validator vollständig grün ist, wird das Manifest auf `pass`
+   gesetzt, gemergt und sein SHA-256 separat bestätigt.
+7. Nur `publish-approved.yml` darf den gebundenen Draft danach veröffentlichen.
+   Es prüft erneut Manifest-PASS, Manifest-Digest, Release-Contract-Drift,
+   Release-ID, Source-SHA und sämtliche Asset-Digests. `build-all.yml`
+   veröffentlicht niemals selbst.
 
 ## Evidence-Verträge
 

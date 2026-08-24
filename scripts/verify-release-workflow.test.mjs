@@ -4,10 +4,11 @@ import { resolve, dirname, join } from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
 
-import { validateReleaseWorkflow } from "./verify-release-workflow.mjs";
+import { validatePublishWorkflow, validateReleaseWorkflow } from "./verify-release-workflow.mjs";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const fixture = readFileSync(join(ROOT, ".github/workflows/build-all.yml"), "utf8");
+const publishFixture = readFileSync(join(ROOT, ".github/workflows/publish-approved.yml"), "utf8");
 
 test("current release workflow is fail-closed", () => {
   assert.deepEqual(validateReleaseWorkflow(fixture), []);
@@ -28,8 +29,30 @@ test("updater signatures cannot be treated as native platform signing", () => {
   assert.match(validateReleaseWorkflow(unsafe).join("\n"), /Windows Authenticode signature must be verified/);
 });
 
-test("publication before attestation verification is rejected", () => {
-  const unsafe = fixture.replace("gh release edit \"$TAG\"", "gh release publish-removed \"$TAG\"")
-    .replace("set -euo pipefail\n          cd \"$ASSET_DIR\"", "set -euo pipefail\n          gh release edit \"$TAG\"\n          cd \"$ASSET_DIR\"");
-  assert.match(validateReleaseWorkflow(unsafe).join("\n"), /draft publication must happen after independent attestation verification/);
+test("the build workflow cannot publish its draft", () => {
+  const unsafe = fixture.replace(
+    "echo \"Technisches Draft-Evidence vollständig; Veröffentlichung bleibt bis Fleet-PASS gesperrt.\"",
+    "gh release edit \"$TAG\" -R \"$REPO\" --draft=false",
+  );
+  assert.match(validateReleaseWorkflow(unsafe).join("\n"), /build workflow must never publish a draft/);
+});
+
+test("current publication workflow is fail-closed", () => {
+  assert.deepEqual(validatePublishWorkflow(publishFixture), []);
+});
+
+test("publication without Fleet PASS is rejected", () => {
+  const unsafe = publishFixture.replace('test "$(jq -r .status "$MANIFEST")" = "pass"', "echo unchecked-status");
+  assert.match(validatePublishWorkflow(unsafe).join("\n"), /publication must require manifest PASS/);
+});
+
+test("publication without the approved manifest digest is rejected", () => {
+  const unsafe = publishFixture.replace('test "$ACTUAL_MANIFEST_SHA256" = "$EXPECTED_MANIFEST_SHA256"', "echo unchecked-manifest");
+  assert.match(validatePublishWorkflow(unsafe).join("\n"), /approved manifest SHA-256/);
+});
+
+test("publication before asset verification is rejected", () => {
+  const unsafe = publishFixture.replace('gh release edit "$TAG"', 'echo publish-removed "$TAG"')
+    .replace("sha256sum -c SHA256SUMS", 'gh release edit "$TAG"\n          sha256sum -c SHA256SUMS');
+  assert.match(validatePublishWorkflow(unsafe).join("\n"), /only after PASS and asset verification/);
 });
