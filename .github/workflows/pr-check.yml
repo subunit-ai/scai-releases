@@ -54,6 +54,35 @@ jobs:
           rm -f "$HOME/.ssh/scai_src"
           echo "ausgecheckt: $SRC_REF → $(git -C src rev-parse --short HEAD)"
 
+      # SCAI pinnt den gemeinsam mit dem Standalone-Host genutzten Trace-Kern auf
+      # einen unveränderlichen Commit im privaten trace-tauri-Repo. Ein eigener,
+      # read-only Deploy-Key hält den Zugriff minimal; SOURCE_DEPLOY_KEY bleibt
+      # weiterhin ausschließlich für das SCAI-Quellrepo zuständig.
+      - name: Privaten Trace-Kern für Cargo freischalten (read-only)
+        shell: bash
+        env:
+          TRACE_DEPLOY_KEY: ${{ secrets.TRACE_SOURCE_DEPLOY_KEY }}
+        run: |
+          set -euo pipefail
+          if [ -z "${TRACE_DEPLOY_KEY:-}" ]; then
+            echo "::error::TRACE_SOURCE_DEPLOY_KEY fehlt."
+            exit 1
+          fi
+          mkdir -p "$HOME/.ssh"
+          printf '%s\n' "$TRACE_DEPLOY_KEY" > "$HOME/.ssh/trace_src"
+          chmod 600 "$HOME/.ssh/trace_src"
+          cat >> "$HOME/.ssh/config" <<'EOF'
+          Host github-trace
+            HostName github.com
+            User git
+            IdentityFile ~/.ssh/trace_src
+            IdentitiesOnly yes
+          EOF
+          chmod 600 "$HOME/.ssh/config"
+          git config --global url."git@github-trace:subunit-ai/trace-tauri.git".insteadOf \
+            "https://github.com/subunit-ai/trace-tauri.git"
+          echo "CARGO_NET_GIT_FETCH_WITH_CLI=true" >> "$GITHUB_ENV"
+
       - name: Node einrichten
         uses: actions/setup-node@v4
         with:
