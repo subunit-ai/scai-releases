@@ -1,0 +1,239 @@
+{
+  "$schema": "../manifest.schema.json",
+  "schema_version": "1.0",
+  "release_id": "scai-candidate-2026-08-24.1",
+  "status": "candidate",
+  "created_at": "2026-08-24T20:41:15Z",
+  "pins": {
+    "scai_source": {
+      "repository": "https://github.com/subunit-ai/subunit-scai",
+      "sha": "4b38eb109fa3d76d31705eecf2704ec2339fbd28",
+      "branch": "session/a8-integrated-candidate",
+      "pr_url": "https://github.com/subunit-ai/subunit-scai/pull/421",
+      "merge_status": "open"
+    },
+    "scai_release_contract": {
+      "repository": "https://github.com/subunit-ai/scai-releases",
+      "sha": "7eb8ab398e20b9831d3ae28af679596f59e74a1e",
+      "branch": "session/a8-fleet-release",
+      "pr_url": "",
+      "merge_status": "open"
+    },
+    "u1_chat": {
+      "repository": "https://github.com/subunit-ai/u1-chat",
+      "sha": "d8e18143370427055d63294c3f3570ebeba6b998",
+      "branch": "session/a7-regulated-use",
+      "pr_url": "https://github.com/subunit-ai/u1-chat/pull/19",
+      "merge_status": "open"
+    },
+    "atlas": {
+      "repository": "https://github.com/subunit-ai/atlas",
+      "sha": "dd60d554b208557366eaac38e8ef0c489ec825ba",
+      "branch": "session/a6-authorization",
+      "pr_url": "https://github.com/subunit-ai/atlas/pull/62",
+      "merge_status": "open"
+    },
+    "subunit_auth": {
+      "repository": "https://github.com/subunit-ai/subunit-auth",
+      "sha": "624b8becd8e74c3b87de84fe3f7f2783628adbdd",
+      "branch": "session/a7-consent-evidence",
+      "pr_url": "https://github.com/subunit-ai/subunit-auth/pull/12",
+      "merge_status": "open"
+    },
+    "echo": {
+      "repository": "https://github.com/subunit-ai/echo",
+      "sha": "6c0e9122e0b5e6ff997b0a57b2d079579ed67f96",
+      "branch": "session/a7-participant-consent",
+      "pr_url": "https://github.com/subunit-ai/echo/pull/23",
+      "merge_status": "open"
+    }
+  },
+  "gates": {
+    "A1": {
+      "title": "Native Auth und echter OS-Credential-Store",
+      "release_pin": "scai-candidate-2026-08-24.1",
+      "status": "candidate",
+      "owner": "Subunit Engineering",
+      "judge": "",
+      "evidence": [
+        "https://github.com/subunit-ai/subunit-scai/pull/414",
+        "https://github.com/subunit-ai/scai-releases/pull/11"
+      ],
+      "acceptance": "PKCE/State/Redirect und realer Keychain/Credential-Manager auf Release-Runnern bestanden"
+    },
+    "A2": {
+      "title": "Default-deny Native Credential Broker",
+      "release_pin": "scai-candidate-2026-08-24.1",
+      "status": "candidate",
+      "owner": "Subunit Engineering",
+      "judge": "",
+      "evidence": ["https://github.com/subunit-ai/subunit-scai/pull/395"],
+      "acceptance": "Keine Renderer-Credentials; feste Origins, Methoden, Limits, ACLs und Abbruchpfade belegt"
+    },
+    "A3": {
+      "title": "Signierte Plugin Supply Chain",
+      "release_pin": "scai-candidate-2026-08-24.1",
+      "status": "candidate",
+      "owner": "Subunit Engineering",
+      "judge": "",
+      "evidence": ["https://github.com/subunit-ai/subunit-scai/pull/407"],
+      "acceptance": "Bundle, Manifest, SBOM, Provenance, Registry-Sequenz und Widerruf kryptografisch gebunden"
+    },
+    "A4": {
+      "title": "Autonome Ausführung mit Egress- und Consent-Gates",
+      "release_pin": "scai-candidate-2026-08-24.1",
+      "status": "candidate",
+      "owner": "Subunit Engineering",
+      "judge": "",
+      "evidence": ["https://github.com/subunit-ai/subunit-scai/pull/402"],
+      "acceptance": "Pro Task isolierter Egress, explizites Consent und fail-closed Policy belegt"
+    },
+    "A5": {
+      "title": "Action Evidence und Audit Receipts",
+      "release_pin": "scai-candidate-2026-08-24.1",
+      "status": "candidate",
+      "owner": "Subunit Engineering",
+      "judge": "",
+      "evidence": ["https://github.com/subunit-ai/u1-chat/pull/18"],
+      "acceptance": "Ausgeführte Aktionen liefern nachvollziehbare, manipulationsresistente Belege"
+    },
+    "A6": {
+      "title": "Zentrale Autorisierung und Tenant-Grenzen",
+      "release_pin": "scai-candidate-2026-08-24.1",
+      "status": "candidate",
+      "owner": "Subunit Engineering",
+      "judge": "",
+      "evidence": ["https://github.com/subunit-ai/atlas/pull/62"],
+      "acceptance": "Rollen, Workspace-Scope und verweigerte Cross-Tenant-Zugriffe sind serverseitig belegt"
+    },
+    "A7": {
+      "title": "DSGVO, AI-Act und regulierte Nutzung",
+      "release_pin": "scai-candidate-2026-08-24.1",
+      "status": "open",
+      "owner": "",
+      "judge": "",
+      "evidence": [
+        "https://github.com/subunit-ai/subunit-scai/pull/418",
+        "https://github.com/subunit-ai/subunit-auth/pull/12",
+        "https://github.com/subunit-ai/u1-chat/pull/19",
+        "https://github.com/subunit-ai/echo/pull/23"
+      ],
+      "acceptance": "Qualifizierter Legal/DPO-Owner und unabhängiger Judge genehmigen Datenflüsse, AVV/TOMs, DPIA und Use-Case-Grenzen"
+    },
+    "A8": {
+      "title": "Gemeinsamer Fleet Pin und Betriebsfreigabe",
+      "release_pin": "scai-candidate-2026-08-24.1",
+      "status": "open",
+      "owner": "Subunit Release Engineering",
+      "judge": "",
+      "evidence": ["https://github.com/subunit-ai/subunit-scai/pull/421"],
+      "acceptance": "Alle Pins gemergt, CI und signierte Artefakte grün, SBOM/Provenance verifiziert, Health/Recovery/Rollback bestanden"
+    }
+  },
+  "market_gates": {
+    "R0": {
+      "title": "Externes Nachfrage-Commitment",
+      "status": "open",
+      "owner": "TJ / Subunit Sales",
+      "evidence": [],
+      "acceptance": "Mindestens ein qualifiziertes Unternehmen bestätigt Problem, Budgetpfad und nächsten Termin"
+    },
+    "R1": {
+      "title": "Bezahlte Diagnose mit messbarem Effekt",
+      "status": "open",
+      "owner": "TJ / Subunit Sales",
+      "evidence": [],
+      "acceptance": "Diagnose ist bezahlt und Vorher/Nachher-Kennzahl sowie Entscheider-Abnahme sind dokumentiert"
+    },
+    "R2": {
+      "title": "Produktisierter Pilot",
+      "status": "open",
+      "owner": "TJ / Subunit Sales",
+      "evidence": [],
+      "acceptance": "Pilot hat festen Scope, Preis, Laufzeit, Erfolgskriterien und belastbare Delivery-Kosten"
+    },
+    "R3": {
+      "title": "Drei ähnliche zahlende Kunden",
+      "status": "open",
+      "owner": "TJ / Subunit Sales",
+      "evidence": [],
+      "acceptance": "Drei Unternehmen desselben Kernsegments bezahlen für denselben wiederholbaren Outcome"
+    }
+  },
+  "source_ci": {
+    "status": "local-pass",
+    "sha": "4b38eb109fa3d76d31705eecf2704ec2339fbd28",
+    "run_url": "",
+    "checks": [
+      "cargo test --manifest-path src-tauri/Cargo.toml --lib: 441 pass, 0 fail, 16 ignored",
+      "npm run build: pass; native broker 30/30; plugin envelope 14/14",
+      "npm run build:web and bun test web: 8 pass, 0 fail, 48 assertions",
+      "A7 targeted tests: 8 pass, 0 fail",
+      "drift, release-meta, no-demo-data, 28 plugin builds, plugin CSS, fonts, contrast and accent checks: pass"
+    ]
+  },
+  "artifacts": {
+    "status": "open",
+    "platforms": {
+      "macos_arm64": { "status": "open", "artifact_url": "", "sha256": "", "signature_url": "", "sbom_url": "", "provenance_url": "" },
+      "macos_x64": { "status": "open", "artifact_url": "", "sha256": "", "signature_url": "", "sbom_url": "", "provenance_url": "" },
+      "windows_x64": { "status": "open", "artifact_url": "", "sha256": "", "signature_url": "", "sbom_url": "", "provenance_url": "" },
+      "windows_arm64": { "status": "open", "artifact_url": "", "sha256": "", "signature_url": "", "sbom_url": "", "provenance_url": "" },
+      "linux_x64": { "status": "open", "artifact_url": "", "sha256": "", "signature_url": "", "sbom_url": "", "provenance_url": "" }
+    }
+  },
+  "governance": {
+    "status": "open",
+    "legal_owner": "",
+    "dpo_owner": "",
+    "independent_judge": "",
+    "decision": "open",
+    "evidence_url": ""
+  },
+  "operations": {
+    "status": "open",
+    "environment": "",
+    "deployed": false,
+    "health_verified": false,
+    "recovery_verified": false,
+    "rollback_verified": false,
+    "evidence_url": ""
+  },
+  "approvals": {
+    "product": { "name": "", "evidence_url": "" },
+    "security": { "name": "", "evidence_url": "" },
+    "legal": { "name": "", "evidence_url": "" }
+  },
+  "blockers": [
+    {
+      "id": "browser-proof",
+      "owner": "Subunit Engineering",
+      "resolution": "Multi-Viewport-Screenshots, Browser-Konsole und Malformed-Input-Proof auf einem lauffähigen Browser-Runner ausführen",
+      "evidence_required": "Grüner CI-Run oder unveränderliches Proof-Artefakt; lokale Chromium-Sandbox blockiert aktuell mit MachPortRendezvousServer Permission denied"
+    },
+    {
+      "id": "legal-approval",
+      "owner": "TJ",
+      "resolution": "Qualifizierte Legal- und DPO-Verantwortliche sowie unabhängigen Judge benennen und Entscheidung dokumentieren",
+      "evidence_required": "Freigegebene Legal-Matrix, AVV/TOMs, DPIA und AI-Act-Use-Case-Entscheidung"
+    },
+    {
+      "id": "merge-and-ci",
+      "owner": "Subunit Engineering",
+      "resolution": "Alle gepinnten PRs reviewen, mergen und CI gegen exakt den integrierten SHA erfolgreich ausführen",
+      "evidence_required": "Merge-SHAs und grüner unveränderlicher CI-Run"
+    },
+    {
+      "id": "artifacts-and-operations",
+      "owner": "Subunit Release Engineering",
+      "resolution": "Signierte Multi-Plattform-Artefakte, SBOM und Provenance erzeugen sowie autorisierten Deploy-, Health-, Recovery- und Rollback-Drill ausführen",
+      "evidence_required": "Artefakt-Digests, Signatur-/SBOM-/Provenance-URLs und Betriebsprotokoll"
+    },
+    {
+      "id": "market-evidence",
+      "owner": "TJ / Subunit Sales",
+      "resolution": "R0 bis R3 mit echten externen Kundenbelegen abschließen",
+      "evidence_required": "Commitment, bezahlte Diagnose, produktisierter Pilot und drei ähnliche zahlende Kunden"
+    }
+  ]
+}

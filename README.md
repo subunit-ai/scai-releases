@@ -24,3 +24,15 @@ Rust/Tauri bleiben dabei auf `aarch64-pc-windows-msvc`.
 - **Windows ARM64:** `SCAI_x.y.z_arm64-setup.exe`
 
 Die App hält sich danach selbst aktuell (Einstellungen → Updates).
+
+## Fleet-Release-Vertrag
+
+`fleet/manifests/` enthält die unveränderlichen Kandidaten-Pins über alle
+SCAI-Dienste. Ein Manifest darf erst `status: pass` tragen, wenn sowohl A1–A8
+als auch die Marktnachweise R0–R3, Artefakt-Signaturen, SBOM/Provenance,
+Governance-Freigaben und Betriebsdrills maschinell vollständig belegt sind.
+
+```bash
+node scripts/verify-fleet-manifest.mjs
+node --test scripts/verify-fleet-manifest.test.mjs
+```

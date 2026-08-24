@@ -1,0 +1,212 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/subunit-ai/scai-releases/fleet/manifest.schema.json",
+  "title": "SCAI Fleet Release Manifest",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "release_id",
+    "status",
+    "created_at",
+    "pins",
+    "gates",
+    "market_gates",
+    "source_ci",
+    "artifacts",
+    "governance",
+    "operations",
+    "approvals",
+    "blockers"
+  ],
+  "properties": {
+    "$schema": { "type": "string" },
+    "schema_version": { "const": "1.0" },
+    "release_id": { "type": "string", "pattern": "^scai-candidate-[0-9]{4}-[0-9]{2}-[0-9]{2}\\.[0-9]+$" },
+    "status": { "enum": ["candidate", "pass", "rejected"] },
+    "created_at": { "type": "string", "format": "date-time" },
+    "pins": {
+      "type": "object",
+      "minProperties": 6,
+      "additionalProperties": { "$ref": "#/$defs/pin" }
+    },
+    "gates": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["A1", "A2", "A3", "A4", "A5", "A6", "A7", "A8"],
+      "properties": {
+        "A1": { "$ref": "#/$defs/gate" },
+        "A2": { "$ref": "#/$defs/gate" },
+        "A3": { "$ref": "#/$defs/gate" },
+        "A4": { "$ref": "#/$defs/gate" },
+        "A5": { "$ref": "#/$defs/gate" },
+        "A6": { "$ref": "#/$defs/gate" },
+        "A7": { "$ref": "#/$defs/gate" },
+        "A8": { "$ref": "#/$defs/gate" }
+      }
+    },
+    "market_gates": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["R0", "R1", "R2", "R3"],
+      "properties": {
+        "R0": { "$ref": "#/$defs/marketGate" },
+        "R1": { "$ref": "#/$defs/marketGate" },
+        "R2": { "$ref": "#/$defs/marketGate" },
+        "R3": { "$ref": "#/$defs/marketGate" }
+      }
+    },
+    "source_ci": { "$ref": "#/$defs/sourceCi" },
+    "artifacts": { "$ref": "#/$defs/artifacts" },
+    "governance": { "$ref": "#/$defs/governance" },
+    "operations": { "$ref": "#/$defs/operations" },
+    "approvals": { "$ref": "#/$defs/approvals" },
+    "blockers": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/blocker" }
+    }
+  },
+  "$defs": {
+    "sha": { "type": "string", "pattern": "^[0-9a-f]{40}$" },
+    "uriOrEmpty": { "type": "string", "pattern": "^(https://|$)" },
+    "pin": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["repository", "sha", "branch", "pr_url", "merge_status"],
+      "properties": {
+        "repository": { "type": "string", "pattern": "^https://github.com/subunit-ai/[A-Za-z0-9._-]+$" },
+        "sha": { "$ref": "#/$defs/sha" },
+        "branch": { "type": "string", "minLength": 1 },
+        "pr_url": { "$ref": "#/$defs/uriOrEmpty" },
+        "merge_status": { "enum": ["open", "merged", "rejected"] }
+      }
+    },
+    "gate": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["title", "release_pin", "status", "owner", "judge", "evidence", "acceptance"],
+      "properties": {
+        "title": { "type": "string", "minLength": 1 },
+        "release_pin": { "type": "string", "minLength": 1 },
+        "status": { "enum": ["open", "candidate", "pass", "failed"] },
+        "owner": { "type": "string" },
+        "judge": { "type": "string" },
+        "evidence": { "type": "array", "items": { "type": "string", "minLength": 1 } },
+        "acceptance": { "type": "string", "minLength": 1 }
+      }
+    },
+    "marketGate": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["title", "status", "owner", "evidence", "acceptance"],
+      "properties": {
+        "title": { "type": "string", "minLength": 1 },
+        "status": { "enum": ["open", "pass", "failed"] },
+        "owner": { "type": "string" },
+        "evidence": { "type": "array", "items": { "type": "string", "minLength": 1 } },
+        "acceptance": { "type": "string", "minLength": 1 }
+      }
+    },
+    "sourceCi": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "sha", "run_url", "checks"],
+      "properties": {
+        "status": { "enum": ["open", "local-pass", "pass", "failed"] },
+        "sha": { "$ref": "#/$defs/sha" },
+        "run_url": { "$ref": "#/$defs/uriOrEmpty" },
+        "checks": { "type": "array", "items": { "type": "string", "minLength": 1 } }
+      }
+    },
+    "platformArtifact": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "artifact_url", "sha256", "signature_url", "sbom_url", "provenance_url"],
+      "properties": {
+        "status": { "enum": ["open", "pass", "failed"] },
+        "artifact_url": { "$ref": "#/$defs/uriOrEmpty" },
+        "sha256": { "type": "string", "pattern": "^([0-9a-f]{64})?$" },
+        "signature_url": { "$ref": "#/$defs/uriOrEmpty" },
+        "sbom_url": { "$ref": "#/$defs/uriOrEmpty" },
+        "provenance_url": { "$ref": "#/$defs/uriOrEmpty" }
+      }
+    },
+    "artifacts": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "platforms"],
+      "properties": {
+        "status": { "enum": ["open", "pass", "failed"] },
+        "platforms": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["macos_arm64", "macos_x64", "windows_x64", "windows_arm64", "linux_x64"],
+          "properties": {
+            "macos_arm64": { "$ref": "#/$defs/platformArtifact" },
+            "macos_x64": { "$ref": "#/$defs/platformArtifact" },
+            "windows_x64": { "$ref": "#/$defs/platformArtifact" },
+            "windows_arm64": { "$ref": "#/$defs/platformArtifact" },
+            "linux_x64": { "$ref": "#/$defs/platformArtifact" }
+          }
+        }
+      }
+    },
+    "governance": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "legal_owner", "dpo_owner", "independent_judge", "decision", "evidence_url"],
+      "properties": {
+        "status": { "enum": ["open", "pass", "failed"] },
+        "legal_owner": { "type": "string" },
+        "dpo_owner": { "type": "string" },
+        "independent_judge": { "type": "string" },
+        "decision": { "enum": ["open", "approved", "rejected"] },
+        "evidence_url": { "$ref": "#/$defs/uriOrEmpty" }
+      }
+    },
+    "operations": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "environment", "deployed", "health_verified", "recovery_verified", "rollback_verified", "evidence_url"],
+      "properties": {
+        "status": { "enum": ["open", "pass", "failed"] },
+        "environment": { "type": "string" },
+        "deployed": { "type": "boolean" },
+        "health_verified": { "type": "boolean" },
+        "recovery_verified": { "type": "boolean" },
+        "rollback_verified": { "type": "boolean" },
+        "evidence_url": { "$ref": "#/$defs/uriOrEmpty" }
+      }
+    },
+    "approval": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "evidence_url"],
+      "properties": {
+        "name": { "type": "string" },
+        "evidence_url": { "$ref": "#/$defs/uriOrEmpty" }
+      }
+    },
+    "approvals": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["product", "security", "legal"],
+      "properties": {
+        "product": { "$ref": "#/$defs/approval" },
+        "security": { "$ref": "#/$defs/approval" },
+        "legal": { "$ref": "#/$defs/approval" }
+      }
+    },
+    "blocker": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "owner", "resolution", "evidence_required"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "owner": { "type": "string", "minLength": 1 },
+        "resolution": { "type": "string", "minLength": 1 },
+        "evidence_required": { "type": "string", "minLength": 1 }
+      }
+    }
+  }
+}
