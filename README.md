@@ -1,7 +1,9 @@
 # SCAI — Releases
 
 Installer für **SCAI (Subunit Corporate AI)** und der Feed für den In-App-Auto-Updater (`latest.json`).
-Der Quellcode liegt im privaten Repo `subunit-ai/subunit-scai`; hier landen nur Binaries.
+Der proprietäre Quellcode liegt ausschließlich im privaten Repo
+`subunit-ai/subunit-scai`. Dieses öffentliche Repo enthält nur den Release-Vertrag,
+sanitisierte Prüfevidenz und ausdrücklich allowlistete Binärartefakte.
 Release-Builds aktivieren das Cargo-Feature `local-meet` auf **macOS Apple Silicon,
 Windows x64 und Windows ARM64**. Dort sind lokale Meeting-Aufzeichnung,
 Sprechertrennung und (unter Windows) Systemaudio in den ausgelieferten Paketen enthalten.
@@ -43,10 +45,36 @@ verlangt es ein gemergtes Fleet-Manifest mit `status: pass`, dessen vorab
 bestätigten SHA-256, einen unveränderten Release-Vertrag und erneut geprüfte
 Asset-Digests.
 
+## Warum der Build in einem öffentlichen Repo läuft
+
+Das öffentliche Repo ist ausschließlich unser CI-/Release-Orchestrator: Es stellt
+die GitHub-gehosteten Linux-, macOS- und Windows-Runner sowie stabile Run- und
+Release-Belege bereit, während die private Organisation derzeit keine Actions-Jobs
+startet. Es macht weder `subunit-scai` noch ein anderes Quell-Repo öffentlich.
+
+Die Vertraulichkeitsgrenze ist fail-closed:
+
+- ausschließlich manuell ausgelöste `workflow_dispatch`-Runs, niemals Fork-/PR-Trigger,
+- je privatem Repo ein eigener read-only Deploy-Key,
+- sämtliche Actions auf unveränderliche 40-Zeichen-Commits gepinnt,
+- Compiler-, Test- und Build-Ausgaben werden nur in einer flüchtigen Runner-Datei
+  gehalten; öffentlich erscheinen Status, Bytezahl und SHA-256, aber keine Source-Zeilen,
+- private Rust-/Tauri-Buildausgaben gelangen nie in einen öffentlichen Actions-Cache,
+- bei einem Fehler wird das Detail-Log nicht als öffentliches Artefakt hochgeladen;
+  die Reproduktion erfolgt am gebundenen SHA im privaten Worktree,
+- Release-Uploads akzeptieren nur die geschlossene Installer-/Updater-Allowlist.
+
+Die vom PR-Check hochgeladenen Meet-Screenshots zeigen ausschließlich die gebaute
+Produktoberfläche aus dem Test-Harness; sie enthalten weder den privaten Source-Tree
+noch Build-Logs. GitHubs automatisch angebotene Source-Archive eines Releases
+enthalten nur dieses öffentliche Release-Repo.
+
 ```bash
 node scripts/verify-fleet-manifest.mjs
 node --test scripts/verify-fleet-manifest.test.mjs
 node scripts/verify-release-workflow.mjs
 node --test scripts/verify-release-workflow.test.mjs scripts/merge-cyclonedx.test.mjs
+node scripts/verify-source-confidentiality.mjs
+node --test scripts/run-confidential.test.mjs scripts/validate-release-assets.test.mjs scripts/verify-source-confidentiality.test.mjs
 node scripts/verify-readiness-evidence.mjs fleet/evidence/operations-template.json fleet/evidence/market-template.json
 ```

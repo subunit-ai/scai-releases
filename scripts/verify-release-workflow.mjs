@@ -41,7 +41,9 @@ export function validateReleaseWorkflow(workflow) {
   require((workflow.match(/git -C src fetch --depth 1 origin "\$SOURCE_SHA"/g) ?? []).length >= 2, "source checkout must fetch the immutable SHA in build and evidence jobs");
   require(!has(/git clone[^\n]*--branch/), "branch-based source checkout is forbidden");
   require(has(/gh release create "\$TAG"[\s\S]{0,200}?--draft/), "release must be created as a draft");
-  require(has(/releaseDraft:\s*true/), "tauri-action must keep the release draft");
+  require(!has(/uses:\s*tauri-apps\/tauri-action@/), "public release builds must not stream private compiler output through tauri-action");
+  require(has(/run-confidential\.sh" "tauri-build-\$TARGET"/), "release build output must pass through the confidential runner");
+  require(has(/gh release upload "\$TAG" "\$\{ASSETS\[@\]\}"/), "only the explicit release asset allowlist may be uploaded");
   require(has(/IS_DRAFT=.*isDraft[\s\S]{0,500}?Source-SHA:/), "existing release reuse must verify draft state and source SHA");
   require(has(/needs:\s*\[release, build\][\s\S]{0,180}?needs\.build\.result == 'success'/), "evidence job must depend on successful release and build jobs");
   require(has(/Fleet-Release-ID: \$RELEASE_ID/), "draft must be bound to the Fleet release ID");
