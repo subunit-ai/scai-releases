@@ -91,6 +91,8 @@ node scripts/verify-source-confidentiality.mjs
 node --test scripts/run-confidential.test.mjs scripts/validate-release-assets.test.mjs scripts/verify-source-confidentiality.test.mjs
 node scripts/verify-fleet-source-workflow.mjs
 node --test scripts/checkout-private-source.test.mjs scripts/verify-fleet-source-workflow.test.mjs
+node scripts/verify-echo-pr-workflow.mjs
+node --test scripts/verify-echo-pr-workflow.test.mjs
 node scripts/verify-readiness-evidence.mjs fleet/evidence/operations-template.json fleet/evidence/market-template.json
 node --test scripts/verify-market-evidence-binding.test.mjs
 ```
