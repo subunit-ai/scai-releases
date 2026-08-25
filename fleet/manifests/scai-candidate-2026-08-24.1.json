@@ -130,7 +130,8 @@
       "judge": "",
       "evidence": [
         "https://github.com/subunit-ai/subunit-scai/pull/421",
-        "https://github.com/subunit-ai/scai-releases/actions/runs/32787488475",
+        "https://github.com/subunit-ai/scai-releases/actions/runs/32798225283",
+        "https://github.com/subunit-ai/scai-releases/pull/16",
         "https://github.com/subunit-ai/scai-releases/pull/13"
       ],
       "acceptance": "Alle Pins gemergt, CI und signierte Artefakte grün, SBOM/Provenance verifiziert, Health/Recovery/Rollback bestanden"
@@ -169,16 +170,14 @@
   "source_ci": {
     "status": "pass",
     "sha": "4f5af1ffc239040550902b5aef9b86680a091d2c",
-    "run_url": "https://github.com/subunit-ai/scai-releases/actions/runs/32787488475",
+    "run_url": "https://github.com/subunit-ai/scai-releases/actions/runs/32798225283",
     "checks": [
-      "Remote PR Check 32787488475 completed successfully and checked out exact SCAI merge SHA 4f5af1f on Linux, macOS ARM64 and Windows x64",
-      "Release metadata v0.126.0, TypeScript/Vite build, drift, no-demo-data, 28 plugin probes, broker 30/30 and plugin envelope 14/14: pass",
-      "Rust suite: 444 pass, 0 fail, 4 ignored",
-      "Meet visual and interaction proof: desktop/mobile x light/dark; 42 screenshots uploaded; sampled repaired mobile modal, task footer, local-processing, consent and production-web surfaces manually inspected",
-      "Screenshot artifact 9542066552: 42 files, GitHub digest sha256:7ce916cf0b24332aef07dbb4b68da3b19fcd7164093ef2ee6348911dc4e8a76e",
-      "Production web runtime desktop-dark and mobile-light: 0 browser/HTTP errors",
-      "Native PKCE: 6/6 on macOS ARM64 and 6/6 on Windows x64",
-      "Real OS credential-store write/read/delete: pass on macOS Keychain and Windows Credential Manager"
+      "Confidential Remote PR Check 32798225283 completed successfully and checked out exact SCAI merge SHA 4f5af1ffc239040550902b5aef9b86680a091d2c on Linux, macOS ARM64 and Windows x64",
+      "Release metadata, TypeScript/Vite build, drift, no-demo-data, plugin probes and Rust suite reported digest-only PASS envelopes; private command output was ephemeral and not uploaded",
+      "Public-log audit found no Rust/TypeScript source-location or source-code patterns in the completed run",
+      "Meet visual and interaction proof passed; screenshot artifact 9545672193 contains exactly 42 PNG files and no other file type, GitHub digest sha256:116f9755a34aeb0cb8e9c700c0839f0cb7a22404d999ae860aab39fe065899c3",
+      "Native compile, PKCE session tests and real OS credential-store write/read/delete reported PASS on macOS ARM64 and Windows x64",
+      "No private Rust/Tauri build output was written to a public Actions cache"
     ]
   },
   "artifacts": {
