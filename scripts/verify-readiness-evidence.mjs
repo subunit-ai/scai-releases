@@ -94,6 +94,16 @@ export function validateOperationsEvidence(report, filename = "<operations>") {
   return errors;
 }
 
+export function repeatablePayingCustomerRefs(report) {
+  return [...new Set((report.customers ?? [])
+    .filter((customer) => customer.pilot?.price_eur > 0
+      && HTTPS.test(customer.pilot?.evidence_url ?? "")
+      && customer.outcome?.accepted === true
+      && customer.outcome?.name === report.segment?.outcome
+      && HTTPS.test(customer.outcome?.evidence_url ?? ""))
+    .map((customer) => customer.customer_ref))];
+}
+
 export function validateMarketEvidence(report, filename = "<market>") {
   const errors = [];
   const require = (condition, message) => { if (!condition) errors.push(`${filename}: ${message}`); };
@@ -143,12 +153,35 @@ export function validateMarketEvidence(report, filename = "<market>") {
     require(customers.some((customer) => customer.pilot?.price_eur > 0 && customer.pilot?.delivery_cost_eur >= 0 && customer.pilot.delivery_cost_eur < customer.pilot.price_eur && isoDate(customer.pilot?.start_date) && isoDate(customer.pilot?.end_date) && Date.parse(customer.pilot.end_date) > Date.parse(customer.pilot.start_date) && nonEmpty(customer.pilot?.scope) && nonEmpty(customer.pilot?.success_criteria) && HTTPS.test(customer.pilot?.evidence_url ?? "")), "R2 PASS requires a priced, bounded, profitable pilot with dates and success criteria");
   }
   if (report.gates?.R3?.status === "pass") {
-    const repeatable = customers.filter((customer) => customer.pilot?.price_eur > 0 && HTTPS.test(customer.pilot?.evidence_url ?? "") && customer.outcome?.accepted === true && customer.outcome?.name === report.segment?.outcome && HTTPS.test(customer.outcome?.evidence_url ?? ""));
-    require(new Set(repeatable.map((customer) => customer.customer_ref)).size >= 3, "R3 PASS requires three distinct paying customers for the same accepted outcome");
+    require(repeatablePayingCustomerRefs(report).length >= 3, "R3 PASS requires three distinct paying customers for the same accepted outcome");
   }
   if (report.status === "pass") {
     require(["R0", "R1", "R2", "R3"].every((id) => report.gates?.[id]?.status === "pass"), "market PASS requires R0-R3 PASS");
     require(report.decision?.status === "go" && nonEmpty(report.decision?.reason), "market PASS requires a reasoned GO decision");
+  }
+  return errors;
+}
+
+export function validateMarketAttestation(report, filename = "<market-attestation>") {
+  const errors = [];
+  const require = (condition, message) => { if (!condition) errors.push(`${filename}: ${message}`); };
+  require(exactKeys(report, ["schema_version", "report_type", "release_id", "source_sha", "status", "report_sha256", "validator", "validated_at", "decision"]), "root fields must match the market-attestation contract exactly");
+  require(report.schema_version === "1.0", "schema_version must equal 1.0");
+  require(report.report_type === "market-attestation", "report_type must equal market-attestation");
+  require(RELEASE_ID.test(report.release_id ?? ""), "release_id is invalid");
+  require(FULL_SHA.test(report.source_sha ?? ""), "source_sha must be a full Git SHA");
+  require(["open", "pass", "failed"].includes(report.status), "status is invalid");
+  require(report.report_sha256 === "" || /^[0-9a-f]{64}$/.test(report.report_sha256 ?? ""), "report_sha256 must be empty or a full SHA-256");
+  require(exactKeys(report.validator, ["name", "role"]), "validator fields are invalid");
+  require(typeof report.validator?.name === "string" && typeof report.validator?.role === "string", "validator name and role must be strings");
+  require(typeof report.validated_at === "string", "validated_at must be a string");
+  require(exactKeys(report.decision, ["status", "reason"]), "decision fields are invalid");
+  require(["open", "approved", "rejected"].includes(report.decision?.status), "decision.status is invalid");
+  if (report.status === "pass") {
+    require(/^[0-9a-f]{64}$/.test(report.report_sha256 ?? ""), "PASS requires report_sha256");
+    require(nonEmpty(report.validator?.name) && nonEmpty(report.validator?.role), "PASS requires a named validator and role");
+    require(isoDate(report.validated_at), "PASS requires validated_at");
+    require(report.decision?.status === "approved" && nonEmpty(report.decision?.reason), "PASS requires an approved, reasoned decision");
   }
   return errors;
 }
@@ -163,7 +196,13 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
   for (const path of paths) {
     try {
       const report = JSON.parse(readFileSync(path, "utf8"));
-      const validator = report.report_type === "operations" ? validateOperationsEvidence : report.report_type === "market" ? validateMarketEvidence : null;
+      const validator = report.report_type === "operations"
+        ? validateOperationsEvidence
+        : report.report_type === "market"
+          ? validateMarketEvidence
+          : report.report_type === "market-attestation"
+            ? validateMarketAttestation
+            : null;
       const errors = validator ? validator(report, path) : [`${path}: unknown report_type`];
       if (errors.length) {
         failed = true;

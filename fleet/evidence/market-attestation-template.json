@@ -1,0 +1,11 @@
+{
+  "schema_version": "1.0",
+  "report_type": "market-attestation",
+  "release_id": "scai-candidate-2026-08-24.1",
+  "source_sha": "4f5af1ffc239040550902b5aef9b86680a091d2c",
+  "status": "open",
+  "report_sha256": "",
+  "validator": { "name": "", "role": "" },
+  "validated_at": "",
+  "decision": { "status": "open", "reason": "" }
+}

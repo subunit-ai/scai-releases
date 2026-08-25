@@ -21,10 +21,11 @@ const EXPECTED_PLATFORMS = [
   "windows_arm64",
   "windows_x64",
 ];
-const ROOT_FIELDS = ["$schema", "schema_version", "release_id", "status", "created_at", "pins", "gates", "market_gates", "source_ci", "artifacts", "governance", "operations", "approvals", "blockers"];
+const ROOT_FIELDS = ["$schema", "schema_version", "release_id", "status", "created_at", "pins", "gates", "market_gates", "market_evidence", "source_ci", "artifacts", "governance", "operations", "approvals", "blockers"];
 const PIN_FIELDS = ["repository", "sha", "branch", "pr_url", "merge_status"];
 const GATE_FIELDS = ["title", "release_pin", "status", "owner", "judge", "evidence", "acceptance"];
 const MARKET_GATE_FIELDS = ["title", "status", "owner", "evidence", "acceptance"];
+const MARKET_EVIDENCE_FIELDS = ["status", "release_pin", "source_sha", "report_schema_version", "report_url", "report_sha256", "validator_name", "validator_role", "validated_at", "attestation_url", "attestation_sha256", "repeatable_paying_customers"];
 const SOURCE_CI_FIELDS = ["status", "sha", "run_url", "checks"];
 const ARTIFACT_FIELDS = [
   "status",
@@ -75,7 +76,7 @@ export function validateManifest(manifest, filename = "<memory>") {
 
   require(exactKeys(manifest, ROOT_FIELDS), "root fields must match schema exactly");
   require(manifest.$schema === "../manifest.schema.json", "$schema must pin the repository schema");
-  require(manifest.schema_version === "1.1", "schema_version must equal 1.1");
+  require(manifest.schema_version === "1.2", "schema_version must equal 1.2");
   require(RELEASE_ID.test(manifest.release_id ?? ""), "release_id has an invalid format");
   require(["candidate", "pass", "rejected"].includes(manifest.status), "status must be candidate, pass or rejected");
   require(Number.isFinite(Date.parse(manifest.created_at ?? "")), "created_at must be an ISO date-time");
@@ -118,7 +119,40 @@ export function validateManifest(manifest, filename = "<memory>") {
     if (gate.status === "pass") {
       require(nonEmpty(gate.owner), `${id} PASS requires a named owner`);
       require(evidenceIsHttps(gate.evidence), `${id} PASS requires immutable HTTPS customer evidence`);
+      const requiredEvidence = id === "R3" ? 3 : 1;
+      require(new Set(gate.evidence).size >= requiredEvidence, `${id} PASS requires at least ${requiredEvidence} distinct primary evidence URL${requiredEvidence === 1 ? "" : "s"}`);
     }
+  }
+
+  const marketEvidence = manifest.market_evidence ?? {};
+  require(exactKeys(marketEvidence, MARKET_EVIDENCE_FIELDS), "market_evidence fields must match schema exactly");
+  require(["open", "pass", "failed"].includes(marketEvidence.status), "market_evidence.status is invalid");
+  require(marketEvidence.release_pin === manifest.release_id, "market_evidence.release_pin must equal release_id");
+  require(FULL_SHA.test(marketEvidence.source_sha ?? ""), "market_evidence.source_sha must be a full Git SHA");
+  require(marketEvidence.source_sha === manifest.pins?.scai_source?.sha, "market_evidence.source_sha must equal pins.scai_source.sha");
+  require(marketEvidence.report_schema_version === "1.0", "market_evidence.report_schema_version must equal 1.0");
+  for (const key of ["report_url", "attestation_url"]) {
+    require(marketEvidence[key] === "" || HTTPS.test(marketEvidence[key] ?? ""), `market_evidence.${key} must be empty or HTTPS`);
+  }
+  for (const key of ["report_sha256", "attestation_sha256"]) {
+    require(marketEvidence[key] === "" || SHA256.test(marketEvidence[key] ?? ""), `market_evidence.${key} must be empty or a full SHA-256`);
+  }
+  require(typeof marketEvidence.validator_name === "string", "market_evidence.validator_name must be a string");
+  require(typeof marketEvidence.validator_role === "string", "market_evidence.validator_role must be a string");
+  require(typeof marketEvidence.validated_at === "string", "market_evidence.validated_at must be a string");
+  require(Number.isInteger(marketEvidence.repeatable_paying_customers) && marketEvidence.repeatable_paying_customers >= 0, "market_evidence.repeatable_paying_customers must be a non-negative integer");
+  if (marketEvidence.status === "pass") {
+    require(EXPECTED_MARKET_GATES.every((id) => manifest.market_gates?.[id]?.status === "pass"), "market_evidence PASS requires R0-R3 PASS");
+    require(HTTPS.test(marketEvidence.report_url ?? ""), "market_evidence PASS requires report_url");
+    require(SHA256.test(marketEvidence.report_sha256 ?? ""), "market_evidence PASS requires report_sha256");
+    require(nonEmpty(marketEvidence.validator_name), "market_evidence PASS requires a named validator");
+    require(nonEmpty(marketEvidence.validator_role), "market_evidence PASS requires the validator role");
+    require(!new Set(Object.values(manifest.market_gates ?? {}).map((gate) => gate.owner).filter(nonEmpty)).has(marketEvidence.validator_name), "market_evidence validator must be independent of the market gate owners");
+    require(Number.isFinite(Date.parse(marketEvidence.validated_at ?? "")), "market_evidence PASS requires validated_at");
+    require(HTTPS.test(marketEvidence.attestation_url ?? ""), "market_evidence PASS requires attestation_url");
+    require(SHA256.test(marketEvidence.attestation_sha256 ?? ""), "market_evidence PASS requires attestation_sha256");
+    require(marketEvidence.attestation_url !== marketEvidence.report_url, "market evidence report and independent attestation must be distinct");
+    require(marketEvidence.repeatable_paying_customers >= 3, "market_evidence PASS requires at least three repeatable paying customers");
   }
 
   const sourceCi = manifest.source_ci ?? {};
@@ -235,6 +269,7 @@ export function validateManifest(manifest, filename = "<memory>") {
     require(EXPECTED_PINS.every((name) => manifest.pins?.[name]?.merge_status === "merged" && HTTPS.test(manifest.pins?.[name]?.pr_url ?? "")), "PASS requires every pin to be merged with HTTPS PR evidence");
     require(EXPECTED_GATES.every((id) => manifest.gates?.[id]?.status === "pass"), "PASS requires A1-A8 to PASS on the same release pin");
     require(EXPECTED_MARKET_GATES.every((id) => manifest.market_gates?.[id]?.status === "pass"), "PASS requires market gates R0-R3 to PASS");
+    require(marketEvidence.status === "pass", "PASS requires independently attested market evidence");
     require(sourceCi.status === "pass" && HTTPS.test(sourceCi.run_url ?? ""), "PASS requires green remote source CI evidence");
     require(artifacts.status === "pass", "PASS requires artifact status PASS");
     require(governance.status === "pass", "PASS requires governance status PASS");

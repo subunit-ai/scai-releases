@@ -64,6 +64,12 @@ Die Vertraulichkeitsgrenze ist fail-closed:
   die Reproduktion erfolgt am gebundenen SHA im privaten Worktree,
 - Release-Uploads akzeptieren nur die geschlossene Installer-/Updater-Allowlist.
 
+Vor einer stabilen Veröffentlichung vergleicht `publish-approved.yml` außerdem
+die vollständige Inventarliste in `fleet/release-contract.paths` bytegenau mit
+dem gemergten Release-Contract-SHA. Der technische Draft bleibt vom Markt-Gate
+getrennt; die Stable-Promotion verlangt zusätzlich einen gehashten privaten
+R0–R3-Report und eine davon getrennte unabhängige Attestation.
+
 `fleet-source-check.yml` wendet dieselbe Grenze auf die releasebezogenen
 u1-chat-, Atlas-, subunit-auth- und Echo-Gates an. Jeder Lauf verlangt vier
 vollständige Kandidaten-SHAs und je Repo einen eigenen read-only Deploy-Key; er
@@ -86,4 +92,5 @@ node --test scripts/run-confidential.test.mjs scripts/validate-release-assets.te
 node scripts/verify-fleet-source-workflow.mjs
 node --test scripts/checkout-private-source.test.mjs scripts/verify-fleet-source-workflow.test.mjs
 node scripts/verify-readiness-evidence.mjs fleet/evidence/operations-template.json fleet/evidence/market-template.json
+node --test scripts/verify-market-evidence-binding.test.mjs
 ```
