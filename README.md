@@ -59,6 +59,7 @@ Die Vertraulichkeitsgrenze ist fail-closed:
 - sämtliche Actions auf unveränderliche 40-Zeichen-Commits gepinnt,
 - Compiler-, Test- und Build-Ausgaben werden nur in einer flüchtigen Runner-Datei
   gehalten; öffentlich erscheinen Status, Bytezahl und SHA-256, aber keine Source-Zeilen,
+- private Rust-/Tauri-Buildausgaben gelangen nie in einen öffentlichen Actions-Cache,
 - bei einem Fehler wird das Detail-Log nicht als öffentliches Artefakt hochgeladen;
   die Reproduktion erfolgt am gebundenen SHA im privaten Worktree,
 - Release-Uploads akzeptieren nur die geschlossene Installer-/Updater-Allowlist.

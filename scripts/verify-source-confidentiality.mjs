@@ -14,6 +14,7 @@ export function validateSourceConfidentiality(workflows, assetSelector) {
     require(!/^\s{2}(pull_request|push|pull_request_target|schedule):/m.test(workflow), `${name}: secret-bearing public workflow must not have an automatic or fork trigger`);
     require(workflow.includes("persist-credentials: false"), `${name}: public checkout credentials must not persist`);
     require(workflow.includes("scripts/run-confidential.sh"), `${name}: private command output must use the confidential runner`);
+    require(!/uses:\s*(?:swatinem\/rust-cache|actions\/cache)@/.test(workflow), `${name}: private build outputs must not enter a public Actions cache`);
 
     for (const line of workflow.split("\n")) {
       const match = line.match(/^\s*uses:\s*([^\s#]+)/);
@@ -73,5 +74,5 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
     for (const error of errors) console.error(`FAIL ${error}`);
     process.exit(1);
   }
-  console.log("PASS public source workflows :: dispatch-only, immutable actions, confidential logs, allowlisted artifacts");
+  console.log("PASS public source workflows :: dispatch-only, immutable actions, confidential logs, no private build cache, allowlisted artifacts");
 }

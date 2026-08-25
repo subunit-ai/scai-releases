@@ -39,6 +39,14 @@ test("a source-streaming Tauri action is rejected", () => {
   assert.match(validateSourceConfidentiality(unsafe, assetSelector).join("\n"), /tauri-action may expose private compiler output/);
 });
 
+test("private build outputs cannot enter a public Actions cache", () => {
+  const unsafe = {
+    ...fixtures,
+    "pr-check.yml": `${fixtures["pr-check.yml"]}\n      - uses: swatinem/rust-cache@${"a".repeat(40)}\n`,
+  };
+  assert.match(validateSourceConfidentiality(unsafe, assetSelector).join("\n"), /private build outputs must not enter a public Actions cache/);
+});
+
 test("a broad upload cannot replace the release artifact allowlist", () => {
   const unsafe = { ...fixtures, "build-all.yml": fixtures["build-all.yml"].replace('gh release upload "$TAG" "${ASSETS[@]}"', 'gh release upload "$TAG" "$BUNDLE_ROOT"') };
   assert.match(validateSourceConfidentiality(unsafe, assetSelector).join("\n"), /validated asset array/);
