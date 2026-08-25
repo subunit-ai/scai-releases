@@ -36,9 +36,9 @@ trap cleanup EXIT HUP INT TERM
 status=$?
 
 if command -v sha256sum >/dev/null 2>&1; then
-  digest=$(sha256sum "$log_file" | cut -d ' ' -f 1)
+  digest=$(sha256sum <"$log_file" | cut -d ' ' -f 1)
 else
-  digest=$(shasum -a 256 "$log_file" | cut -d ' ' -f 1)
+  digest=$(shasum -a 256 <"$log_file" | cut -d ' ' -f 1)
 fi
 bytes=$(wc -c <"$log_file" | tr -d '[:space:]')
 

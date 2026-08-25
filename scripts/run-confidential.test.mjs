@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { existsSync, mkdtempSync, readdirSync, rmSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { spawnSync } from "node:child_process";
@@ -42,6 +42,21 @@ test("failed private output is suppressed while the original exit code survives"
   assert.doesNotMatch(result.stdout + result.stderr, new RegExp(marker));
   assert.match(result.stdout, /failure-check failed with exit 23; private output suppressed/);
   assertNoRetainedLogs(result.runnerTemp);
+});
+
+test("digest stays plain hexadecimal when the temporary path contains a backslash", () => {
+  const runnerRoot = mkdtempSync(join(tmpdir(), "scai-confidential-test-"));
+  const runnerTemp = join(runnerRoot, "windows\\path");
+  mkdirSync(runnerTemp);
+  const result = spawnSync(
+    "bash",
+    [RUNNER, "windows-path-check", "bash", "-c", "printf 'private\\n'"],
+    { encoding: "utf8", env: { ...process.env, RUNNER_TEMP: runnerTemp } },
+  );
+  assert.equal(result.status, 0);
+  assert.match(result.stdout, /^PASS windows-path-check \(private-log-sha256=[0-9a-f]{64}, bytes=8\)\n$/);
+  assertNoRetainedLogs(runnerTemp);
+  rmSync(runnerRoot, { recursive: true, force: true });
 });
 
 test("labels cannot inject workflow commands or filesystem paths", () => {
