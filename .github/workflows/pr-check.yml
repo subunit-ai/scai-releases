@@ -312,7 +312,7 @@ jobs:
         env:
           SCAI_A1_KEYRING_SMOKE: "1"
         shell: bash
-        run: bash "$GITHUB_WORKSPACE/gate/scripts/run-confidential.sh" native-keyring-smoke cargo run --locked --manifest-path src-tauri/Cargo.toml --bin a1_keyring_smoke
+        run: bash "$GITHUB_WORKSPACE/gate/scripts/run-confidential.sh" native-keyring-smoke cargo run --locked --manifest-path src-tauri/Cargo.toml --features a1-keyring-smoke --example a1_keyring_smoke
 
       - name: Private Trace-Credentials entfernen
         if: always()
