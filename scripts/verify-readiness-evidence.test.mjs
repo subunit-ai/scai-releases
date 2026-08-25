@@ -4,7 +4,7 @@ import { resolve, dirname, join } from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
 
-import { validateMarketEvidence, validateOperationsEvidence } from "./verify-readiness-evidence.mjs";
+import { validateMarketAttestation, validateMarketEvidence, validateOperationsEvidence } from "./verify-readiness-evidence.mjs";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const read = (name) => JSON.parse(readFileSync(join(ROOT, `fleet/evidence/${name}-template.json`), "utf8"));
@@ -12,6 +12,7 @@ const read = (name) => JSON.parse(readFileSync(join(ROOT, `fleet/evidence/${name
 test("open operations and market templates are structurally valid", () => {
   assert.deepEqual(validateOperationsEvidence(read("operations")), []);
   assert.deepEqual(validateMarketEvidence(read("market")), []);
+  assert.deepEqual(validateMarketAttestation(read("market-attestation")), []);
 });
 
 test("operations cannot pass without authorization, measurements and an independent judge", () => {

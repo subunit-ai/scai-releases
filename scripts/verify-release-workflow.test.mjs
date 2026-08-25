@@ -9,6 +9,7 @@ import { validatePublishWorkflow, validateReleaseWorkflow } from "./verify-relea
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const fixture = readFileSync(join(ROOT, ".github/workflows/build-all.yml"), "utf8");
 const publishFixture = readFileSync(join(ROOT, ".github/workflows/publish-approved.yml"), "utf8");
+const contractPaths = readFileSync(join(ROOT, "fleet/release-contract.paths"), "utf8");
 
 test("current release workflow is fail-closed", () => {
   assert.deepEqual(validateReleaseWorkflow(fixture), []);
@@ -61,21 +62,29 @@ test("the build workflow cannot publish its draft", () => {
 });
 
 test("current publication workflow is fail-closed", () => {
-  assert.deepEqual(validatePublishWorkflow(publishFixture), []);
+  assert.deepEqual(validatePublishWorkflow(publishFixture, contractPaths), []);
 });
 
 test("publication without Fleet PASS is rejected", () => {
   const unsafe = publishFixture.replace('test "$(jq -r .status "$MANIFEST")" = "pass"', "echo unchecked-status");
-  assert.match(validatePublishWorkflow(unsafe).join("\n"), /publication must require manifest PASS/);
+  assert.match(validatePublishWorkflow(unsafe, contractPaths).join("\n"), /publication must require manifest PASS/);
 });
 
 test("publication without the approved manifest digest is rejected", () => {
   const unsafe = publishFixture.replace('test "$ACTUAL_MANIFEST_SHA256" = "$EXPECTED_MANIFEST_SHA256"', "echo unchecked-manifest");
-  assert.match(validatePublishWorkflow(unsafe).join("\n"), /approved manifest SHA-256/);
+  assert.match(validatePublishWorkflow(unsafe, contractPaths).join("\n"), /approved manifest SHA-256/);
 });
 
 test("publication before asset verification is rejected", () => {
   const unsafe = publishFixture.replace('gh release edit "$TAG"', 'echo publish-removed "$TAG"')
     .replace("sha256sum -c SHA256SUMS", 'gh release edit "$TAG"\n          sha256sum -c SHA256SUMS');
-  assert.match(validatePublishWorkflow(unsafe).join("\n"), /only after PASS and asset verification/);
+  assert.match(validatePublishWorkflow(unsafe, contractPaths).join("\n"), /only after PASS and asset verification/);
+});
+
+test("publication contract covers the complete confidential execution chain", () => {
+  const missingFleetGate = contractPaths.replace(".github/workflows/fleet-source-check.yml\n", "");
+  assert.match(validatePublishWorkflow(publishFixture, missingFleetGate).join("\n"), /path inventory must exactly cover/);
+
+  const unpinnedInventory = publishFixture.replace('git show "$CONTRACT_SHA:$CONTRACT_PATHS_FILE"', 'cp "$CONTRACT_PATHS_FILE"');
+  assert.match(validatePublishWorkflow(unpinnedInventory, contractPaths).join("\n"), /pin the path inventory itself/);
 });

@@ -62,15 +62,20 @@ jobs:
           CONTRACT_SHA=$(jq -r .pins.scai_release_contract.sha "$MANIFEST")
           git cat-file -e "$CONTRACT_SHA^{commit}"
           git merge-base --is-ancestor "$CONTRACT_SHA" "$GITHUB_SHA"
-          for path in \
-            .github/workflows/build-all.yml \
-            .github/workflows/publish-approved.yml \
-            fleet/manifest.schema.json \
-            scripts/verify-fleet-manifest.mjs \
-            scripts/verify-release-workflow.mjs; do
+          CONTRACT_PATHS_FILE=fleet/release-contract.paths
+          git show "$CONTRACT_SHA:$CONTRACT_PATHS_FILE" > "$RUNNER_TEMP/contract-paths"
+          cmp --silent "$RUNNER_TEMP/contract-paths" "$CONTRACT_PATHS_FILE"
+          while IFS= read -r path; do
+            test -n "$path"
+            printf '%s' "$path" | grep -Eq '^[A-Za-z0-9._/-]+$'
+            case "$path" in
+              /*|*../*|*/..|..) exit 1 ;;
+            esac
+            test -f "$path"
+            git cat-file -e "$CONTRACT_SHA:$path"
             git show "$CONTRACT_SHA:$path" > "$RUNNER_TEMP/contract-file"
             cmp --silent "$RUNNER_TEMP/contract-file" "$path"
-          done
+          done < "$RUNNER_TEMP/contract-paths"
 
           SOURCE_SHA=$(jq -r .pins.scai_source.sha "$MANIFEST")
           echo "manifest=$MANIFEST" >> "$GITHUB_OUTPUT"

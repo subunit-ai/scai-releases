@@ -2,7 +2,7 @@
   "schema_version": "1.0",
   "report_type": "operations",
   "release_id": "scai-candidate-2026-08-24.1",
-  "source_sha": "3c342d0e59f8c7d433b8a90e15d8ee15f138cf91",
+  "source_sha": "4f5af1ffc239040550902b5aef9b86680a091d2c",
   "status": "open",
   "authorization": { "approved_by": "", "evidence_url": "" },
   "environment": { "name": "", "kind": "", "platform": "" },

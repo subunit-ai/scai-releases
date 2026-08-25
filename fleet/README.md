@@ -44,6 +44,12 @@ fail-closed. Er veröffentlicht, taggt, merged oder deployt nichts.
    Release-ID, Source-SHA und sämtliche Asset-Digests. `build-all.yml`
    veröffentlicht niemals selbst.
 
+`release-contract.paths` ist die geschlossene, selbst mitgepinnte Inventarliste
+der sicherheitskritischen Workflows, Output-Sinks, Asset-/Manifest-Validatoren
+und Evidence-Verträge. Stable-Promotion stoppt, sobald auch nur eine dieser
+Dateien vom gemergten `scai_release_contract.sha` abweicht. Änderungen an der
+Liste selbst benötigen ebenfalls einen neuen Contract-Pin.
+
 ## Evidence-Verträge
 
 - `evidence/operations-template.json` bindet Deploy, Health, Recovery und
@@ -53,5 +59,13 @@ fail-closed. Er veröffentlicht, taggt, merged oder deployt nichts.
   vollständigen Source-SHA. PASS verlangt einen qualifizierten Budgetpfad,
   bezahlte Vorher-/Nachher-Diagnose, einen positiven Pilot-Deckungsbeitrag und
   drei verschiedene Käufer desselben Outcomes.
+- `evidence/market-attestation-template.json` bindet das unabhängige Urteil an
+  den SHA-256 des privaten Marktberichts. Das öffentliche Fleet-Manifest enthält
+  nur Report-/Attestation-Digests, Validator und Ergebnis; vertrauliche
+  Primärbelege bleiben im kontrollierten Evidence Store.
 - `scripts/verify-readiness-evidence.mjs` prüft beide Verträge fail-closed. Die
   Templates bleiben `open`, bis echte autorisierte bzw. externe Evidenz vorliegt.
+- `scripts/verify-market-evidence-binding.mjs` beweist vor einer stabilen
+  Promotion, dass Manifest, privater Report und unabhängige Attestation exakt
+  dieselben Bytes, Pins, R0–R3-Belege und drei wiederholbare zahlende Kunden
+  meinen. Technische Drafts bleiben davon getrennt.

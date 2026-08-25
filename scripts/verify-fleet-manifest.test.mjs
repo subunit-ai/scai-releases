@@ -77,6 +77,41 @@ test("operations PASS must be pinned, timed, operated and independently judged",
   assert.match(errors, /operations PASS requires completed_at/);
 });
 
+test("market PASS cannot replace three primary customer proofs with one URL", () => {
+  const manifest = clone();
+  manifest.market_gates.R3.status = "pass";
+  manifest.market_gates.R3.evidence = ["https://example.invalid/customer-proof"];
+  const errors = validateManifest(manifest).join("\n");
+  assert.match(errors, /R3 PASS requires at least 3 distinct primary evidence URLs/);
+});
+
+test("market evidence needs a pinned report, separate attestation and three paying customers", () => {
+  const manifest = clone();
+  for (const id of ["R0", "R1", "R2", "R3"]) {
+    manifest.market_gates[id].status = "pass";
+    manifest.market_gates[id].evidence = id === "R3"
+      ? ["https://example.invalid/c1", "https://example.invalid/c2", "https://example.invalid/c3"]
+      : [`https://example.invalid/${id}`];
+  }
+  Object.assign(manifest.market_evidence, {
+    status: "pass",
+    report_url: "https://example.invalid/market-report",
+    report_sha256: "d".repeat(64),
+    validator_name: "Independent Market Judge",
+    validator_role: "external review",
+    validated_at: "2026-08-25T12:00:00Z",
+    attestation_url: "https://example.invalid/market-report",
+    attestation_sha256: "e".repeat(64),
+    repeatable_paying_customers: 2,
+  });
+  const errors = validateManifest(manifest).join("\n");
+  assert.match(errors, /report and independent attestation must be distinct/);
+  assert.match(errors, /at least three repeatable paying customers/);
+
+  manifest.market_gates.R3.owner = "Independent Market Judge";
+  assert.match(validateManifest(manifest).join("\n"), /validator must be independent of the market gate owners/);
+});
+
 test("a cosmetic top-level PASS fails closed while evidence remains open", () => {
   const manifest = clone();
   manifest.status = "pass";
@@ -85,6 +120,7 @@ test("a cosmetic top-level PASS fails closed while evidence remains open", () =>
   assert.match(errors, /PASS requires every pin to be merged/);
   assert.match(errors, /PASS requires A1-A8 to PASS/);
   assert.match(errors, /PASS requires market gates R0-R3 to PASS/);
+  assert.match(errors, /PASS requires independently attested market evidence/);
   assert.match(errors, /PASS requires governance status PASS/);
   assert.match(errors, /PASS requires operations status PASS/);
 });

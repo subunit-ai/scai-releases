@@ -1,6 +1,6 @@
 {
   "$schema": "../manifest.schema.json",
-  "schema_version": "1.1",
+  "schema_version": "1.2",
   "release_id": "scai-candidate-2026-08-24.1",
   "status": "candidate",
   "created_at": "2026-08-24T20:41:15Z",
@@ -166,6 +166,20 @@
       "evidence": [],
       "acceptance": "Drei Unternehmen desselben Kernsegments bezahlen für denselben wiederholbaren Outcome"
     }
+  },
+  "market_evidence": {
+    "status": "open",
+    "release_pin": "scai-candidate-2026-08-24.1",
+    "source_sha": "4f5af1ffc239040550902b5aef9b86680a091d2c",
+    "report_schema_version": "1.0",
+    "report_url": "",
+    "report_sha256": "",
+    "validator_name": "",
+    "validator_role": "",
+    "validated_at": "",
+    "attestation_url": "",
+    "attestation_sha256": "",
+    "repeatable_paying_customers": 0
   },
   "source_ci": {
     "status": "pass",

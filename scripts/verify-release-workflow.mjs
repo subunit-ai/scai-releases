@@ -5,6 +5,30 @@ import { fileURLToPath } from "node:url";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 
+export const EXPECTED_RELEASE_CONTRACT_PATHS = [
+  ".github/workflows/build-all.yml",
+  ".github/workflows/fleet-manifest.yml",
+  ".github/workflows/fleet-source-check.yml",
+  ".github/workflows/pr-check.yml",
+  ".github/workflows/publish-approved.yml",
+  ".github/workflows/windows-arm-smoke.yml",
+  "fleet/evidence/market-attestation-template.json",
+  "fleet/evidence/market-template.json",
+  "fleet/evidence/operations-template.json",
+  "fleet/manifest.schema.json",
+  "fleet/release-contract.paths",
+  "scripts/checkout-private-source.sh",
+  "scripts/merge-cyclonedx.mjs",
+  "scripts/run-confidential.sh",
+  "scripts/validate-release-assets.sh",
+  "scripts/verify-fleet-manifest.mjs",
+  "scripts/verify-fleet-source-workflow.mjs",
+  "scripts/verify-market-evidence-binding.mjs",
+  "scripts/verify-readiness-evidence.mjs",
+  "scripts/verify-release-workflow.mjs",
+  "scripts/verify-source-confidentiality.mjs",
+];
+
 export function validateReleaseWorkflow(workflow) {
   const errors = [];
   const require = (condition, message) => { if (!condition) errors.push(message); };
@@ -77,10 +101,20 @@ export function validateReleaseWorkflow(workflow) {
   return errors;
 }
 
-export function validatePublishWorkflow(workflow) {
+export function validatePublishWorkflow(workflow, contractPaths) {
   const errors = [];
   const require = (condition, message) => { if (!condition) errors.push(message); };
   const has = (pattern) => pattern.test(workflow);
+
+  const actualContractPaths = contractPaths
+    .split("\n")
+    .map((path) => path.trim())
+    .filter(Boolean);
+  require(
+    actualContractPaths.length === EXPECTED_RELEASE_CONTRACT_PATHS.length
+      && actualContractPaths.every((path, index) => path === EXPECTED_RELEASE_CONTRACT_PATHS[index]),
+    "release-contract path inventory must exactly cover every security-critical workflow and validator",
+  );
 
   for (const input of ["release_id", "tag", "manifest_sha256"]) {
     require(has(new RegExp(`${input}:\\s*\\n(?:\\s+.*\\n){0,4}?\\s+required:\\s*true`, "m")), `${input} input must be required`);
@@ -90,6 +124,8 @@ export function validatePublishWorkflow(workflow) {
   require(has(/jq -r \.status "\$MANIFEST"[\s\S]{0,80}?= "pass"/), "publication must require manifest PASS");
   require(has(/sha256sum "\$MANIFEST"[\s\S]{0,160}?EXPECTED_MANIFEST_SHA256/), "publication must bind the approved manifest SHA-256");
   require(has(/git merge-base --is-ancestor "\$CONTRACT_SHA" "\$GITHUB_SHA"/), "publication must require an ancestor release-contract pin");
+  require(has(/CONTRACT_PATHS_FILE=fleet\/release-contract\.paths/), "publication must load the release-contract path inventory");
+  require(has(/git show "\$CONTRACT_SHA:\$CONTRACT_PATHS_FILE"[\s\S]{0,160}?cmp --silent/), "publication must pin the path inventory itself to the release contract");
   require(has(/git show "\$CONTRACT_SHA:\$path"[\s\S]{0,120}?cmp --silent/), "publication must reject release-contract drift");
   require(has(/Source-SHA: \$SOURCE_SHA/), "publication must bind the draft to the source SHA");
   require(has(/Fleet-Release-ID: \$RELEASE_ID/), "publication must bind the draft to the release ID");
@@ -112,9 +148,10 @@ export function validatePublishWorkflow(workflow) {
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   const path = process.argv[2] ? resolve(process.argv[2]) : join(ROOT, ".github/workflows/build-all.yml");
   const publishPath = process.argv[3] ? resolve(process.argv[3]) : join(ROOT, ".github/workflows/publish-approved.yml");
+  const contractPathsPath = process.argv[4] ? resolve(process.argv[4]) : join(ROOT, "fleet/release-contract.paths");
   const errors = [
     ...validateReleaseWorkflow(readFileSync(path, "utf8")).map((error) => `${path}: ${error}`),
-    ...validatePublishWorkflow(readFileSync(publishPath, "utf8")).map((error) => `${publishPath}: ${error}`),
+    ...validatePublishWorkflow(readFileSync(publishPath, "utf8"), readFileSync(contractPathsPath, "utf8")).map((error) => `${publishPath}: ${error}`),
   ];
   if (errors.length) {
     for (const error of errors) console.error(`FAIL ${error}`);
