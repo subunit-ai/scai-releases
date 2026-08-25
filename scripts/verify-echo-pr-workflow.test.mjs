@@ -16,3 +16,10 @@ test("Echo PR workflow contains no mutable action tags or public artifacts", () 
   assert.doesNotMatch(workflow, /uses:\s+[^\s@]+@(?![0-9a-f]{40}(?:\s|$))/u);
   assert.doesNotMatch(workflow, /uses:\s+actions\/upload-artifact@|\bgh\s+release\b/u);
 });
+
+test("stacked Echo commits require SQLite wiring exactly when the store exists", () => {
+  const workflow = readFileSync(workflowUrl, "utf8");
+  assert.match(workflow, /if \[ -f server\/meeting_state_store\.py \]; then/u);
+  assert.match(workflow, /grep -Eq "\^COPY \.\*meeting_state_store/u);
+  assert.match(workflow, /python3 -m py_compile scripts\/meeting-state-backup\.py/u);
+});
