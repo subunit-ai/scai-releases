@@ -10,14 +10,15 @@ Dieses Repo ist die öffentliche Build- und Download-Schiene des privaten SPS-Pr
 
 Lesen (Mac): `cat ~/subunit/u1-brain/workspace/starts/subunit-scai.md`
 
-Rolle dieses Repos: öffentliche, manuell ausgelöste CI für PR-Prüfungen sowie
-versionierte macOS-, Windows-x64-, Windows-ARM64- und Linux-Release-Artefakte. Der
-private Quellcode bleibt in `subunit-scai`; Workflows greifen nur über den
-read-only Deploy-Key darauf zu.
+Rolle dieses Repos: öffentliche, manuell ausgelöste und releasegebundene CI für
+PR-/Fleet-Prüfungen sowie versionierte macOS-, Windows-x64-, Windows-ARM64- und
+Linux-Release-Artefakte. Der private Quellcode bleibt in `subunit-scai`,
+`u1-chat`, `atlas`, `subunit-auth` und `echo`; Workflows greifen nur über je Repo
+getrennte read-only Deploy-Keys auf vollständige Kandidaten-SHAs zu.
 
 Regeln:
 
 1. Kein Quellcode und keine Secrets in Logs oder Artefakte schreiben.
 2. Smoke-Workflows erzeugen weder Releases noch Uploads.
-3. Release-Workflows nur mit einem verifizierten Quell-Ref auslösen.
+3. Release-Workflows nur mit verifizierten vollständigen Quell-SHAs auslösen.
 4. Den Stand nach Änderungen im Handoff `subunit-scai.md` dokumentieren.

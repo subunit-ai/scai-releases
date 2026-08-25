@@ -27,6 +27,9 @@ test("an automatic public trigger is rejected", () => {
 test("a mutable action can never run beside private source", () => {
   const unsafe = { ...fixtures, "windows-arm-smoke.yml": fixtures["windows-arm-smoke.yml"].replace(/actions\/setup-node@[0-9a-f]{40}/, "actions/setup-node@v4") };
   assert.match(validateSourceConfidentiality(unsafe, assetSelector).join("\n"), /action reference must be immutable/);
+
+  const shorthand = { ...fixtures, "pr-check.yml": fixtures["pr-check.yml"].replace(/- uses: dtolnay\/rust-toolchain@[0-9a-f]{40}/, "- uses: dtolnay/rust-toolchain@stable") };
+  assert.match(validateSourceConfidentiality(shorthand, assetSelector).join("\n"), /action reference must be immutable/);
 });
 
 test("a mutable branch clone cannot stand in for an exact source pin", () => {

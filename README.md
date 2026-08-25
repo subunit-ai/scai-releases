@@ -64,6 +64,13 @@ Die Vertraulichkeitsgrenze ist fail-closed:
   die Reproduktion erfolgt am gebundenen SHA im privaten Worktree,
 - Release-Uploads akzeptieren nur die geschlossene Installer-/Updater-Allowlist.
 
+`fleet-source-check.yml` wendet dieselbe Grenze auf die releasebezogenen
+u1-chat-, Atlas-, subunit-auth- und Echo-Gates an. Jeder Lauf verlangt vier
+vollständige Kandidaten-SHAs und je Repo einen eigenen read-only Deploy-Key; er
+veröffentlicht keine privaten Befehlsausgaben, Evidence- oder Build-Artefakte.
+Die temporären Source-Checkouts werden vor den Post-Actions entfernt. Ohne die
+vier Credentials stoppt der Checkout fail-closed.
+
 Die vom PR-Check hochgeladenen Meet-Screenshots zeigen ausschließlich die gebaute
 Produktoberfläche aus dem Test-Harness; sie enthalten weder den privaten Source-Tree
 noch Build-Logs. GitHubs automatisch angebotene Source-Archive eines Releases
@@ -76,5 +83,7 @@ node scripts/verify-release-workflow.mjs
 node --test scripts/verify-release-workflow.test.mjs scripts/merge-cyclonedx.test.mjs
 node scripts/verify-source-confidentiality.mjs
 node --test scripts/run-confidential.test.mjs scripts/validate-release-assets.test.mjs scripts/verify-source-confidentiality.test.mjs
+node scripts/verify-fleet-source-workflow.mjs
+node --test scripts/checkout-private-source.test.mjs scripts/verify-fleet-source-workflow.test.mjs
 node scripts/verify-readiness-evidence.mjs fleet/evidence/operations-template.json fleet/evidence/market-template.json
 ```

@@ -65,7 +65,7 @@ export function validateReleaseWorkflow(workflow) {
   require(has(/gh attestation verify[\s\S]{0,300}?--source-digest "\$GITHUB_SHA"/), "attestation verification must bind the workflow source digest");
 
   for (const line of workflow.split("\n")) {
-    const match = line.match(/^\s*uses:\s*([^\s#]+)/);
+    const match = line.match(/^\s*(?:-\s*)?uses:\s*([^\s#]+)/);
     if (!match || match[1].startsWith("./")) continue;
     const ref = match[1].split("@").at(-1);
     require(/^[0-9a-f]{40}$/.test(ref ?? ""), `action reference must be immutable: ${match[1]}`);
@@ -96,7 +96,7 @@ export function validatePublishWorkflow(workflow) {
   require(has(/sha256sum -c SHA256SUMS/), "publication must recheck all release asset digests");
 
   for (const line of workflow.split("\n")) {
-    const match = line.match(/^\s*uses:\s*([^\s#]+)/);
+    const match = line.match(/^\s*(?:-\s*)?uses:\s*([^\s#]+)/);
     if (!match || match[1].startsWith("./")) continue;
     const ref = match[1].split("@").at(-1);
     require(/^[0-9a-f]{40}$/.test(ref ?? ""), `action reference must be immutable: ${match[1]}`);
