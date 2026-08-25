@@ -14,38 +14,38 @@
     },
     "scai_release_contract": {
       "repository": "https://github.com/subunit-ai/scai-releases",
-      "sha": "d201d0eb690d30fed0043a7f66d6e00e401a54ea",
+      "sha": "0fd4903a5cf1f4f5cdcba078a576d97abea987a9",
       "branch": "main",
-      "pr_url": "https://github.com/subunit-ai/scai-releases/pull/19",
+      "pr_url": "https://github.com/subunit-ai/scai-releases/pull/20",
       "merge_status": "merged"
     },
     "u1_chat": {
       "repository": "https://github.com/subunit-ai/u1-chat",
-      "sha": "fa73886ca15d9c45de1ba39d15def85c5d65c46f",
-      "branch": "session/a7-regulated-use",
+      "sha": "60d40690d430db8e2985db174d52e335bb256558",
+      "branch": "main",
       "pr_url": "https://github.com/subunit-ai/u1-chat/pull/19",
-      "merge_status": "open"
+      "merge_status": "merged"
     },
     "atlas": {
       "repository": "https://github.com/subunit-ai/atlas",
-      "sha": "dd60d554b208557366eaac38e8ef0c489ec825ba",
-      "branch": "session/a6-authorization",
+      "sha": "af25f677f83ba55b0f70c9f0617311e2d8e68a95",
+      "branch": "main",
       "pr_url": "https://github.com/subunit-ai/atlas/pull/62",
-      "merge_status": "open"
+      "merge_status": "merged"
     },
     "subunit_auth": {
       "repository": "https://github.com/subunit-ai/subunit-auth",
-      "sha": "3f07c0ce8b478f7409aca2929d83bdd941e90814",
-      "branch": "session/a7-consent-evidence",
+      "sha": "1cd0d25013152398802b0652d8b5edfa560e90c5",
+      "branch": "main",
       "pr_url": "https://github.com/subunit-ai/subunit-auth/pull/12",
-      "merge_status": "open"
+      "merge_status": "merged"
     },
     "echo": {
       "repository": "https://github.com/subunit-ai/echo",
-      "sha": "b21199b4a0d525085396114da638305f2d754a23",
-      "branch": "session/a7-participant-consent",
+      "sha": "1901d68f7379dd9f8c579958f253843f9d07fadf",
+      "branch": "main",
       "pr_url": "https://github.com/subunit-ai/echo/pull/23",
-      "merge_status": "open"
+      "merge_status": "merged"
     }
   },
   "gates": {
@@ -118,7 +118,8 @@
         "https://github.com/subunit-ai/subunit-auth/actions/runs/32789577520",
         "https://github.com/subunit-ai/u1-chat/pull/19",
         "https://github.com/subunit-ai/echo/pull/23",
-        "https://github.com/subunit-ai/echo/actions/runs/32789577439"
+        "https://github.com/subunit-ai/echo/actions/runs/32789577439",
+        "https://github.com/subunit-ai/scai-releases/actions/runs/32835891527"
       ],
       "acceptance": "Qualifizierter Legal/DPO-Owner und unabhängiger Judge genehmigen Datenflüsse, AVV/TOMs, DPIA und Use-Case-Grenzen"
     },
@@ -134,7 +135,9 @@
         "https://github.com/subunit-ai/scai-releases/pull/16",
         "https://github.com/subunit-ai/scai-releases/pull/18",
         "https://github.com/subunit-ai/scai-releases/pull/19",
-        "https://github.com/subunit-ai/scai-releases/actions/runs/32803405314"
+        "https://github.com/subunit-ai/scai-releases/actions/runs/32803405314",
+        "https://github.com/subunit-ai/scai-releases/pull/20",
+        "https://github.com/subunit-ai/scai-releases/actions/runs/32835891527"
       ],
       "acceptance": "Alle Pins gemergt, CI und signierte Artefakte grün, SBOM/Provenance verifiziert, Health/Recovery/Rollback bestanden"
     }
@@ -193,7 +196,8 @@
       "Public-log audit found no Rust/TypeScript source-location or source-code patterns in the completed run",
       "Meet visual and interaction proof passed; screenshot artifact 9545672193 contains exactly 42 PNG files and no other file type, GitHub digest sha256:116f9755a34aeb0cb8e9c700c0839f0cb7a22404d999ae860aab39fe065899c3",
       "Native compile, PKCE session tests and real OS credential-store write/read/delete reported PASS on macOS ARM64 and Windows x64",
-      "No private Rust/Tauri build output was written to a public Actions cache"
+      "No private Rust/Tauri build output was written to a public Actions cache",
+      "Fleet Source Check 32835891527 completed successfully against the exact merged main SHAs for u1-chat 60d40690d430db8e2985db174d52e335bb256558, Atlas af25f677f83ba55b0f70c9f0617311e2d8e68a95, subunit-auth 1cd0d25013152398802b0652d8b5edfa560e90c5 and Echo 1901d68f7379dd9f8c579958f253843f9d07fadf using separate read-only deploy keys"
     ]
   },
   "artifacts": {
@@ -242,12 +246,6 @@
       "owner": "TJ",
       "resolution": "Qualifizierte Legal- und DPO-Verantwortliche sowie unabhängigen Judge benennen und Entscheidung dokumentieren",
       "evidence_required": "Freigegebene Legal-Matrix, AVV/TOMs, DPIA und AI-Act-Use-Case-Entscheidung"
-    },
-    {
-      "id": "merge-and-ci",
-      "owner": "Subunit Engineering",
-      "resolution": "Private-Repo-CI-Billing freigeben oder gleichwertige unveränderliche Remote-CI bereitstellen; u1-chat #18 vor dem darauf gestapelten #19 integrieren; danach Atlas #62, subunit-auth #12 und Echo #23 reviewen, mergen und CI gegen exakt die resultierenden SHAs erfolgreich ausführen",
-      "evidence_required": "Grüne Backend-Remote-CI-Läufe ohne Billing-Abbruch, korrekte u1-chat-Integrationskette und tatsächliche Backend-Merge-SHAs; Auth Run 32789577520 und Echo Run 32789577439 sind bereits exakt an die neuen Heads gebunden, wurden aber mit 0 Steps nur vom Billing-Gate abgewiesen; lokale Zusatzbelege: u1-chat 470/470 dreimal, Atlas A6 81/81 plus TypeScript, subunit-auth 105/105 und Echo 77/77 grün"
     },
     {
       "id": "artifacts-and-operations",
