@@ -14,9 +14,9 @@
     },
     "scai_release_contract": {
       "repository": "https://github.com/subunit-ai/scai-releases",
-      "sha": "9d20ba5e038f10e48e49f58d7c90b63014ebb1cd",
+      "sha": "d201d0eb690d30fed0043a7f66d6e00e401a54ea",
       "branch": "main",
-      "pr_url": "https://github.com/subunit-ai/scai-releases/pull/13",
+      "pr_url": "https://github.com/subunit-ai/scai-releases/pull/19",
       "merge_status": "merged"
     },
     "u1_chat": {
@@ -132,7 +132,9 @@
         "https://github.com/subunit-ai/subunit-scai/pull/421",
         "https://github.com/subunit-ai/scai-releases/actions/runs/32798225283",
         "https://github.com/subunit-ai/scai-releases/pull/16",
-        "https://github.com/subunit-ai/scai-releases/pull/13"
+        "https://github.com/subunit-ai/scai-releases/pull/18",
+        "https://github.com/subunit-ai/scai-releases/pull/19",
+        "https://github.com/subunit-ai/scai-releases/actions/runs/32803405314"
       ],
       "acceptance": "Alle Pins gemergt, CI und signierte Artefakte grün, SBOM/Provenance verifiziert, Health/Recovery/Rollback bestanden"
     }
