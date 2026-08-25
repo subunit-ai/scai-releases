@@ -115,6 +115,7 @@ test("market evidence needs a pinned report, separate attestation and three payi
 test("a cosmetic top-level PASS fails closed while evidence remains open", () => {
   const manifest = clone();
   manifest.status = "pass";
+  manifest.pins.u1_chat.merge_status = "open";
   const errors = validateManifest(manifest).join("\n");
   assert.match(errors, /PASS requires an empty blocker list/);
   assert.match(errors, /PASS requires every pin to be merged/);
