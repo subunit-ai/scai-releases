@@ -14,6 +14,10 @@ on:
       - "scripts/validate-release-assets.test.mjs"
       - "scripts/verify-source-confidentiality.mjs"
       - "scripts/verify-source-confidentiality.test.mjs"
+      - "scripts/checkout-private-source.sh"
+      - "scripts/checkout-private-source.test.mjs"
+      - "scripts/verify-fleet-source-workflow.mjs"
+      - "scripts/verify-fleet-source-workflow.test.mjs"
       - "scripts/merge-cyclonedx.mjs"
       - "scripts/merge-cyclonedx.test.mjs"
       - "scripts/verify-readiness-evidence.mjs"
@@ -22,6 +26,7 @@ on:
       - ".github/workflows/pr-check.yml"
       - ".github/workflows/publish-approved.yml"
       - ".github/workflows/windows-arm-smoke.yml"
+      - ".github/workflows/fleet-source-check.yml"
       - ".github/workflows/fleet-manifest.yml"
   push:
     branches: [main]
@@ -37,6 +42,10 @@ on:
       - "scripts/validate-release-assets.test.mjs"
       - "scripts/verify-source-confidentiality.mjs"
       - "scripts/verify-source-confidentiality.test.mjs"
+      - "scripts/checkout-private-source.sh"
+      - "scripts/checkout-private-source.test.mjs"
+      - "scripts/verify-fleet-source-workflow.mjs"
+      - "scripts/verify-fleet-source-workflow.test.mjs"
       - "scripts/merge-cyclonedx.mjs"
       - "scripts/merge-cyclonedx.test.mjs"
       - "scripts/verify-readiness-evidence.mjs"
@@ -45,6 +54,7 @@ on:
       - ".github/workflows/pr-check.yml"
       - ".github/workflows/publish-approved.yml"
       - ".github/workflows/windows-arm-smoke.yml"
+      - ".github/workflows/fleet-source-check.yml"
       - ".github/workflows/fleet-manifest.yml"
   workflow_dispatch:
 
@@ -68,5 +78,7 @@ jobs:
         run: node scripts/verify-release-workflow.mjs
       - name: Public-CI-Vertraulichkeit fail-closed prüfen
         run: node scripts/verify-source-confidentiality.mjs
+      - name: Private Fleet-Source-CI fail-closed prüfen
+        run: node scripts/verify-fleet-source-workflow.mjs
       - name: Ops- und Markt-Evidence-Templates prüfen
         run: node scripts/verify-readiness-evidence.mjs fleet/evidence/operations-template.json fleet/evidence/market-template.json

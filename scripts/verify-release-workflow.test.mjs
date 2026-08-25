@@ -32,6 +32,9 @@ test("a bound signing secret must also be required by the preflight", () => {
 test("a mutable action reference is rejected", () => {
   const unsafe = fixture.replace(/actions\/attest@[0-9a-f]{40}/, "actions/attest@v4");
   assert.match(validateReleaseWorkflow(unsafe).join("\n"), /action reference must be immutable/);
+
+  const shorthand = `${fixture}\n      - uses: attacker/action@main\n`;
+  assert.match(validateReleaseWorkflow(shorthand).join("\n"), /action reference must be immutable/);
 });
 
 test("a release build that can stream private compiler output is rejected", () => {

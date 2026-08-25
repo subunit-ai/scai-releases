@@ -17,7 +17,7 @@ export function validateSourceConfidentiality(workflows, assetSelector) {
     require(!/uses:\s*(?:swatinem\/rust-cache|actions\/cache)@/.test(workflow), `${name}: private build outputs must not enter a public Actions cache`);
 
     for (const line of workflow.split("\n")) {
-      const match = line.match(/^\s*uses:\s*([^\s#]+)/);
+      const match = line.match(/^\s*(?:-\s*)?uses:\s*([^\s#]+)/);
       if (!match || match[1].startsWith("./")) continue;
       const ref = match[1].split("@").at(-1);
       require(/^[0-9a-f]{40}$/.test(ref ?? ""), `${name}: action reference must be immutable: ${match[1]}`);
