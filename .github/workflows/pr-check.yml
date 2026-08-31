@@ -467,13 +467,15 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          keyring_features=()
           if grep -Eq '^[[:space:]]*a1-keyring-smoke[[:space:]]*=' src-tauri/Cargo.toml; then
-            keyring_features=(--features a1-keyring-smoke)
+            bash "$GITHUB_WORKSPACE/gate/scripts/run-confidential.sh" native-keyring-smoke \
+              cargo run --locked --manifest-path src-tauri/Cargo.toml \
+              --features a1-keyring-smoke --example a1_keyring_smoke
+          else
+            bash "$GITHUB_WORKSPACE/gate/scripts/run-confidential.sh" native-keyring-smoke \
+              cargo run --locked --manifest-path src-tauri/Cargo.toml \
+              --example a1_keyring_smoke
           fi
-          bash "$GITHUB_WORKSPACE/gate/scripts/run-confidential.sh" native-keyring-smoke \
-            cargo run --locked --manifest-path src-tauri/Cargo.toml \
-            "${keyring_features[@]}" --example a1_keyring_smoke
 
       - name: Private Trace-Credentials entfernen
         if: always()
