@@ -30,8 +30,17 @@ Der historische `scai-candidate-2026-08-24.1` pinnt SCAI `0.126.0` und ist über
 `291ea267b57585db5c4bee9c458617faf1d426a3`, als `superseded` markiert. Seine Evidenz bleibt
 auditierbar, darf aber nicht auf die aktuelle Produktlinie übertragen werden.
 
-SCAI `0.131.0` auf `878bf74ac82e49639d90945e7742fa3ef31c700f` bleibt eine blockierte
-Pre-Candidate-Basis. Eine neue Fleet-ID entsteht erst nach grünem Exact-SHA-Candidate-Entry über
-die zugesagte Plattformmatrix, installierbare Artefakte, Checksums und Start-/Update-Smoke.
-Vorhandene Drafts bleiben unveröffentlicht. Apple-/Windows-Produktionssignaturen folgen nach
-dem Handelsregisterauszug und ersetzen weder Legal/DPO, Operations noch R0–R3.
+SCAI `0.138.0` ist der aktuelle öffentliche technische Desktop-Release. Er bindet den Quell-SHA
+`14eacdf5cccc726f19ba58553da103580a541244` an die Fleet-ID
+`scai-candidate-2026-08-31.7`; Build-Lauf
+[`33436306279`](https://github.com/subunit-ai/scai-releases/actions/runs/33436306279) ist über die
+vollständige Matrix macOS Apple Silicon/Intel, Windows ARM64/x64, Linux x64 und den abschließenden
+Signatur-, SBOM- und Provenance-Job grün. Der öffentliche Release enthält 21 Artefakte,
+20 deckungsgleiche `SHA256SUMS`-Einträge, 11 Updater-Ziele und sechs gültige
+Updater-Signaturen.
+
+Die Veröffentlichung läuft bewusst unter `legacy-v0.125`: macOS ist Apple-Development-signiert,
+aber nicht notarisiert/Gatekeeper-freigegeben; Windows besitzt noch kein Authenticode-Zertifikat.
+Damit ist `0.138.0` ein funktionaler Desktop-Release, aber kein `market-ready`-Nachweis und kein
+Ersatz für Legal/DPO, Operations oder R0–R3. Die überholten beziehungsweise fehlerhaften Stände
+`0.131.0` bis `0.137.0` bleiben als nicht öffentliche Drafts auditierbar; nichts wurde gelöscht.
