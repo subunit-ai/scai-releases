@@ -103,6 +103,20 @@ test("the native keyring smoke stays outside Tauri binary targets", () => {
   assert.match(errors, /must not reintroduce a Cargo bin target/);
 });
 
+test("release packaging cannot skip the product-binary target proof", () => {
+  const unsafe = {
+    ...fixtures,
+    "build-all.yml": fixtures["build-all.yml"].replace(
+      'run-confidential.sh" "product-binary-$TARGET"',
+      'run-confidential.sh" "unchecked-product-$TARGET"',
+    ),
+  };
+  assert.match(
+    validateSourceConfidentiality(unsafe, assetSelector).join("\n"),
+    /product-binary metadata must be checked confidentially/,
+  );
+});
+
 test("the ARM64 release lane cannot drop the triplet the smoke mirrors", () => {
   const unsafe = {
     ...fixtures,
