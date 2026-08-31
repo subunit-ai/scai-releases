@@ -30,6 +30,13 @@ test("a bound signing secret must also be required by the preflight", () => {
   assert.match(validateReleaseWorkflow(unsafe).join("\n"), /preflight must require APPLE_ID/);
 });
 
+test("legacy accepts the historical unencrypted updater key but market-ready does not", () => {
+  const legacyBase = fixture.match(/BASE_RELEASE_SECRETS=\(\s*([\s\S]*?)\s*\)/)?.[1] ?? "";
+  const marketReady = fixture.match(/MARKET_READY_SECRETS=\(\s*([\s\S]*?)\s*\)/)?.[1] ?? "";
+  assert.doesNotMatch(legacyBase, /TAURI_SIGNING_PRIVATE_KEY_PASSWORD/);
+  assert.match(marketReady, /TAURI_SIGNING_PRIVATE_KEY_PASSWORD/);
+});
+
 test("a mutable action reference is rejected", () => {
   const unsafe = fixture.replace(/actions\/attest@[0-9a-f]{40}/, "actions/attest@v4");
   assert.match(validateReleaseWorkflow(unsafe).join("\n"), /action reference must be immutable/);

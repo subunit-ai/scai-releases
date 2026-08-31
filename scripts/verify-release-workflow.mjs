@@ -70,7 +70,6 @@ export function validateReleaseWorkflow(workflow) {
     "APPLE_CERTIFICATE_PASSWORD",
     "APPLE_SIGNING_IDENTITY",
     "TAURI_SIGNING_PRIVATE_KEY",
-    "TAURI_SIGNING_PRIVATE_KEY_PASSWORD",
   ]) require(new RegExp(`(^|\\s)${name}(\\s|$)`).test(baseSecretList), `base release secret preflight must require ${name}`);
   for (const name of [
     "APPLE_ID",
@@ -79,6 +78,7 @@ export function validateReleaseWorkflow(workflow) {
     "WINDOWS_CERTIFICATE",
     "WINDOWS_CERTIFICATE_PASSWORD",
     "WINDOWS_CERTIFICATE_SUBJECT",
+    "TAURI_SIGNING_PRIVATE_KEY_PASSWORD",
   ]) require(new RegExp(`(^|\\s)${name}(\\s|$)`).test(marketReadySecretList), `market-ready secret preflight must require ${name}`);
   require(has(/legacy-v0\.125\)[\s\S]{0,180}?COMPATIBILITY_ACKNOWLEDGEMENT" != "I_ACCEPT_GATEKEEPER_AND_SMARTSCREEN"/), "legacy-v0.125 must require the exact risk acknowledgement");
   require(has(/market-ready\)[\s\S]{0,160}?REQUIRED_RELEASE_SECRETS=\("\$\{BASE_RELEASE_SECRETS\[@\]\}" "\$\{MARKET_READY_SECRETS\[@\]\}"\)/), "market-ready must require base and native signing secrets");
