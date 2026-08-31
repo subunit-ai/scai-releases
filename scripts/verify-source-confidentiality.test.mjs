@@ -81,3 +81,25 @@ test("Windows ARM smoke preserves the clang-cl exception flag", () => {
   };
   assert.match(validateSourceConfidentiality(unsafe, assetSelector).join("\n"), /must not rewrite the clang-cl exception flag/);
 });
+
+test("Windows ARM smoke keeps the release lane's OpenSSL environment", () => {
+  const unsafe = {
+    ...fixtures,
+    "windows-arm-smoke.yml": fixtures["windows-arm-smoke.yml"].replace(
+      "OPENSSL_TRIPLET: arm64-windows-static-md",
+      "OPENSSL_TRIPLET:",
+    ),
+  };
+  assert.match(validateSourceConfidentiality(unsafe, assetSelector).join("\n"), /same vcpkg OpenSSL environment/);
+});
+
+test("the ARM64 release lane cannot drop the triplet the smoke mirrors", () => {
+  const unsafe = {
+    ...fixtures,
+    "build-all.yml": fixtures["build-all.yml"].replace(
+      "openssl_triplet: arm64-windows-static-md",
+      "openssl_triplet: arm64-windows",
+    ),
+  };
+  assert.match(validateSourceConfidentiality(unsafe, assetSelector).join("\n"), /triplet the smoke mirrors/);
+});
