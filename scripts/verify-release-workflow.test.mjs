@@ -77,6 +77,14 @@ test("Windows native broker diagnostics cannot leak names or accept unchecked in
   assert.match(validateReleaseWorkflow(variableSize).join("\n"), /fixed-size indexed confidential runner/);
 });
 
+test("Windows plugin envelope diagnostics remain fixed-size and confidential", () => {
+  const publicRunner = fixture.replace(
+    '"windows-plugin-envelope-$TARGET" 14 npm run check:plugin-envelope',
+    '"windows-plugin-envelope-$TARGET" "$UNTRUSTED_COUNT" npm run check:plugin-envelope',
+  );
+  assert.match(validateReleaseWorkflow(publicRunner).join("\n"), /plugin envelope failures must use the fixed-size indexed confidential runner/);
+});
+
 test("a broad release upload cannot replace the explicit asset allowlist", () => {
   const unsafe = fixture.replace('gh release upload "$TAG" "${ASSETS[@]}"', 'gh release upload "$TAG" "$BUNDLE_ROOT"');
   assert.match(validateReleaseWorkflow(unsafe).join("\n"), /explicit release asset allowlist/);
