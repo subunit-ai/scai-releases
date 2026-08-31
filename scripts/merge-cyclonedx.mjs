@@ -1,9 +1,21 @@
 #!/usr/bin/env node
+import { createHash } from "node:crypto";
 import { readFileSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 
 const FULL_SHA = /^[0-9a-f]{40}$/;
+const UUID_NAMESPACE_DNS = Buffer.from("6ba7b8109dad11d180b400c04fd430c8", "hex");
+
+function deterministicUuid(name) {
+  const bytes = Buffer.from(
+    createHash("sha1").update(UUID_NAMESPACE_DNS).update(name, "utf8").digest().subarray(0, 16),
+  );
+  bytes[6] = (bytes[6] & 0x0f) | 0x50;
+  bytes[8] = (bytes[8] & 0x3f) | 0x80;
+  const hex = bytes.toString("hex");
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
+}
 
 function requireBom(value, label) {
   if (!value || value.bomFormat !== "CycloneDX" || !Array.isArray(value.components)) {
@@ -43,10 +55,13 @@ export function mergeCycloneDx(nodeBom, rustBom, { name, version, sourceSha, tim
   const rust = namespaceBom(rustBom, "cargo");
   const rootRef = `pkg:generic/subunit-ai/${name}@${version}?vcs_ref=${sourceSha}`;
   const rootDependsOn = [node.rootRef, rust.rootRef].filter(Boolean).sort();
+  const serialNumber = `urn:uuid:${deterministicUuid(`subunit-ai/${name}@${version}#${sourceSha}`)}`;
 
   return {
+    $schema: "http://cyclonedx.org/schema/bom-1.5.schema.json",
     bomFormat: "CycloneDX",
     specVersion: "1.5",
+    serialNumber,
     version: 1,
     metadata: {
       timestamp,
