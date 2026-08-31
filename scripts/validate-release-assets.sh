@@ -33,10 +33,24 @@ count_suffix() {
 }
 
 case "$target" in
-  *-apple-darwin)
+  aarch64-apple-darwin)
     test "$(count_suffix .dmg)" -eq 1
     test "$(count_suffix .app.tar.gz)" -eq 1
     test "$(count_suffix .app.tar.gz.sig)" -eq 1
+    printf '%s\n' "${assets[@]}" | grep -Eq '/SCAI_[^/]*_aarch64\.dmg$'
+    printf '%s\n' "${assets[@]}" | grep -Eq '/SCAI_aarch64\.app\.tar\.gz$'
+    printf '%s\n' "${assets[@]}" | grep -Eq '/SCAI_aarch64\.app\.tar\.gz\.sig$'
+    test "$(printf '%s\n' "${assets[@]}" | grep -Ec '/SCAI_(aarch64|x64)\.app\.tar\.gz(\.sig)?$')" -eq 2
+    test "${#assets[@]}" -eq 3
+    ;;
+  x86_64-apple-darwin)
+    test "$(count_suffix .dmg)" -eq 1
+    test "$(count_suffix .app.tar.gz)" -eq 1
+    test "$(count_suffix .app.tar.gz.sig)" -eq 1
+    printf '%s\n' "${assets[@]}" | grep -Eq '/SCAI_[^/]*_x64\.dmg$'
+    printf '%s\n' "${assets[@]}" | grep -Eq '/SCAI_x64\.app\.tar\.gz$'
+    printf '%s\n' "${assets[@]}" | grep -Eq '/SCAI_x64\.app\.tar\.gz\.sig$'
+    test "$(printf '%s\n' "${assets[@]}" | grep -Ec '/SCAI_(aarch64|x64)\.app\.tar\.gz(\.sig)?$')" -eq 2
     test "${#assets[@]}" -eq 3
     ;;
   *-pc-windows-msvc)

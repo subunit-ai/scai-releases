@@ -559,6 +559,24 @@ jobs:
             npm run tauri build -- "${BUILD_ARGS[@]}"
 
           BUNDLE_ROOT="src-tauri/target/$TARGET/release/bundle"
+          case "$TARGET" in
+            aarch64-apple-darwin) MAC_ARCHIVE_LABEL=aarch64 ;;
+            x86_64-apple-darwin) MAC_ARCHIVE_LABEL=x64 ;;
+            *) MAC_ARCHIVE_LABEL="" ;;
+          esac
+          if [ -n "$MAC_ARCHIVE_LABEL" ]; then
+            # Tauri nennt beide Matrix-Archive standardmäßig SCAI.app.tar.gz. Ohne
+            # Normalisierung überschreibt der zweite Upload den ersten im gemeinsamen
+            # Draft. Die historischen Updater-Namen tragen deshalb die Architektur.
+            APP_ARCHIVE=$(find "$BUNDLE_ROOT/macos" -maxdepth 1 -type f -name '*.app.tar.gz' -print -quit)
+            test -n "$APP_ARCHIVE"
+            test -f "$APP_ARCHIVE.sig"
+            NORMALIZED_ARCHIVE="$BUNDLE_ROOT/macos/SCAI_${MAC_ARCHIVE_LABEL}.app.tar.gz"
+            test ! -e "$NORMALIZED_ARCHIVE"
+            test ! -e "$NORMALIZED_ARCHIVE.sig"
+            mv "$APP_ARCHIVE" "$NORMALIZED_ARCHIVE"
+            mv "$APP_ARCHIVE.sig" "$NORMALIZED_ARCHIVE.sig"
+          fi
           ASSET_LIST="$RUNNER_TEMP/scai-release-assets-$TARGET.txt"
           bash "$GITHUB_WORKSPACE/gate/scripts/validate-release-assets.sh" \
             "$TARGET" "$BUNDLE_ROOT" > "$ASSET_LIST"
