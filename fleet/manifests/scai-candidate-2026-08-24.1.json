@@ -2,8 +2,13 @@
   "$schema": "../manifest.schema.json",
   "schema_version": "1.2",
   "release_id": "scai-candidate-2026-08-24.1",
-  "status": "candidate",
+  "status": "superseded",
   "created_at": "2026-08-24T20:41:15Z",
+  "supersession": {
+    "superseded_at": "2026-08-31T13:06:54Z",
+    "superseded_by_source_sha": "878bf74ac82e49639d90945e7742fa3ef31c700f",
+    "reason": "SCAI 0.131.0 on the newer source SHA is the active pre-candidate basis. No replacement Fleet candidate is declared until the full cross-platform candidate-entry gate passes; evidence from this 0.126.0 pin must not be inherited."
+  },
   "pins": {
     "scai_source": {
       "repository": "https://github.com/subunit-ai/subunit-scai",

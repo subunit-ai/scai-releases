@@ -45,6 +45,7 @@ const GOVERNANCE_FIELDS = ["status", "release_pin", "legal_owner", "dpo_owner", 
 const OPERATIONS_FIELDS = ["status", "release_pin", "environment", "operator", "independent_judge", "started_at", "completed_at", "deployed", "health_verified", "recovery_verified", "rollback_verified", "evidence_url", "evidence_sha256"];
 const APPROVAL_FIELDS = ["name", "evidence_url", "evidence_sha256"];
 const BLOCKER_FIELDS = ["id", "owner", "resolution", "evidence_required"];
+const SUPERSESSION_FIELDS = ["superseded_at", "superseded_by_source_sha", "reason"];
 const FULL_SHA = /^[0-9a-f]{40}$/;
 const SHA256 = /^[0-9a-f]{64}$/;
 const RELEASE_ID = /^scai-candidate-[0-9]{4}-[0-9]{2}-[0-9]{2}\.[0-9]+$/;
@@ -74,12 +75,23 @@ export function validateManifest(manifest, filename = "<memory>") {
   require(manifest && typeof manifest === "object" && !Array.isArray(manifest), "root must be an object");
   if (!manifest || typeof manifest !== "object") return errors;
 
-  require(exactKeys(manifest, ROOT_FIELDS), "root fields must match schema exactly");
+  const expectedRootFields = manifest.status === "superseded"
+    ? [...ROOT_FIELDS, "supersession"]
+    : ROOT_FIELDS;
+  require(exactKeys(manifest, expectedRootFields), "root fields must match schema exactly");
   require(manifest.$schema === "../manifest.schema.json", "$schema must pin the repository schema");
   require(manifest.schema_version === "1.2", "schema_version must equal 1.2");
   require(RELEASE_ID.test(manifest.release_id ?? ""), "release_id has an invalid format");
-  require(["candidate", "pass", "rejected"].includes(manifest.status), "status must be candidate, pass or rejected");
+  require(["candidate", "pass", "rejected", "superseded"].includes(manifest.status), "status must be candidate, pass, rejected or superseded");
   require(Number.isFinite(Date.parse(manifest.created_at ?? "")), "created_at must be an ISO date-time");
+  if (manifest.status === "superseded") {
+    const supersession = manifest.supersession ?? {};
+    require(exactKeys(supersession, SUPERSESSION_FIELDS), "supersession fields must match schema exactly");
+    require(Number.isFinite(Date.parse(supersession.superseded_at ?? "")), "supersession.superseded_at must be an ISO date-time");
+    require(FULL_SHA.test(supersession.superseded_by_source_sha ?? ""), "supersession.superseded_by_source_sha must be a full 40-character Git SHA");
+    require(nonEmpty(supersession.reason), "supersession.reason is required");
+    require(supersession.superseded_by_source_sha !== manifest.pins?.scai_source?.sha, "supersession must point to a different SCAI source SHA");
+  }
 
   require(exactKeys(manifest.pins, EXPECTED_PINS), `pins must be exactly ${EXPECTED_PINS.join(", ")}`);
   for (const name of EXPECTED_PINS) {
