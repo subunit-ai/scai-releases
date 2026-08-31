@@ -1008,12 +1008,15 @@ jobs:
           SIG_COUNT=0
           while IFS= read -r -d '' signature; do
             artifact="${signature%.sig}"
+            decoded_signature="$RUNNER_TEMP/$(basename "$signature").minisig"
             test -s "$artifact"
-            "$MINISIGN_BIN" -Vm "$artifact" -x "$signature" -p updater.pub
+            base64 --decode "$signature" > "$decoded_signature"
+            test -s "$decoded_signature"
+            "$MINISIGN_BIN" -Vm "$artifact" -x "$decoded_signature" -p updater.pub
             SIG_COUNT=$((SIG_COUNT + 1))
           done < <(find . -maxdepth 1 -type f -name '*.sig' -print0)
-          if [ "$SIG_COUNT" -lt 6 ]; then
-            echo "::error::Nur $SIG_COUNT Updater-Signaturen gefunden; erwartet werden mindestens 6."
+          if [ "$SIG_COUNT" -ne 6 ]; then
+            echo "::error::$SIG_COUNT Updater-Signaturen gefunden; erwartet werden exakt 6."
             exit 1
           fi
           for target in aarch64-apple-darwin x86_64-apple-darwin aarch64-pc-windows-msvc x86_64-pc-windows-msvc; do
