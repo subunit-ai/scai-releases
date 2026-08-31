@@ -24,8 +24,9 @@
     "$schema": { "type": "string" },
     "schema_version": { "const": "1.2" },
     "release_id": { "type": "string", "pattern": "^scai-candidate-[0-9]{4}-[0-9]{2}-[0-9]{2}\\.[0-9]+$" },
-    "status": { "enum": ["candidate", "pass", "rejected"] },
+    "status": { "enum": ["candidate", "pass", "rejected", "superseded"] },
     "created_at": { "type": "string", "format": "date-time" },
+    "supersession": { "$ref": "#/$defs/supersession" },
     "pins": {
       "type": "object",
       "minProperties": 6,
@@ -68,6 +69,13 @@
       "items": { "$ref": "#/$defs/blocker" }
     }
   },
+  "allOf": [
+    {
+      "if": { "properties": { "status": { "const": "superseded" } } },
+      "then": { "required": ["supersession"] },
+      "else": { "not": { "required": ["supersession"] } }
+    }
+  ],
   "$defs": {
     "sha": { "type": "string", "pattern": "^[0-9a-f]{40}$" },
     "uriOrEmpty": { "type": "string", "pattern": "^(https://|$)" },
@@ -231,6 +239,16 @@
         "product": { "$ref": "#/$defs/approval" },
         "security": { "$ref": "#/$defs/approval" },
         "legal": { "$ref": "#/$defs/approval" }
+      }
+    },
+    "supersession": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["superseded_at", "superseded_by_source_sha", "reason"],
+      "properties": {
+        "superseded_at": { "type": "string", "format": "date-time" },
+        "superseded_by_source_sha": { "$ref": "#/$defs/sha" },
+        "reason": { "type": "string", "minLength": 1 }
       }
     },
     "blocker": {

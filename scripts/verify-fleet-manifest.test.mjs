@@ -10,8 +10,27 @@ const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const fixture = JSON.parse(readFileSync(join(ROOT, "fleet/manifests/scai-candidate-2026-08-24.1.json"), "utf8"));
 const clone = () => structuredClone(fixture);
 
-test("current candidate is structurally valid and honestly blocked", () => {
+test("superseded historical candidate remains structurally valid", () => {
   assert.deepEqual(validateManifest(clone()), []);
+});
+
+test("superseded status requires a complete, different source binding", () => {
+  const missing = clone();
+  delete missing.supersession;
+  assert.match(validateManifest(missing).join("\n"), /root fields must match schema exactly/);
+
+  const sameSource = clone();
+  sameSource.supersession.superseded_by_source_sha = sameSource.pins.scai_source.sha;
+  assert.match(validateManifest(sameSource).join("\n"), /supersession must point to a different SCAI source SHA/);
+});
+
+test("an active candidate cannot retain historical supersession metadata", () => {
+  const manifest = clone();
+  manifest.status = "candidate";
+  assert.match(validateManifest(manifest).join("\n"), /root fields must match schema exactly/);
+
+  delete manifest.supersession;
+  assert.deepEqual(validateManifest(manifest), []);
 });
 
 test("short component SHAs are rejected", () => {
@@ -115,6 +134,7 @@ test("market evidence needs a pinned report, separate attestation and three payi
 test("a cosmetic top-level PASS fails closed while evidence remains open", () => {
   const manifest = clone();
   manifest.status = "pass";
+  delete manifest.supersession;
   manifest.pins.u1_chat.merge_status = "open";
   const errors = validateManifest(manifest).join("\n");
   assert.match(errors, /PASS requires an empty blocker list/);

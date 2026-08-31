@@ -17,13 +17,18 @@ Produktionsrelease.
   Plattformsignatur ausdrücklich als `not_applicable`; die Updater-Signatur
   bleibt trotzdem Pflicht.
 - `rejected`: Kandidat wurde verworfen und darf nicht veröffentlicht werden.
+- `superseded`: Kandidat bleibt als historische Evidenz erhalten, repräsentiert aber wegen
+  eines neueren Source-Stands nicht mehr die aktive Release-Linie. `supersession` bindet
+  Zeitpunkt, neuen Source-SHA und Grund. Dieser Status ist niemals veröffentlichbar.
 
 Der Validator prüft die für `pass` geltenden Regeln zusätzlich zum JSON-Schema
 fail-closed. Er veröffentlicht, taggt, merged oder deployt nichts.
 
 ## Ablauf
 
-1. Manifest als `candidate` mit vollen SHAs anlegen.
+1. Manifest erst nach bestandenem Candidate-Entry-Gate als `candidate` mit vollen SHAs anlegen.
+   Ein neuer Source-Snapshot ohne vollständigen Plattformbeleg bleibt außerhalb der Fleet-
+   Kandidatenliste; er darf nicht durch Umbenennen des Vorgängers Evidenz erben.
 2. `node scripts/verify-fleet-manifest.mjs` und die Tests ausführen.
 3. Evidenz nur nach realer Verifikation ergänzen; keine geplanten Resultate als
    bestanden markieren.
