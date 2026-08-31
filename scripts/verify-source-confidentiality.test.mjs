@@ -71,6 +71,17 @@ test("Windows ARM diagnostics cannot upload plaintext or a source-tree path", ()
   assert.match(validateSourceConfidentiality(unsafe, assetSelector).join("\n"), /only a one-time-key encrypted envelope/);
 });
 
+test("Trace Windows diagnostics cannot upload plaintext or a source-tree path", () => {
+  const unsafe = {
+    ...fixtures,
+    "pr-check.yml": fixtures["pr-check.yml"].replace(
+      "path: ${{ runner.temp }}/trace-windows-diagnostic.json",
+      "path: trace-src/private-clippy.log",
+    ),
+  };
+  assert.match(validateSourceConfidentiality(unsafe, assetSelector).join("\n"), /Trace Windows diagnostics may upload only a one-time-key encrypted envelope/);
+});
+
 test("Windows ARM smoke preserves the clang-cl exception flag", () => {
   const unsafe = {
     ...fixtures,
