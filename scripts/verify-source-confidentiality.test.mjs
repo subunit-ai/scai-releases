@@ -114,6 +114,25 @@ test("the native keyring smoke cannot silently omit its required feature", () =>
   );
 });
 
+test("standalone Trace checks cannot accept a mutable ref", () => {
+  const unsafe = {
+    ...fixtures,
+    "pr-check.yml": fixtures["pr-check.yml"].replace(
+      "trace_ref muss ein unveränderlicher 40-Zeichen-SHA sein.",
+      "trace_ref wird als Branch akzeptiert.",
+    ),
+  };
+  assert.match(validateSourceConfidentiality(unsafe, assetSelector).join("\n"), /reject mutable refs/);
+});
+
+test("standalone Trace native output cannot bypass the confidential runner", () => {
+  const unsafe = {
+    ...fixtures,
+    "pr-check.yml": fixtures["pr-check.yml"].replace("trace-native-test cargo test", "trace-test-plain cargo test"),
+  };
+  assert.match(validateSourceConfidentiality(unsafe, assetSelector).join("\n"), /trace-native-test must suppress private output/);
+});
+
 test("release packaging cannot skip the product-binary target proof", () => {
   const unsafe = {
     ...fixtures,
