@@ -22,3 +22,16 @@ Regeln:
 2. Smoke-Workflows erzeugen weder Releases noch Uploads.
 3. Release-Workflows nur mit verifizierten vollständigen Quell-SHAs auslösen.
 4. Den Stand nach Änderungen im Handoff `subunit-scai.md` dokumentieren.
+
+## Aktueller Fleet-Status (2026-08-31)
+
+Der historische `scai-candidate-2026-08-24.1` pinnt SCAI `0.126.0` und ist über
+[PR #29](https://github.com/subunit-ai/scai-releases/pull/29), Merge
+`291ea267b57585db5c4bee9c458617faf1d426a3`, als `superseded` markiert. Seine Evidenz bleibt
+auditierbar, darf aber nicht auf die aktuelle Produktlinie übertragen werden.
+
+SCAI `0.131.0` auf `878bf74ac82e49639d90945e7742fa3ef31c700f` bleibt eine blockierte
+Pre-Candidate-Basis. Eine neue Fleet-ID entsteht erst nach grünem Exact-SHA-Candidate-Entry über
+die zugesagte Plattformmatrix, installierbare Artefakte, Checksums und Start-/Update-Smoke.
+Vorhandene Drafts bleiben unveröffentlicht. Apple-/Windows-Produktionssignaturen folgen nach
+dem Handelsregisterauszug und ersetzen weder Legal/DPO, Operations noch R0–R3.
