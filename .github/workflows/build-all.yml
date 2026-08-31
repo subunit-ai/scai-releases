@@ -995,13 +995,21 @@ jobs:
           const config = require(process.argv[2]);
           process.stdout.write(Buffer.from(config.plugins.updater.pubkey, "base64").toString("utf8"));
           NODE
-          sudo apt-get update
-          sudo apt-get install -y minisign
+          MINISIGN_ARCHIVE="$RUNNER_TEMP/minisign-0.12-linux.tar.gz"
+          curl --fail --location --silent --show-error \
+            --output "$MINISIGN_ARCHIVE" \
+            https://github.com/jedisct1/minisign/releases/download/0.12/minisign-0.12-linux.tar.gz
+          printf '%s  %s\n' \
+            9a599b48ba6eb7b1e80f12f36b94ceca7c00b7a5173c95c3efc88d9822957e73 \
+            "$MINISIGN_ARCHIVE" | sha256sum -c -
+          tar -xzf "$MINISIGN_ARCHIVE" -C "$RUNNER_TEMP"
+          MINISIGN_BIN="$RUNNER_TEMP/minisign-linux/x86_64/minisign"
+          test -x "$MINISIGN_BIN"
           SIG_COUNT=0
           while IFS= read -r -d '' signature; do
             artifact="${signature%.sig}"
             test -s "$artifact"
-            minisign -Vm "$artifact" -x "$signature" -p updater.pub
+            "$MINISIGN_BIN" -Vm "$artifact" -x "$signature" -p updater.pub
             SIG_COUNT=$((SIG_COUNT + 1))
           done < <(find . -maxdepth 1 -type f -name '*.sig' -print0)
           if [ "$SIG_COUNT" -lt 6 ]; then
