@@ -27,6 +27,10 @@ on:
         description: "Optionaler exakter 40-Zeichen-SHA aus trace-tauri für den Standalone-Matrixcheck"
         required: false
         default: ""
+      diagnostic_public_key_base64:
+        description: "Optionaler einmaliger RSA-3072+-Public-Key für verschlüsselte Trace-Windows-Diagnostik"
+        required: false
+        default: ""
 
 permissions:
   contents: read
@@ -322,11 +326,23 @@ jobs:
         if: matrix.mode == 'native'
         working-directory: trace-src
         shell: bash
+        env:
+          SCAI_ENCRYPTED_DIAGNOSTIC_PUBLIC_KEY_BASE64: ${{ matrix.label == 'windows-x64' && inputs.diagnostic_public_key_base64 || '' }}
+          SCAI_ENCRYPTED_DIAGNOSTIC_PATH: ${{ matrix.label == 'windows-x64' && inputs.diagnostic_public_key_base64 != '' && format('{0}/trace-windows-diagnostic.json', runner.temp) || '' }}
         run: |
           bash "$GITHUB_WORKSPACE/gate/scripts/run-confidential.sh" trace-native-check cargo check --locked --features host --bin trace-host
           bash "$GITHUB_WORKSPACE/gate/scripts/run-confidential.sh" trace-native-clippy cargo clippy --locked --features host --all-targets -- -D warnings
           bash "$GITHUB_WORKSPACE/gate/scripts/run-confidential.sh" trace-native-test cargo test --locked --features host
           bash "$GITHUB_WORKSPACE/gate/scripts/run-confidential.sh" trace-native-build cargo build --release --locked --features host --bin trace-host
+
+      - name: Verschlüsselte Trace-Windows-Fehlerdiagnostik bereitstellen
+        if: failure() && matrix.label == 'windows-x64' && inputs.diagnostic_public_key_base64 != ''
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4, immutable
+        with:
+          name: trace-windows-encrypted-diagnostic-${{ github.run_id }}
+          path: ${{ runner.temp }}/trace-windows-diagnostic.json
+          if-no-files-found: error
+          retention-days: 1
 
   native-trace:
     name: SCAI + Trace nativ kompilieren (${{ matrix.label }})
