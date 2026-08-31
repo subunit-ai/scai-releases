@@ -28,7 +28,7 @@ on:
         required: false
         default: ""
       diagnostic_public_key_base64:
-        description: "Optionaler einmaliger RSA-3072+-Public-Key für verschlüsselte private Fehlerdiagnostik"
+        description: "Optionaler einmaliger RSA-3072+-Public-Key im PEM-Base64-Format für verschlüsselte private Fehlerdiagnostik"
         required: false
         default: ""
 

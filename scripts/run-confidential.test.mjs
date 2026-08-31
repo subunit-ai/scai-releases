@@ -103,3 +103,18 @@ test("failed private output can leave the runner only as a one-time encrypted en
   assert.equal(createHash("sha256").update(plaintext).digest("hex"), envelope.plaintext_sha256);
   assertNoRetainedLogs(sealed.runnerTemp);
 });
+
+test("invalid diagnostic keys fail closed without claiming that an envelope was sealed", () => {
+  const marker = "PRIVATE_INVALID_KEY_CANARY";
+  const sealed = invoke("invalid-key-failure", `printf '${marker}\\n' >&2; exit 29`, (runnerTemp) => ({
+    SCAI_ENCRYPTED_DIAGNOSTIC_PUBLIC_KEY_BASE64: Buffer.from("not a PEM public key").toString("base64"),
+    SCAI_ENCRYPTED_DIAGNOSTIC_PATH: join(runnerTemp, "diagnostic.json"),
+  }));
+  const publicOutput = sealed.stdout + sealed.stderr;
+  assert.equal(sealed.status, 70);
+  assert.doesNotMatch(publicOutput, new RegExp(marker));
+  assert.doesNotMatch(publicOutput, /private failure log sealed/);
+  assert.match(publicOutput, /Encrypted diagnostic unavailable/);
+  assert.equal(existsSync(join(sealed.runnerTemp, "diagnostic.json")), false);
+  assertNoRetainedLogs(sealed.runnerTemp);
+});

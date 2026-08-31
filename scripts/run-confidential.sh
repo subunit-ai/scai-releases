@@ -64,8 +64,11 @@ if [ "$status" -eq 0 ]; then
   echo "PASS $label (private-log-sha256=$digest, bytes=$bytes)"
 else
   if [ -n "$diagnostic_path" ]; then
-    node "$(dirname -- "$0")/encrypt-confidential-log.mjs" \
-      "$log_file" "$diagnostic_path" "$diagnostic_key"
+    if ! node "$(dirname -- "$0")/encrypt-confidential-log.mjs" \
+      "$log_file" "$diagnostic_path" "$diagnostic_key"; then
+      echo "::error title=Encrypted diagnostic unavailable::Failed to seal $label; private output remains suppressed and no diagnostic may be uploaded."
+      exit 70
+    fi
     echo "PASS $label: private failure log sealed to the supplied one-time public key."
   fi
   echo "::error title=Confidential check failed::$label failed with exit $status; private output suppressed (sha256=$digest, bytes=$bytes). Reproduce at the pinned source SHA in the private worktree."
