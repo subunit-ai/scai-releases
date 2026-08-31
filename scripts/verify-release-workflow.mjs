@@ -120,6 +120,9 @@ export function validateReleaseWorkflow(workflow) {
   require(has(/minisign -Vm/), "Tauri updater signatures must be cryptographically verified");
 
   require(has(/@cyclonedx\/cyclonedx-npm@6\.0\.1/), "Node SBOM generator must be version pinned");
+  require(has(/npm ls --prefix src[\s\S]{0,180}?NPM_LS_EXIT=\$\?/), "Node SBOM must inspect npm dependency problems before tolerating known peer conflicts");
+  require(has(/\["react", "react-dom"\][\s\S]{0,640}?Unerwartete npm-Abhängigkeitsprobleme/), "Node SBOM may tolerate only the exact locked React peer-conflict set");
+  require(has(/cyclonedx-npm --package-lock-only --ignore-npm-errors/), "CycloneDX may ignore npm errors only after the strict problem allowlist gate");
   require(has(/cargo install cargo-cyclonedx --version 0\.5\.9 --locked/), "Rust SBOM generator must be version and lock pinned");
   require(has(/merge-cyclonedx\.mjs/), "Node and Rust SBOMs must be merged");
   require((workflow.match(/uses:\s*actions\/attest@[0-9a-f]{40}/g) ?? []).length === 2, "provenance and SBOM need two immutable attest actions");

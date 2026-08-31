@@ -876,8 +876,30 @@ jobs:
           print(datetime.datetime.fromtimestamp(int(sys.argv[1]), datetime.timezone.utc).isoformat().replace("+00:00", "Z"))
           PY
           )
+          NPM_LS_REPORT="$RUNNER_TEMP/scai-npm-ls.json"
+          NPM_LS_EXIT=0
+          npm ls --prefix src --json --long --all --package-lock-only --omit=dev \
+            > "$NPM_LS_REPORT" || NPM_LS_EXIT=$?
+          if [ "$NPM_LS_EXIT" -ne 0 ]; then
+            SOURCE_ROOT="$GITHUB_WORKSPACE/src" NPM_LS_REPORT="$NPM_LS_REPORT" node <<'NODE'
+          import { readFileSync } from "node:fs";
+          import { join, resolve } from "node:path";
+
+          const report = JSON.parse(readFileSync(process.env.NPM_LS_REPORT, "utf8"));
+          const lock = JSON.parse(readFileSync(join(process.env.SOURCE_ROOT, "package-lock.json"), "utf8"));
+          const expected = ["react", "react-dom"].map((name) => {
+            const version = lock.packages?.[`node_modules/${name}`]?.version;
+            if (!version) throw new Error(`package-lock.json enthält kein ${name}`);
+            return `invalid: ${name}@${version} ${join(resolve(process.env.SOURCE_ROOT), "node_modules", name)}`;
+          }).sort();
+          const actual = [...(report.problems ?? [])].sort();
+          if (JSON.stringify(actual) !== JSON.stringify(expected)) {
+            throw new Error(`Unerwartete npm-Abhängigkeitsprobleme: ${JSON.stringify(actual)}`);
+          }
+          NODE
+          fi
           npm exec --yes --package=@cyclonedx/cyclonedx-npm@6.0.1 -- \
-            cyclonedx-npm --package-lock-only --omit dev --spec-version 1.5 \
+            cyclonedx-npm --package-lock-only --ignore-npm-errors --omit dev --spec-version 1.5 \
             --output-reproducible --validate --output-file "$RUNNER_TEMP/scai-node.cdx.json" \
             src/package.json
           cargo install cargo-cyclonedx --version 0.5.9 --locked
