@@ -1,20 +1,22 @@
 import assert from "node:assert/strict";
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { spawnSync } from "node:child_process";
+import { constants, createDecipheriv, createHash, generateKeyPairSync, privateDecrypt } from "node:crypto";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const RUNNER = join(ROOT, "scripts/run-confidential.sh");
 
-function invoke(label, script) {
+function invoke(label, script, env = {}) {
   const runnerTemp = mkdtempSync(join(tmpdir(), "scai-confidential-test-"));
+  const extraEnv = typeof env === "function" ? env(runnerTemp) : env;
   const result = spawnSync(
     "bash",
     [RUNNER, label, "bash", "-c", script],
-    { encoding: "utf8", env: { ...process.env, RUNNER_TEMP: runnerTemp } },
+    { encoding: "utf8", env: { ...process.env, RUNNER_TEMP: runnerTemp, ...extraEnv } },
   );
   return { ...result, runnerTemp };
 }
@@ -70,4 +72,34 @@ test("labels cannot inject workflow commands or filesystem paths", () => {
   assert.match(result.stderr, /invalid confidential command label/);
   assert.deepEqual(readdirSync(runnerTemp), []);
   rmSync(runnerTemp, { recursive: true, force: true });
+});
+
+test("failed private output can leave the runner only as a one-time encrypted envelope", () => {
+  const { publicKey, privateKey } = generateKeyPairSync("rsa", { modulusLength: 3072 });
+  const publicKeyBase64 = Buffer.from(publicKey.export({ type: "spki", format: "pem" })).toString("base64");
+  const marker = "PRIVATE_ENCRYPTED_DIAGNOSTIC_CANARY";
+  const sealed = invoke("encrypted-failure", `printf '${marker}\\n' >&2; exit 27`, (runnerTemp) => ({
+    SCAI_ENCRYPTED_DIAGNOSTIC_PUBLIC_KEY_BASE64: publicKeyBase64,
+    SCAI_ENCRYPTED_DIAGNOSTIC_PATH: join(runnerTemp, "diagnostic.json"),
+  }));
+  const diagnosticPath = join(sealed.runnerTemp, "diagnostic.json");
+  assert.equal(sealed.status, 27);
+  assert.doesNotMatch(sealed.stdout + sealed.stderr, new RegExp(marker));
+  assert.equal(existsSync(diagnosticPath), true);
+
+  const envelope = JSON.parse(readFileSync(diagnosticPath, "utf8"));
+  const contentKey = privateDecrypt({
+    key: privateKey,
+    padding: constants.RSA_PKCS1_OAEP_PADDING,
+    oaepHash: "sha256",
+  }, Buffer.from(envelope.wrapped_key, "base64"));
+  const decipher = createDecipheriv("aes-256-gcm", contentKey, Buffer.from(envelope.iv, "base64"));
+  decipher.setAuthTag(Buffer.from(envelope.tag, "base64"));
+  const plaintext = Buffer.concat([
+    decipher.update(Buffer.from(envelope.ciphertext, "base64")),
+    decipher.final(),
+  ]);
+  assert.equal(plaintext.toString("utf8"), `${marker}\n`);
+  assert.equal(createHash("sha256").update(plaintext).digest("hex"), envelope.plaintext_sha256);
+  assertNoRetainedLogs(sealed.runnerTemp);
 });

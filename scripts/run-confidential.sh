@@ -25,6 +25,24 @@ temp_root=${RUNNER_TEMP:-${TMPDIR:-/tmp}}
 log_dir="$temp_root/scai-confidential-logs"
 mkdir -p "$log_dir"
 log_file="$log_dir/${label}-$$.log"
+diagnostic_path=${SCAI_ENCRYPTED_DIAGNOSTIC_PATH:-}
+diagnostic_key=${SCAI_ENCRYPTED_DIAGNOSTIC_PUBLIC_KEY_BASE64:-}
+
+if { [ -n "$diagnostic_path" ] && [ -z "$diagnostic_key" ]; } \
+  || { [ -z "$diagnostic_path" ] && [ -n "$diagnostic_key" ]; }; then
+  echo "encrypted diagnostic path and public key must be configured together" >&2
+  exit 64
+fi
+if [ -n "$diagnostic_path" ]; then
+  case "$diagnostic_path" in
+    "$temp_root"/*) ;;
+    *) echo "encrypted diagnostic path must stay below RUNNER_TEMP" >&2; exit 64 ;;
+  esac
+  if [ -L "$diagnostic_path" ]; then
+    echo "encrypted diagnostic path must not be a symlink" >&2
+    exit 64
+  fi
+fi
 
 # shellcheck disable=SC2329 # invoked by trap
 cleanup() {
@@ -45,6 +63,11 @@ bytes=$(wc -c <"$log_file" | tr -d '[:space:]')
 if [ "$status" -eq 0 ]; then
   echo "PASS $label (private-log-sha256=$digest, bytes=$bytes)"
 else
+  if [ -n "$diagnostic_path" ]; then
+    node "$(dirname -- "$0")/encrypt-confidential-log.mjs" \
+      "$log_file" "$diagnostic_path" "$diagnostic_key"
+    echo "PASS $label: private failure log sealed to the supplied one-time public key."
+  fi
   echo "::error title=Confidential check failed::$label failed with exit $status; private output suppressed (sha256=$digest, bytes=$bytes). Reproduce at the pinned source SHA in the private worktree."
 fi
 

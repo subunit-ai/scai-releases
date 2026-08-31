@@ -59,3 +59,14 @@ test("a widened release filename allowlist is rejected", () => {
   const unsafeSelector = assetSelector.replace("*.dmg|", "*.rs|*.dmg|");
   assert.match(validateSourceConfidentiality(fixtures, unsafeSelector).join("\n"), /closed filename allowlist/);
 });
+
+test("Windows ARM diagnostics cannot upload plaintext or a source-tree path", () => {
+  const unsafe = {
+    ...fixtures,
+    "windows-arm-smoke.yml": fixtures["windows-arm-smoke.yml"].replace(
+      "path: ${{ runner.temp }}/scai-arm64-diagnostic.json",
+      "path: src/private-build.log",
+    ),
+  };
+  assert.match(validateSourceConfidentiality(unsafe, assetSelector).join("\n"), /only a one-time-key encrypted envelope/);
+});

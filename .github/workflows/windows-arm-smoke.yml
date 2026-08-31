@@ -18,6 +18,10 @@ on:
         description: "Nach grünem Smoke einen testbaren NSIS-Installer als CI-Artefakt bauen"
         type: boolean
         default: false
+      diagnostic_public_key_base64:
+        description: "Optionaler einmaliger RSA-3072+-Public-Key für verschlüsselte Fehlerdiagnostik"
+        required: false
+        default: ""
 
 permissions:
   contents: read
@@ -100,9 +104,37 @@ jobs:
           "CXX_aarch64_pc_windows_msvc=clang-cl" >> $env:GITHUB_ENV
           "CXXFLAGS_aarch64_pc_windows_msvc=/EHsc" >> $env:GITHUB_ENV
 
+      - name: Privaten Trace-Kern für Cargo freischalten (read-only)
+        shell: bash
+        env:
+          TRACE_DEPLOY_KEY: ${{ secrets.TRACE_SOURCE_DEPLOY_KEY }}
+        run: |
+          set -euo pipefail
+          if [ -z "${TRACE_DEPLOY_KEY:-}" ]; then
+            echo "::error::TRACE_SOURCE_DEPLOY_KEY fehlt."
+            exit 1
+          fi
+          mkdir -p "$HOME/.ssh"
+          printf '%s\n' "$TRACE_DEPLOY_KEY" > "$HOME/.ssh/trace_src"
+          chmod 600 "$HOME/.ssh/trace_src"
+          cat >> "$HOME/.ssh/config" <<'EOF'
+          Host github-trace
+            HostName github.com
+            User git
+            IdentityFile ~/.ssh/trace_src
+            IdentitiesOnly yes
+          EOF
+          chmod 600 "$HOME/.ssh/config"
+          git config --global url."git@github-trace:subunit-ai/trace-tauri.git".insteadOf \
+            "https://github.com/subunit-ai/trace-tauri.git"
+          echo "CARGO_NET_GIT_FETCH_WITH_CLI=true" >> "$GITHUB_ENV"
+
       - name: Rust ARM64 prüfen (locked)
         working-directory: src
         shell: bash
+        env:
+          SCAI_ENCRYPTED_DIAGNOSTIC_PUBLIC_KEY_BASE64: ${{ inputs.diagnostic_public_key_base64 }}
+          SCAI_ENCRYPTED_DIAGNOSTIC_PATH: ${{ inputs.diagnostic_public_key_base64 != '' && format('{0}/scai-arm64-diagnostic.json', runner.temp) || '' }}
         run: bash "$GITHUB_WORKSPACE/gate/scripts/run-confidential.sh" arm64-cargo-check cargo check --manifest-path src-tauri/Cargo.toml --target aarch64-pc-windows-msvc --locked --features local-meet
 
       - name: ARM64-Vorschauinstaller bauen
@@ -111,6 +143,8 @@ jobs:
         env:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+          SCAI_ENCRYPTED_DIAGNOSTIC_PUBLIC_KEY_BASE64: ${{ inputs.diagnostic_public_key_base64 }}
+          SCAI_ENCRYPTED_DIAGNOSTIC_PATH: ${{ inputs.diagnostic_public_key_base64 != '' && format('{0}/scai-arm64-diagnostic.json', runner.temp) || '' }}
         shell: bash
         run: |
           set -euo pipefail
@@ -131,3 +165,19 @@ jobs:
             src/src-tauri/target/aarch64-pc-windows-msvc/release/bundle/nsis/*.sig
           if-no-files-found: error
           retention-days: 7
+
+      - name: Private Trace-Credentials entfernen
+        if: always()
+        shell: bash
+        run: |
+          rm -f "$HOME/.ssh/trace_src"
+          git config --global --unset-all url.git@github-trace:subunit-ai/trace-tauri.git.insteadOf || true
+
+      - name: Verschlüsselte ARM64-Fehlerdiagnostik bereitstellen
+        if: failure() && inputs.diagnostic_public_key_base64 != ''
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4, immutable
+        with:
+          name: scai-windows-arm64-encrypted-diagnostic-${{ github.run_id }}
+          path: ${{ runner.temp }}/scai-arm64-diagnostic.json
+          if-no-files-found: error
+          retention-days: 1
