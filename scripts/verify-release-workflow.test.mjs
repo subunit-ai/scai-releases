@@ -50,6 +50,17 @@ test("a release build that can stream private compiler output is rejected", () =
   assert.match(validateReleaseWorkflow(unsafe).join("\n"), /confidential runner/);
 });
 
+test("Windows packaging cannot collapse its frontend proof back into one opaque Tauri step", () => {
+  const unsafe = fixture.replace('run-confidential.sh" "windows-vite-$TARGET"', 'run-publicly.sh" "windows-vite-$TARGET"');
+  assert.match(validateReleaseWorkflow(unsafe).join("\n"), /Windows vite prepackage output must pass through the confidential runner/);
+
+  const duplicateFrontend = fixture.replace(
+    `BUILD_ARGS+=(--config '{"build":{"beforeBuildCommand":null}}')`,
+    "echo frontend-will-run-again",
+  );
+  assert.match(validateReleaseWorkflow(duplicateFrontend).join("\n"), /disable only the already executed Tauri frontend hook/);
+});
+
 test("a broad release upload cannot replace the explicit asset allowlist", () => {
   const unsafe = fixture.replace('gh release upload "$TAG" "${ASSETS[@]}"', 'gh release upload "$TAG" "$BUNDLE_ROOT"');
   assert.match(validateReleaseWorkflow(unsafe).join("\n"), /explicit release asset allowlist/);

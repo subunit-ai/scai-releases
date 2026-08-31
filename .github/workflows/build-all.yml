@@ -548,6 +548,24 @@ jobs:
         run: |
           set -euo pipefail
           BUILD_ARGS=(--target "$TARGET" --bundles "$BUNDLES")
+          if [ "${RUNNER_OS:-}" = "Windows" ]; then
+            # Tauri fasst den gesamten beforeBuildCommand samt Rust-/Bundlebau in
+            # einen einzigen Fehlerstep zusammen. Auf Windows beweisen wir die fünf
+            # Frontend-Gates separat und schalten nur den bereits ausgeführten Hook
+            # danach aus. So bleibt private Ausgabe unterdrückt, der fehlerhafte
+            # Layer aber eindeutig messbar.
+            bash "$GITHUB_WORKSPACE/gate/scripts/run-confidential.sh" "windows-runtime-$TARGET" \
+              npm run check:runtime-capabilities
+            bash "$GITHUB_WORKSPACE/gate/scripts/run-confidential.sh" "windows-typescript-$TARGET" \
+              node ./node_modules/typescript/bin/tsc
+            bash "$GITHUB_WORKSPACE/gate/scripts/run-confidential.sh" "windows-vite-$TARGET" \
+              node --max-old-space-size=4096 ./node_modules/vite/bin/vite.js build
+            bash "$GITHUB_WORKSPACE/gate/scripts/run-confidential.sh" "windows-native-broker-$TARGET" \
+              npm run check:native-broker
+            bash "$GITHUB_WORKSPACE/gate/scripts/run-confidential.sh" "windows-plugin-envelope-$TARGET" \
+              npm run check:plugin-envelope
+            BUILD_ARGS+=(--config '{"build":{"beforeBuildCommand":null}}')
+          fi
           if [ "$ENABLE_MEET" = "true" ]; then
             BUILD_ARGS+=(--features local-meet)
           fi
