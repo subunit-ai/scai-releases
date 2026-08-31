@@ -911,7 +911,9 @@ jobs:
           node scripts/merge-cyclonedx.mjs \
             "$RUNNER_TEMP/scai-node.cdx.json" "$RUST_SBOM" "$RUNNER_TEMP/scai.cdx.json" \
             scai "$VERSION" "$SOURCE_SHA" "$TIMESTAMP"
-          jq -e '.bomFormat == "CycloneDX" and .specVersion == "1.5" and (.components | length > 0)' \
+          jq -e '.bomFormat == "CycloneDX" and .specVersion == "1.5" and
+            (.serialNumber | test("^urn:uuid:[0-9a-f]{8}-[0-9a-f]{4}-5[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$")) and
+            (.components | length > 0)' \
             "$RUNNER_TEMP/scai.cdx.json" >/dev/null
 
       - name: Draft-Assets laden, Update-Signaturen verifizieren und latest.json finalisieren
