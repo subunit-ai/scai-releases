@@ -40,14 +40,15 @@ export function validateSourceConfidentiality(workflows, assetSelector) {
   require(!/^\s+path:\s*src\/?\s*$/m.test(pr), "pr-check.yml: the private source tree must never be uploaded as an artifact");
   require(!/^\s+path:\s*trace-src\/?\s*$/m.test(pr), "pr-check.yml: the private Trace source tree must never be uploaded as an artifact");
   require(
-    pr.includes('"${keyring_features[@]}" --example a1_keyring_smoke'),
-    "pr-check.yml: keyring smoke must stay an example while using only the manifest-derived feature set",
+    (pr.match(/run-confidential\.sh" native-keyring-smoke/g) ?? []).length === 2
+      && (pr.match(/--example a1_keyring_smoke/g) ?? []).length === 2,
+    "pr-check.yml: keyring smoke must stay an example in both manifest-derived branches",
   );
   require(
     pr.includes("if grep -Eq '^[[:space:]]*a1-keyring-smoke[[:space:]]*=' src-tauri/Cargo.toml; then")
-      && pr.includes("keyring_features=(--features a1-keyring-smoke)")
-      && (pr.match(/--features a1-keyring-smoke/g) ?? []).length === 1,
-    "pr-check.yml: keyring smoke must support old and new pinned manifests without requiring a removed feature",
+      && (pr.match(/--features a1-keyring-smoke/g) ?? []).length === 1
+      && !pr.includes("keyring_features"),
+    "pr-check.yml: keyring smoke must support old and new pinned manifests without Bash 3.2 empty-array expansion",
   );
   require(!pr.includes("--bin a1_keyring_smoke"), "pr-check.yml: keyring smoke must not reintroduce a Cargo bin target");
   require(

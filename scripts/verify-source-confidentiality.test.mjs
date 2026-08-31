@@ -121,7 +121,7 @@ test("the native keyring smoke stays outside Tauri binary targets", () => {
     "pr-check.yml": fixtures["pr-check.yml"].replace("--example a1_keyring_smoke", "--bin a1_keyring_smoke"),
   };
   const errors = validateSourceConfidentiality(unsafe, assetSelector).join("\n");
-  assert.match(errors, /keyring smoke must stay an example while using only the manifest-derived feature set/);
+  assert.match(errors, /keyring smoke must stay an example in both manifest-derived branches/);
   assert.match(errors, /must not reintroduce a Cargo bin target/);
 });
 
@@ -135,18 +135,34 @@ test("the native keyring smoke derives legacy feature use from the pinned manife
   };
   assert.match(
     validateSourceConfidentiality(unsafe, assetSelector).join("\n"),
-    /must support old and new pinned manifests without requiring a removed feature/,
+    /must support old and new pinned manifests without Bash 3\.2 empty-array expansion/,
   );
 });
 
 test("the native keyring smoke cannot require the legacy feature unconditionally", () => {
   const unsafe = {
     ...fixtures,
-    "pr-check.yml": fixtures["pr-check.yml"].replace('"${keyring_features[@]}"', "--features a1-keyring-smoke"),
+    "pr-check.yml": fixtures["pr-check.yml"].replace(
+      "              --example a1_keyring_smoke",
+      "              --features a1-keyring-smoke --example a1_keyring_smoke",
+    ),
   };
   const errors = validateSourceConfidentiality(unsafe, assetSelector).join("\n");
-  assert.match(errors, /must stay an example while using only the manifest-derived feature set/);
-  assert.match(errors, /must support old and new pinned manifests without requiring a removed feature/);
+  assert.match(errors, /must support old and new pinned manifests without Bash 3\.2 empty-array expansion/);
+});
+
+test("the native keyring smoke cannot use an empty feature array under Bash 3.2", () => {
+  const unsafe = {
+    ...fixtures,
+    "pr-check.yml": fixtures["pr-check.yml"].replace(
+      "          if grep -Eq '^[[:space:]]*a1-keyring-smoke[[:space:]]*=' src-tauri/Cargo.toml; then",
+      "          keyring_features=()\n          if grep -Eq '^[[:space:]]*a1-keyring-smoke[[:space:]]*=' src-tauri/Cargo.toml; then",
+    ),
+  };
+  assert.match(
+    validateSourceConfidentiality(unsafe, assetSelector).join("\n"),
+    /must support old and new pinned manifests without Bash 3\.2 empty-array expansion/,
+  );
 });
 
 test("standalone Trace checks cannot accept a mutable ref", () => {
