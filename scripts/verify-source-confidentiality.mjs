@@ -40,9 +40,10 @@ export function validateSourceConfidentiality(workflows, assetSelector) {
   require(!/^\s+path:\s*src\/?\s*$/m.test(pr), "pr-check.yml: the private source tree must never be uploaded as an artifact");
   require(!/^\s+path:\s*trace-src\/?\s*$/m.test(pr), "pr-check.yml: the private Trace source tree must never be uploaded as an artifact");
   require(
-    pr.includes('native-keyring-smoke cargo run --locked --manifest-path src-tauri/Cargo.toml --features a1-keyring-smoke --example a1_keyring_smoke'),
-    "pr-check.yml: keyring smoke must enable its gate feature and stay an example so Tauri sees only the product binary",
+    pr.includes('native-keyring-smoke cargo run --locked --manifest-path src-tauri/Cargo.toml --example a1_keyring_smoke'),
+    "pr-check.yml: keyring smoke must stay an example without the removed source feature so Tauri sees only the product binary",
   );
+  require(!pr.includes("--features a1-keyring-smoke"), "pr-check.yml: keyring smoke must not require the removed source feature");
   require(!pr.includes("--bin a1_keyring_smoke"), "pr-check.yml: keyring smoke must not reintroduce a Cargo bin target");
   require(
     pr.includes("trace_ref muss ein unveränderlicher 40-Zeichen-SHA sein."),
