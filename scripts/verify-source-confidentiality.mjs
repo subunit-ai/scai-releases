@@ -66,6 +66,10 @@ export function validateSourceConfidentiality(workflows, assetSelector) {
     /if: failure\(\) && matrix\.label == 'windows-x64' && inputs\.diagnostic_public_key_base64 != ''[\s\S]{0,350}?path: \$\{\{ runner\.temp \}\}\/trace-windows-diagnostic\.json/.test(pr),
     "pr-check.yml: Trace Windows diagnostics may upload only a one-time-key encrypted envelope",
   );
+  require(
+    /if: failure\(\) && inputs\.diagnostic_public_key_base64 != ''[\s\S]{0,350}?path: \$\{\{ runner\.temp \}\}\/scai-pages-diagnostic\.json/.test(pr),
+    "pr-check.yml: Pages diagnostics may upload only a one-time-key encrypted envelope",
+  );
 
   const release = workflows["build-all.yml"] ?? "";
   require(!/uses:\s*tauri-apps\/tauri-action@/.test(release), "build-all.yml: tauri-action may expose private compiler output");
