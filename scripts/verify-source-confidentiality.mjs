@@ -28,7 +28,7 @@ export function validateSourceConfidentiality(workflows, assetSelector) {
   for (const label of [
     "npm-ci", "cli-drift", "release-meta", "plugin-bundles", "no-demo-data",
     "frontend-build", "meet-visual-proof", "cargo-test", "native-cargo-check",
-    "native-pkce-tests", "native-keyring-smoke",
+    "native-product-binary", "native-pkce-tests", "native-keyring-smoke",
   ]) {
     require(pr.includes(`run-confidential.sh\" ${label}`), `pr-check.yml: ${label} must suppress private output`);
   }
@@ -46,6 +46,8 @@ export function validateSourceConfidentiality(workflows, assetSelector) {
   require(!/uses:\s*tauri-apps\/tauri-action@/.test(release), "build-all.yml: tauri-action may expose private compiler output");
   require(release.includes('run-confidential.sh\" release-npm-ci'), "build-all.yml: npm install output must be suppressed");
   require(release.includes('run-confidential.sh\" \"tauri-build-$TARGET\"'), "build-all.yml: Tauri compiler output must be suppressed");
+  require(release.includes('run-confidential.sh\" \"product-binary-$TARGET\"'), "build-all.yml: Cargo product-binary metadata must be checked confidentially before packaging");
+  require(release.includes("scripts/verify-product-binary.mjs"), "build-all.yml: release packaging must reject ambiguous Cargo binary targets");
   require(release.includes('run-indexed-confidential.sh\"'), "build-all.yml: indexed private diagnostics must use the dedicated confidential runner");
   require(release.includes("scripts/validate-release-assets.sh"), "build-all.yml: release assets must pass the standalone allowlist validator");
   require(release.includes('gh release upload "$TAG" "${ASSETS[@]}"'), "build-all.yml: only the validated asset array may be uploaded");

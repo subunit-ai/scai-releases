@@ -584,6 +584,13 @@ jobs:
             BUILD_ARGS+=(--config src-tauri/tauri.windows-signing.json)
           fi
 
+          # Cargo darf Tauri exakt EIN Produkt-Binary liefern. Zusätzliche
+          # src/bin-Helfer führten in v0.131-v0.135 dazu, dass ein grüner Build
+          # den Keyring-Smoke statt SCAI paketierte. Metadata wird deshalb vor
+          # jedem Plattform-Build fail-closed und ohne öffentliche Ausgabe geprüft.
+          bash "$GITHUB_WORKSPACE/gate/scripts/run-confidential.sh" "product-binary-$TARGET" \
+            node "$GITHUB_WORKSPACE/gate/scripts/verify-product-binary.mjs" src-tauri/Cargo.toml
+
           bash "$GITHUB_WORKSPACE/gate/scripts/run-confidential.sh" "tauri-build-$TARGET" \
             npm run tauri build -- "${BUILD_ARGS[@]}"
 

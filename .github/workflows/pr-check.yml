@@ -309,6 +309,13 @@ jobs:
         shell: bash
         run: bash "$GITHUB_WORKSPACE/gate/scripts/run-confidential.sh" native-cargo-check cargo check --locked --manifest-path src-tauri/Cargo.toml --features local-meet
 
+      # Ein zusätzlicher src/bin-Helfer darf nie wieder als Tauri-Produkt im
+      # Installer landen. Cargo-Metadata muss exakt subunit-scai aus main.rs zeigen.
+      - name: Eindeutiges Produkt-Binary beweisen
+        working-directory: src
+        shell: bash
+        run: bash "$GITHUB_WORKSPACE/gate/scripts/run-confidential.sh" native-product-binary node "$GITHUB_WORKSPACE/gate/scripts/verify-product-binary.mjs" src-tauri/Cargo.toml
+
       # A1 / Native Auth: Ein Linux-Erfolg reicht nicht als Beweis für den
       # ausgelieferten Desktop-Pfad. Derselbe gepinnte SCAI-Stand muss die
       # PKCE-/State-/Redirect-Bindung auf unseren echten Release-Runners
