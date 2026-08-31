@@ -150,6 +150,12 @@ jobs:
           ssh-keyscan -t ed25519,rsa github.com >> "$HOME/.ssh/known_hosts" 2>/dev/null
           export GIT_SSH_COMMAND="ssh -i $key_file -o IdentitiesOnly=yes"
           git init src
+          # Git for Windows defaults to core.autocrlf=true. That rewrites the
+          # pinned tree after checkout and made source-contract proofs observe
+          # different bytes than macOS/Linux. Exact-SHA builds use repository
+          # bytes on every runner; platform packaging handles native formats.
+          git -C src config core.autocrlf false
+          git -C src config core.eol lf
           git -C src remote add origin git@github.com:subunit-ai/subunit-scai.git
           git -C src fetch --depth 1 origin "$SOURCE_SHA"
           git -C src checkout --detach FETCH_HEAD
@@ -310,6 +316,8 @@ jobs:
           ssh-keyscan -t ed25519,rsa github.com >> "$HOME/.ssh/known_hosts" 2>/dev/null
           export GIT_SSH_COMMAND="ssh -i $key_file -o IdentitiesOnly=yes"
           git init src
+          git -C src config core.autocrlf false
+          git -C src config core.eol lf
           git -C src remote add origin git@github.com:subunit-ai/subunit-scai.git
           git -C src fetch --depth 1 origin "$SOURCE_SHA"
           git -C src checkout --detach FETCH_HEAD
@@ -823,6 +831,8 @@ jobs:
           ssh-keyscan -t ed25519,rsa github.com >> "$HOME/.ssh/known_hosts" 2>/dev/null
           export GIT_SSH_COMMAND="ssh -i $HOME/.ssh/scai_src -o IdentitiesOnly=yes"
           git init src
+          git -C src config core.autocrlf false
+          git -C src config core.eol lf
           git -C src remote add origin git@github.com:subunit-ai/subunit-scai.git
           git -C src fetch --depth 1 origin "$SOURCE_SHA"
           git -C src checkout --detach FETCH_HEAD

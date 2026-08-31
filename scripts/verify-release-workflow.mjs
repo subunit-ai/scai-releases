@@ -86,6 +86,8 @@ export function validateReleaseWorkflow(workflow) {
   require(has(/legacy-v0\.125\)[\s\S]{0,320}?REQUIRED_RELEASE_SECRETS=\("\$\{BASE_RELEASE_SECRETS\[@\]\}"\)/), "legacy-v0.125 may require only the proven v0.125 base secrets");
   require(secretPreflight.includes('MISSING_RELEASE_SECRETS+=("$secret_name")'), "release secret preflight must fail closed on empty secrets");
   require((workflow.match(/git -C src fetch --depth 1 origin "\$SOURCE_SHA"/g) ?? []).length >= 2, "source checkout must fetch the immutable SHA in build and evidence jobs");
+  require((workflow.match(/git -C src config core\.autocrlf false/g) ?? []).length === 3, "all exact-SHA source checkouts must disable platform line-ending rewrites");
+  require((workflow.match(/git -C src config core\.eol lf/g) ?? []).length === 3, "all exact-SHA source checkouts must pin LF worktree bytes");
   require(!has(/git clone[^\n]*--branch/), "branch-based source checkout is forbidden");
   require(has(/gh release create "\$TAG"[\s\S]{0,200}?--draft/), "release must be created as a draft");
   require(!has(/uses:\s*tauri-apps\/tauri-action@/), "public release builds must not stream private compiler output through tauri-action");

@@ -45,6 +45,14 @@ test("a mutable action reference is rejected", () => {
   assert.match(validateReleaseWorkflow(shorthand).join("\n"), /action reference must be immutable/);
 });
 
+test("exact-SHA checkouts cannot inherit Windows line-ending rewrites", () => {
+  const autocrlf = fixture.replace("git -C src config core.autocrlf false", "git -C src config core.autocrlf true");
+  assert.match(validateReleaseWorkflow(autocrlf).join("\n"), /disable platform line-ending rewrites/);
+
+  const nativeEol = fixture.replace("git -C src config core.eol lf", "git -C src config core.eol native");
+  assert.match(validateReleaseWorkflow(nativeEol).join("\n"), /pin LF worktree bytes/);
+});
+
 test("a release build that can stream private compiler output is rejected", () => {
   const unsafe = fixture.replace('run-confidential.sh" "tauri-build-$TARGET"', 'run-publicly.sh" "tauri-build-$TARGET"');
   assert.match(validateReleaseWorkflow(unsafe).join("\n"), /confidential runner/);
