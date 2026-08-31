@@ -93,6 +93,16 @@ test("Windows ARM smoke keeps the release lane's OpenSSL environment", () => {
   assert.match(validateSourceConfidentiality(unsafe, assetSelector).join("\n"), /same vcpkg OpenSSL environment/);
 });
 
+test("the native keyring smoke stays outside Tauri binary targets", () => {
+  const unsafe = {
+    ...fixtures,
+    "pr-check.yml": fixtures["pr-check.yml"].replace("--example a1_keyring_smoke", "--bin a1_keyring_smoke"),
+  };
+  const errors = validateSourceConfidentiality(unsafe, assetSelector).join("\n");
+  assert.match(errors, /keyring smoke must stay an example/);
+  assert.match(errors, /must not reintroduce a Cargo bin target/);
+});
+
 test("the ARM64 release lane cannot drop the triplet the smoke mirrors", () => {
   const unsafe = {
     ...fixtures,

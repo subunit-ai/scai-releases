@@ -318,15 +318,16 @@ jobs:
         shell: bash
         run: bash "$GITHUB_WORKSPACE/gate/scripts/run-confidential.sh" native-pkce-tests cargo test --locked --manifest-path src-tauri/Cargo.toml --features local-meet auth::tests -- --nocapture
 
-      # Anders als die Unit-Tests nutzt diese explizite Smoke-Binärdatei den
+      # Anders als die Unit-Tests nutzt dieses explizite Smoke-Example den
       # echten macOS-Schlüsselbund beziehungsweise Windows Credential Manager.
-      # Der zufällige Canary wird nie ausgegeben und im selben Lauf gelöscht.
+      # Es bleibt außerhalb der Tauri-Binärziele; der zufällige Canary wird nie
+      # ausgegeben und im selben Lauf gelöscht.
       - name: Echten OS-Credential-Store beweisen
         working-directory: src
         env:
           SCAI_A1_KEYRING_SMOKE: "1"
         shell: bash
-        run: bash "$GITHUB_WORKSPACE/gate/scripts/run-confidential.sh" native-keyring-smoke cargo run --locked --manifest-path src-tauri/Cargo.toml --bin a1_keyring_smoke
+        run: bash "$GITHUB_WORKSPACE/gate/scripts/run-confidential.sh" native-keyring-smoke cargo run --locked --manifest-path src-tauri/Cargo.toml --example a1_keyring_smoke
 
       - name: Private Trace-Credentials entfernen
         if: always()

@@ -36,6 +36,11 @@ export function validateSourceConfidentiality(workflows, assetSelector) {
   require((pr.match(/git -C src fetch --depth 1 origin "\$SRC_REF"/g) ?? []).length === 2, "pr-check.yml: both jobs must fetch the requested immutable source ref");
   require((pr.match(/Checkout-Drift: erwartet \$SRC_REF/g) ?? []).length === 2, "pr-check.yml: both jobs must reject exact-SHA checkout drift");
   require(!/^\s+path:\s*src\/?\s*$/m.test(pr), "pr-check.yml: the private source tree must never be uploaded as an artifact");
+  require(
+    pr.includes('native-keyring-smoke cargo run --locked --manifest-path src-tauri/Cargo.toml --example a1_keyring_smoke'),
+    "pr-check.yml: keyring smoke must stay an example so Tauri sees only the product binary",
+  );
+  require(!pr.includes("--bin a1_keyring_smoke"), "pr-check.yml: keyring smoke must not reintroduce a Cargo bin target");
 
   const release = workflows["build-all.yml"] ?? "";
   require(!/uses:\s*tauri-apps\/tauri-action@/.test(release), "build-all.yml: tauri-action may expose private compiler output");
