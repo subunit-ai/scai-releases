@@ -119,7 +119,8 @@ export function validateReleaseWorkflow(workflow) {
   require(has(/distribution_policy": policy[\s\S]{0,500}?"gatekeeper_verified": gatekeeper == "true"[\s\S]{0,160}?"notarization_staple_verified": notarization == "true"/), "macOS evidence must record policy-specific Gatekeeper and notarization truth");
   require(has(/jedisct1\/minisign\/releases\/download\/0\.12\/minisign-0\.12-linux\.tar\.gz/), "Minisign verifier must come from a version-pinned upstream release");
   require(has(/9a599b48ba6eb7b1e80f12f36b94ceca7c00b7a5173c95c3efc88d9822957e73[\s\S]{0,100}?sha256sum -c -/), "Minisign verifier archive must pass its pinned SHA-256 before execution");
-  require(has(/"\$MINISIGN_BIN" -Vm/), "Tauri updater signatures must be cryptographically verified with the pinned binary");
+  require(has(/base64 --decode "\$signature" > "\$decoded_signature"[\s\S]{0,180}?"\$MINISIGN_BIN" -Vm "\$artifact" -x "\$decoded_signature"/), "Tauri's base64 signature envelope must be decoded before Minisign verification");
+  require(has(/"\$SIG_COUNT" -ne 6/), "the updater signature set must contain exactly six artifacts");
   require(!has(/apt-get install[^\n]*minisign/), "Ubuntu package availability must not control updater signature verification");
 
   require(has(/@cyclonedx\/cyclonedx-npm@6\.0\.1/), "Node SBOM generator must be version pinned");
