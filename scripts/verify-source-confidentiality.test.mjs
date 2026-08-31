@@ -99,8 +99,19 @@ test("the native keyring smoke stays outside Tauri binary targets", () => {
     "pr-check.yml": fixtures["pr-check.yml"].replace("--example a1_keyring_smoke", "--bin a1_keyring_smoke"),
   };
   const errors = validateSourceConfidentiality(unsafe, assetSelector).join("\n");
-  assert.match(errors, /keyring smoke must stay an example/);
+  assert.match(errors, /keyring smoke must enable its gate feature and stay an example/);
   assert.match(errors, /must not reintroduce a Cargo bin target/);
+});
+
+test("the native keyring smoke cannot silently omit its required feature", () => {
+  const unsafe = {
+    ...fixtures,
+    "pr-check.yml": fixtures["pr-check.yml"].replace("--features a1-keyring-smoke ", ""),
+  };
+  assert.match(
+    validateSourceConfidentiality(unsafe, assetSelector).join("\n"),
+    /keyring smoke must enable its gate feature and stay an example/,
+  );
 });
 
 test("release packaging cannot skip the product-binary target proof", () => {
