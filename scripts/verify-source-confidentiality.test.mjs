@@ -50,6 +50,28 @@ test("private build outputs cannot enter a public Actions cache", () => {
   assert.match(validateSourceConfidentiality(unsafe, assetSelector).join("\n"), /private build outputs must not enter a public Actions cache/);
 });
 
+test("the keyring probe cannot become a bundled app binary", () => {
+  const unsafe = {
+    ...fixtures,
+    "pr-check.yml": fixtures["pr-check.yml"].replace(
+      "--features a1-keyring-smoke --example a1_keyring_smoke",
+      "--bin a1_keyring_smoke",
+    ),
+  };
+  assert.match(validateSourceConfidentiality(unsafe, assetSelector).join("\n"), /explicit example feature/);
+});
+
+test("standalone Trace checks cannot accept a mutable ref", () => {
+  const unsafe = {
+    ...fixtures,
+    "pr-check.yml": fixtures["pr-check.yml"].replace(
+      "trace_ref muss ein unveränderlicher 40-Zeichen-SHA sein.",
+      "trace_ref wird als Branch akzeptiert.",
+    ),
+  };
+  assert.match(validateSourceConfidentiality(unsafe, assetSelector).join("\n"), /reject mutable refs/);
+});
+
 test("a broad upload cannot replace the release artifact allowlist", () => {
   const unsafe = { ...fixtures, "build-all.yml": fixtures["build-all.yml"].replace('gh release upload "$TAG" "${ASSETS[@]}"', 'gh release upload "$TAG" "$BUNDLE_ROOT"') };
   assert.match(validateSourceConfidentiality(unsafe, assetSelector).join("\n"), /validated asset array/);
