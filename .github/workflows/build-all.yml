@@ -560,8 +560,8 @@ jobs:
               node ./node_modules/typescript/bin/tsc
             bash "$GITHUB_WORKSPACE/gate/scripts/run-confidential.sh" "windows-vite-$TARGET" \
               node --max-old-space-size=4096 ./node_modules/vite/bin/vite.js build
-            bash "$GITHUB_WORKSPACE/gate/scripts/run-confidential.sh" "windows-native-broker-$TARGET" \
-              npm run check:native-broker
+            bash "$GITHUB_WORKSPACE/gate/scripts/run-indexed-confidential.sh" \
+              "windows-native-broker-$TARGET" 30 npm run check:native-broker
             bash "$GITHUB_WORKSPACE/gate/scripts/run-confidential.sh" "windows-plugin-envelope-$TARGET" \
               npm run check:plugin-envelope
             BUILD_ARGS+=(--config '{"build":{"beforeBuildCommand":null}}')

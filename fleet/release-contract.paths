@@ -12,6 +12,7 @@ fleet/release-contract.paths
 scripts/checkout-private-source.sh
 scripts/merge-cyclonedx.mjs
 scripts/run-confidential.sh
+scripts/run-indexed-confidential.sh
 scripts/validate-release-assets.sh
 scripts/verify-fleet-manifest.mjs
 scripts/verify-fleet-source-workflow.mjs
