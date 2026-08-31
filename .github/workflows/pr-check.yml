@@ -23,12 +23,16 @@ on:
         description: "Branch/SHA im privaten Quell-Repo (z.B. session/halo-p1-agent)"
         required: true
         default: "main"
+      trace_ref:
+        description: "Optionaler exakter 40-Zeichen-SHA aus trace-tauri für den Standalone-Matrixcheck"
+        required: false
+        default: ""
 
 permissions:
   contents: read
 
 concurrency:
-  group: pr-check-${{ inputs.ref }}
+  group: pr-check-${{ inputs.ref }}-${{ inputs.trace_ref }}
   cancel-in-progress: true
 
 jobs:
@@ -212,6 +216,117 @@ jobs:
         run: |
           rm -f "$HOME/.ssh/trace_src"
           git config --global --unset-all url.git@github-trace:subunit-ai/trace-tauri.git.insteadOf || true
+
+  trace-standalone:
+    name: Trace Standalone prüfen (${{ matrix.label }})
+    if: inputs.trace_ref != ''
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-latest
+            label: linux-core
+            mode: core
+          - runner: macos-15
+            label: macos-arm64
+            mode: native
+          - runner: macos-15-intel
+            label: macos-x64
+            mode: native
+          - runner: windows-2025
+            label: windows-x64
+            mode: native
+            openssl_triplet: x64-windows-static-md
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - name: Öffentlichen Confidential-Runner auschecken
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2, immutable
+        with:
+          path: gate
+          persist-credentials: false
+
+      - name: Exakten privaten Trace-Stand auschecken (read-only)
+        shell: bash
+        env:
+          SRC_REF: ${{ inputs.trace_ref }}
+          DEPLOY_KEY: ${{ secrets.TRACE_SOURCE_DEPLOY_KEY }}
+        run: |
+          set -euo pipefail
+          if ! printf '%s' "$SRC_REF" | grep -Eq '^[0-9a-f]{40}$'; then
+            echo "::error::trace_ref muss ein unveränderlicher 40-Zeichen-SHA sein."
+            exit 1
+          fi
+          if [ -z "${DEPLOY_KEY:-}" ]; then
+            echo "::error::TRACE_SOURCE_DEPLOY_KEY fehlt."
+            exit 1
+          fi
+          key_file="$HOME/.ssh/trace_matrix_src"
+          cleanup() { rm -f "$key_file"; }
+          trap cleanup EXIT
+          mkdir -p "$HOME/.ssh"
+          printf '%s\n' "$DEPLOY_KEY" > "$key_file"
+          chmod 600 "$key_file"
+          ssh-keyscan -t ed25519,rsa github.com >> "$HOME/.ssh/known_hosts" 2>/dev/null
+          export GIT_SSH_COMMAND="ssh -i $key_file -o IdentitiesOnly=yes"
+          git init trace-src
+          git -C trace-src remote add origin git@github.com:subunit-ai/trace-tauri.git
+          git -C trace-src fetch --depth 1 origin "$SRC_REF"
+          git -C trace-src checkout --detach FETCH_HEAD
+          ACTUAL_SHA=$(git -C trace-src rev-parse HEAD)
+          if [ "$ACTUAL_SHA" != "$SRC_REF" ]; then
+            echo "::error::Trace-Checkout-Drift: erwartet $SRC_REF, erhalten $ACTUAL_SHA"
+            exit 1
+          fi
+          cleanup
+          trap - EXIT
+          echo "Trace ausgecheckt: $ACTUAL_SHA"
+
+      - uses: dtolnay/rust-toolchain@4360b52568e2003a75bf9bc1d59f33a8e3fc893c # stable, immutable
+        with:
+          components: rustfmt, clippy
+
+      - name: Linux-Abhängigkeiten
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libxcb1-dev libxcb-render0-dev libxcb-shape0-dev libxcb-xfixes0-dev
+
+      - name: OpenSSL für Trace-SQLCipher (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        env:
+          OPENSSL_TRIPLET: ${{ matrix.openssl_triplet }}
+        run: |
+          if (-not $env:OPENSSL_TRIPLET) { throw "OpenSSL-vcpkg-Triplet fehlt" }
+          vcpkg install "openssl:$env:OPENSSL_TRIPLET"
+          "OPENSSL_DIR=$env:VCPKG_INSTALLATION_ROOT\installed\$env:OPENSSL_TRIPLET" >> $env:GITHUB_ENV
+
+      - name: Formatvertrag prüfen
+        if: matrix.mode == 'core'
+        working-directory: trace-src
+        shell: bash
+        run: bash "$GITHUB_WORKSPACE/gate/scripts/run-confidential.sh" trace-fmt cargo fmt -- --check
+
+      - name: Plattformneutralen Core prüfen
+        if: matrix.mode == 'core'
+        working-directory: trace-src
+        shell: bash
+        run: |
+          bash "$GITHUB_WORKSPACE/gate/scripts/run-confidential.sh" trace-core-check cargo check --locked
+          bash "$GITHUB_WORKSPACE/gate/scripts/run-confidential.sh" trace-core-clippy cargo clippy --locked -- -D warnings
+          bash "$GITHUB_WORKSPACE/gate/scripts/run-confidential.sh" trace-core-test cargo test --locked
+
+      - name: Nativen Standalone-Host prüfen
+        if: matrix.mode == 'native'
+        working-directory: trace-src
+        shell: bash
+        run: |
+          bash "$GITHUB_WORKSPACE/gate/scripts/run-confidential.sh" trace-native-check cargo check --locked --features host --bin trace-host
+          bash "$GITHUB_WORKSPACE/gate/scripts/run-confidential.sh" trace-native-clippy cargo clippy --locked --features host --all-targets -- -D warnings
+          bash "$GITHUB_WORKSPACE/gate/scripts/run-confidential.sh" trace-native-test cargo test --locked --features host
+          bash "$GITHUB_WORKSPACE/gate/scripts/run-confidential.sh" trace-native-build cargo build --release --locked --features host --bin trace-host
 
   native-trace:
     name: SCAI + Trace nativ kompilieren (${{ matrix.label }})
