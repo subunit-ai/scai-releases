@@ -36,13 +36,16 @@ export function validateReleaseWorkflow(workflow) {
 
   require(has(/source_sha:\s*\n(?:\s+.*\n){0,4}?\s+required:\s*true/m), "source_sha input must be required");
   require(has(/release_id:\s*\n(?:\s+.*\n){0,4}?\s+required:\s*true/m), "release_id input must be required");
+  require(has(/distribution_policy:\s*\n[\s\S]{0,240}?- market-ready\s*\n\s*- legacy-v0\.125\s*\n\s*default:\s*market-ready/m), "distribution policy must default to market-ready and explicitly enumerate legacy-v0.125");
+  require(has(/compatibility_acknowledgement:\s*\n[\s\S]{0,180}?default:\s*""/m), "legacy compatibility acknowledgement input must be explicit and empty by default");
   const secretPreflightIndex = workflow.indexOf("name: Release-Secret-Preflight");
   const sourceCheckoutIndex = workflow.indexOf("name: Version aus dem Quell-Repo lesen");
   require(secretPreflightIndex >= 0 && sourceCheckoutIndex > secretPreflightIndex, "all release secrets must be checked before source checkout or draft creation");
   const secretPreflight = secretPreflightIndex >= 0 && sourceCheckoutIndex > secretPreflightIndex
     ? workflow.slice(secretPreflightIndex, sourceCheckoutIndex)
     : "";
-  const requiredSecretList = secretPreflight.match(/REQUIRED_RELEASE_SECRETS=\(\s*([\s\S]*?)\s*\)/)?.[1] ?? "";
+  const baseSecretList = secretPreflight.match(/BASE_RELEASE_SECRETS=\(\s*([\s\S]*?)\s*\)/)?.[1] ?? "";
+  const marketReadySecretList = secretPreflight.match(/MARKET_READY_SECRETS=\(\s*([\s\S]*?)\s*\)/)?.[1] ?? "";
   for (const name of [
     "SOURCE_DEPLOY_KEY",
     "TRACE_SOURCE_DEPLOY_KEY",
@@ -59,8 +62,27 @@ export function validateReleaseWorkflow(workflow) {
     "TAURI_SIGNING_PRIVATE_KEY_PASSWORD",
   ]) {
     require(secretPreflight.includes(`${name}: \${{ secrets.${name} }}`), `release secret preflight must bind ${name}`);
-    require(new RegExp(`(^|\\s)${name}(\\s|$)`).test(requiredSecretList), `release secret preflight must require ${name}`);
   }
+  for (const name of [
+    "SOURCE_DEPLOY_KEY",
+    "TRACE_SOURCE_DEPLOY_KEY",
+    "APPLE_CERTIFICATE",
+    "APPLE_CERTIFICATE_PASSWORD",
+    "APPLE_SIGNING_IDENTITY",
+    "TAURI_SIGNING_PRIVATE_KEY",
+    "TAURI_SIGNING_PRIVATE_KEY_PASSWORD",
+  ]) require(new RegExp(`(^|\\s)${name}(\\s|$)`).test(baseSecretList), `base release secret preflight must require ${name}`);
+  for (const name of [
+    "APPLE_ID",
+    "APPLE_PASSWORD",
+    "APPLE_TEAM_ID",
+    "WINDOWS_CERTIFICATE",
+    "WINDOWS_CERTIFICATE_PASSWORD",
+    "WINDOWS_CERTIFICATE_SUBJECT",
+  ]) require(new RegExp(`(^|\\s)${name}(\\s|$)`).test(marketReadySecretList), `market-ready secret preflight must require ${name}`);
+  require(has(/legacy-v0\.125\)[\s\S]{0,180}?COMPATIBILITY_ACKNOWLEDGEMENT" != "I_ACCEPT_GATEKEEPER_AND_SMARTSCREEN"/), "legacy-v0.125 must require the exact risk acknowledgement");
+  require(has(/market-ready\)[\s\S]{0,160}?REQUIRED_RELEASE_SECRETS=\("\$\{BASE_RELEASE_SECRETS\[@\]\}" "\$\{MARKET_READY_SECRETS\[@\]\}"\)/), "market-ready must require base and native signing secrets");
+  require(has(/legacy-v0\.125\)[\s\S]{0,320}?REQUIRED_RELEASE_SECRETS=\("\$\{BASE_RELEASE_SECRETS\[@\]\}"\)/), "legacy-v0.125 may require only the proven v0.125 base secrets");
   require(secretPreflight.includes('MISSING_RELEASE_SECRETS+=("$secret_name")'), "release secret preflight must fail closed on empty secrets");
   require((workflow.match(/git -C src fetch --depth 1 origin "\$SOURCE_SHA"/g) ?? []).length >= 2, "source checkout must fetch the immutable SHA in build and evidence jobs");
   require(!has(/git clone[^\n]*--branch/), "branch-based source checkout is forbidden");
@@ -71,6 +93,7 @@ export function validateReleaseWorkflow(workflow) {
   require(has(/IS_DRAFT=.*isDraft[\s\S]{0,500}?Source-SHA:/), "existing release reuse must verify draft state and source SHA");
   require(has(/needs:\s*\[release, build\][\s\S]{0,180}?needs\.build\.result == 'success'/), "evidence job must depend on successful release and build jobs");
   require(has(/Fleet-Release-ID: \$RELEASE_ID/), "draft must be bound to the Fleet release ID");
+  require(has(/Distribution-Policy: \$DISTRIBUTION_POLICY/), "draft must be bound to the distribution policy");
   require(!has(/gh release edit[^\n]*--draft=false/), "build workflow must never publish a draft");
 
   require(has(/Developer ID Application:/), "macOS must require Developer ID Application signing");
@@ -79,6 +102,10 @@ export function validateReleaseWorkflow(workflow) {
   require(has(/Import-PfxCertificate/), "Windows signing certificate must be imported");
   require(has(/Get-AuthenticodeSignature/), "Windows Authenticode signature must be verified");
   require(has(/TimeStamperCertificate/), "Windows timestamp certificate must be verified");
+  require(has(/legacy-v0\.125:"Apple Development:"\*/), "legacy macOS mode must require the historical Apple Development identity");
+  require(has(/inputs\.distribution_policy == 'legacy-v0\.125'[\s\S]{0,1000}?\.Status -ne "NotSigned"/), "legacy Windows mode must prove that both artifacts are unsigned");
+  require(has(/distribution_policy = "legacy-v0\.125"[\s\S]{0,180}?authenticode_verified = \$false[\s\S]{0,120}?timestamp_verified = \$false/), "legacy Windows evidence must state the missing native signature and timestamp");
+  require(has(/distribution_policy": policy[\s\S]{0,500}?"gatekeeper_verified": gatekeeper == "true"[\s\S]{0,160}?"notarization_staple_verified": notarization == "true"/), "macOS evidence must record policy-specific Gatekeeper and notarization truth");
   require(has(/minisign -Vm/), "Tauri updater signatures must be cryptographically verified");
 
   require(has(/@cyclonedx\/cyclonedx-npm@6\.0\.1/), "Node SBOM generator must be version pinned");

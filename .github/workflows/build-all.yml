@@ -34,6 +34,17 @@ on:
         description: "Draft bei späterer Veröffentlichung als Vorab-Version vormerken"
         type: boolean
         default: false
+      distribution_policy:
+        description: "Native Signatur-Policy (legacy-v0.125 nur mit bewusster Risikoannahme)"
+        type: choice
+        options:
+          - market-ready
+          - legacy-v0.125
+        default: market-ready
+      compatibility_acknowledgement:
+        description: "Für legacy-v0.125 exakt I_ACCEPT_GATEKEEPER_AND_SMARTSCREEN"
+        required: false
+        default: ""
 
 permissions:
   contents: write # ausschließlich Draft anlegen und Evidence-Assets hochladen
@@ -76,15 +87,35 @@ jobs:
           WINDOWS_CERTIFICATE_SUBJECT: ${{ secrets.WINDOWS_CERTIFICATE_SUBJECT }}
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+          DISTRIBUTION_POLICY: ${{ inputs.distribution_policy }}
+          COMPATIBILITY_ACKNOWLEDGEMENT: ${{ inputs.compatibility_acknowledgement }}
         run: |
           set -euo pipefail
-          REQUIRED_RELEASE_SECRETS=(
+          BASE_RELEASE_SECRETS=(
             SOURCE_DEPLOY_KEY TRACE_SOURCE_DEPLOY_KEY
             APPLE_CERTIFICATE APPLE_CERTIFICATE_PASSWORD APPLE_SIGNING_IDENTITY
-            APPLE_ID APPLE_PASSWORD APPLE_TEAM_ID
-            WINDOWS_CERTIFICATE WINDOWS_CERTIFICATE_PASSWORD WINDOWS_CERTIFICATE_SUBJECT
             TAURI_SIGNING_PRIVATE_KEY TAURI_SIGNING_PRIVATE_KEY_PASSWORD
           )
+          MARKET_READY_SECRETS=(
+            APPLE_ID APPLE_PASSWORD APPLE_TEAM_ID
+            WINDOWS_CERTIFICATE WINDOWS_CERTIFICATE_PASSWORD WINDOWS_CERTIFICATE_SUBJECT
+          )
+          case "$DISTRIBUTION_POLICY" in
+            market-ready)
+              REQUIRED_RELEASE_SECRETS=("${BASE_RELEASE_SECRETS[@]}" "${MARKET_READY_SECRETS[@]}")
+              ;;
+            legacy-v0.125)
+              if [ "$COMPATIBILITY_ACKNOWLEDGEMENT" != "I_ACCEPT_GATEKEEPER_AND_SMARTSCREEN" ]; then
+                echo "::error::legacy-v0.125 verlangt die exakte Gatekeeper-/SmartScreen-Risikoannahme."
+                exit 1
+              fi
+              REQUIRED_RELEASE_SECRETS=("${BASE_RELEASE_SECRETS[@]}")
+              ;;
+            *)
+              echo "::error::Unbekannte Distribution-Policy: $DISTRIBUTION_POLICY"
+              exit 1
+              ;;
+          esac
           MISSING_RELEASE_SECRETS=()
           for secret_name in "${REQUIRED_RELEASE_SECRETS[@]}"; do
             if [ -z "${!secret_name:-}" ]; then
@@ -151,6 +182,7 @@ jobs:
           SOURCE_SHA: ${{ steps.ermitteln.outputs.source_sha }}
           SOURCE_REF: ${{ inputs.ref }}
           RELEASE_ID: ${{ inputs.release_id }}
+          DISTRIBUTION_POLICY: ${{ inputs.distribution_policy }}
         run: |
           set -euo pipefail
           if ! printf '%s' "$RELEASE_ID" | grep -Eq '^scai-candidate-[0-9]{4}-[0-9]{2}-[0-9]{2}\.[0-9]+$'; then
@@ -172,6 +204,10 @@ jobs:
               echo "::error::Draft $TAG gehört nicht zur angeforderten Fleet-Release-ID $RELEASE_ID."
               exit 1
             fi
+            if ! printf '%s' "$BODY" | grep -Fq "Distribution-Policy: $DISTRIBUTION_POLICY"; then
+              echo "::error::Draft $TAG gehört nicht zur angeforderten Distribution-Policy $DISTRIBUTION_POLICY."
+              exit 1
+            fi
             echo "Passender Draft $TAG existiert — sicherer idempotenter Re-Run."
             exit 0
           fi
@@ -188,8 +224,9 @@ jobs:
           Source-Ref: $SOURCE_REF
           Source-SHA: $SOURCE_SHA
           Fleet-Release-ID: $RELEASE_ID
+          Distribution-Policy: $DISTRIBUTION_POLICY
 
-          Auto-Update ist für alle Plattformen verdrahtet (\`latest.json\`). Dieser Workflow veröffentlicht niemals; dafür ist ein separates Fleet-PASS-Gate erforderlich." \
+          Auto-Update ist für alle Plattformen verdrahtet (\`latest.json\`). \`legacy-v0.125\` bedeutet: macOS Apple-Development-signiert, nicht notarisiert; Windows ohne Authenticode. Dieser Workflow veröffentlicht niemals." \
             "${FLAGS[@]}"
           echo "Draft $TAG angelegt — öffentlich wird er erst nach allen Gates."
 
@@ -334,7 +371,7 @@ jobs:
         run: bash "$GITHUB_WORKSPACE/gate/scripts/run-confidential.sh" release-npm-ci npm ci
 
       - name: Windows-Code-Signing vorbereiten (OV/EV-Zertifikat + RFC-3161-Zeitstempel)
-        if: runner.os == 'Windows'
+        if: runner.os == 'Windows' && inputs.distribution_policy == 'market-ready'
         shell: pwsh
         env:
           WINDOWS_CERTIFICATE: ${{ secrets.WINDOWS_CERTIFICATE }}
@@ -401,20 +438,27 @@ jobs:
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          DISTRIBUTION_POLICY: ${{ inputs.distribution_policy }}
         run: |
           set -euo pipefail
           if [ -z "${APPLE_CERTIFICATE:-}" ] || [ -z "${APPLE_SIGNING_IDENTITY:-}" ]; then
             echo "::error::APPLE_CERTIFICATE / APPLE_SIGNING_IDENTITY fehlen — kein ad-hoc Release."
             exit 1
           fi
-          case "$APPLE_SIGNING_IDENTITY" in
-            "Developer ID Application:"*) ;;
-            *)
+          case "$DISTRIBUTION_POLICY:$APPLE_SIGNING_IDENTITY" in
+            market-ready:"Developer ID Application:"*) ;;
+            legacy-v0.125:"Apple Development:"*) ;;
+            market-ready:*)
               echo "::error::Marktreife macOS-Artefakte brauchen eine Developer-ID-Application-Identität."
               exit 1
               ;;
+            legacy-v0.125:*)
+              echo "::error::legacy-v0.125 ist ausschließlich mit der vorhandenen Apple-Development-Identität zulässig."
+              exit 1
+              ;;
           esac
-          if [ -z "${APPLE_ID:-}" ] || [ -z "${APPLE_PASSWORD:-}" ] || [ -z "${APPLE_TEAM_ID:-}" ]; then
+          if [ "$DISTRIBUTION_POLICY" = "market-ready" ] \
+            && { [ -z "${APPLE_ID:-}" ] || [ -z "${APPLE_PASSWORD:-}" ] || [ -z "${APPLE_TEAM_ID:-}" ]; }; then
             echo "::error::Notarisierungs-Zugangsdaten fehlen — kein nicht-notarisierter Release."
             exit 1
           fi
@@ -439,13 +483,17 @@ jobs:
           # eindeutig, "leer" nicht — deshalb setzen wir sie nur, wenn wirklich was da ist.
           echo "APPLE_SIGNING_IDENTITY=$APPLE_SIGNING_IDENTITY" >> "$GITHUB_ENV"
 
-          # Tauri notarisiert automatisch, sobald diese drei Variablen gesetzt sind.
-          # Sie sind oben fail-closed geprüft; ein Release ohne Notarisierung existiert nicht.
-          {
-            echo "APPLE_ID=$APPLE_ID"
-            echo "APPLE_PASSWORD=$APPLE_PASSWORD"
-            echo "APPLE_TEAM_ID=$APPLE_TEAM_ID"
-          } >> "$GITHUB_ENV"
+          if [ "$DISTRIBUTION_POLICY" = "market-ready" ]; then
+            # Tauri notarisiert automatisch, sobald diese drei Variablen gesetzt sind.
+            # Sie sind oben fail-closed geprüft; ein marktreifer Release ohne Notarisierung existiert nicht.
+            {
+              echo "APPLE_ID=$APPLE_ID"
+              echo "APPLE_PASSWORD=$APPLE_PASSWORD"
+              echo "APPLE_TEAM_ID=$APPLE_TEAM_ID"
+            } >> "$GITHUB_ENV"
+          else
+            echo "legacy-v0.125: Apple-Development-Signatur aktiv, Notarisierung bewusst deaktiviert."
+          fi
 
       - name: Privaten Trace-Kern für Cargo freischalten (read-only)
         shell: bash
@@ -486,7 +534,7 @@ jobs:
           TARGET: ${{ matrix.target }}
           BUNDLES: ${{ matrix.bundles }}
           ENABLE_MEET: ${{ matrix.meet_features != '' }}
-          WINDOWS_SIGNING: ${{ matrix.signing_args != '' }}
+          WINDOWS_SIGNING: ${{ matrix.signing_args != '' && inputs.distribution_policy == 'market-ready' }}
           # Updater-Signatur (minisign, derselbe Key wie beim lokalen Mac-Release) —
           # das ist NUR der Update-Mechanismus, nicht die Code-Signatur der App.
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
@@ -538,6 +586,7 @@ jobs:
         if: runner.os == 'macOS'
         env:
           TARGET: ${{ matrix.target }}
+          DISTRIBUTION_POLICY: ${{ inputs.distribution_policy }}
         run: |
           set -euo pipefail
           APP=$(find "src/src-tauri/target/$TARGET/release/bundle/macos" -maxdepth 1 -name '*.app' | head -1)
@@ -563,22 +612,32 @@ jobs:
             exit 1
           fi
           codesign --verify --deep --strict --verbose=2 "$APP"
-          spctl --assess --type execute --verbose=4 "$APP"
           DMG=$(find "src/src-tauri/target/$TARGET/release/bundle/dmg" -maxdepth 1 -name '*.dmg' | head -1)
           if [ -z "$DMG" ]; then
-            echo "::error::Kein DMG für Notarisierungs-Verifikation gefunden."
+            echo "::error::Kein DMG für Signatur-Evidenz gefunden."
             exit 1
           fi
-          xcrun stapler validate "$DMG"
           SIGNER=$(sed -n 's/^Authority=//p' /tmp/sig.txt | head -1)
           if [ -z "$SIGNER" ]; then
             echo "::error::Code-Signer konnte nicht ausgelesen werden."
             exit 1
           fi
+          GATEKEEPER_VERIFIED=false
+          NOTARIZATION_VERIFIED=false
+          if [ "$DISTRIBUTION_POLICY" = "market-ready" ]; then
+            case "$SIGNER" in "Developer ID Application:"*) ;; *) echo "::error::Unerwarteter marktreifer Signer: $SIGNER"; exit 1;; esac
+            spctl --assess --type execute --verbose=4 "$APP"
+            xcrun stapler validate "$DMG"
+            GATEKEEPER_VERIFIED=true
+            NOTARIZATION_VERIFIED=true
+          else
+            case "$SIGNER" in "Apple Development:"*) ;; *) echo "::error::Unerwarteter legacy-v0.125-Signer: $SIGNER"; exit 1;; esac
+            echo "legacy-v0.125: Gatekeeper-/Notarisierungsprüfung bewusst nicht als PASS behauptet."
+          fi
           EVIDENCE="$RUNNER_TEMP/signing-evidence-$TARGET.json"
-          python3 - "$EVIDENCE" "$TARGET" "$SIGNER" "$APP" "$DMG" <<'PY'
+          python3 - "$EVIDENCE" "$TARGET" "$SIGNER" "$APP" "$DMG" "$DISTRIBUTION_POLICY" "$GATEKEEPER_VERIFIED" "$NOTARIZATION_VERIFIED" <<'PY'
           import hashlib, json, os, sys
-          output, target, signer, app, dmg = sys.argv[1:]
+          output, target, signer, app, dmg, policy, gatekeeper, notarization = sys.argv[1:]
           def sha256(path):
               digest = hashlib.sha256()
               with open(path, "rb") as handle:
@@ -589,19 +648,20 @@ jobs:
               "schema_version": "1.0",
               "platform": target,
               "status": "pass",
+              "distribution_policy": policy,
               "signer": signer,
               "app_path": os.path.basename(app),
               "dmg": os.path.basename(dmg),
               "dmg_sha256": sha256(dmg),
               "codesign_verified": True,
-              "gatekeeper_verified": True,
-              "notarization_staple_verified": True,
+              "gatekeeper_verified": gatekeeper == "true",
+              "notarization_staple_verified": notarization == "true",
           }, open(output, "w"), indent=2)
           PY
-          echo "OK — Developer-ID-Signatur und Notarisierung sind verifiziert."
+          echo "OK — native macOS-Signatur entspricht $DISTRIBUTION_POLICY."
 
       - name: Windows-Authenticode-Signatur und Zeitstempel VERIFIZIEREN
-        if: runner.os == 'Windows'
+        if: runner.os == 'Windows' && inputs.distribution_policy == 'market-ready'
         shell: pwsh
         env:
           TARGET: ${{ matrix.target }}
@@ -635,8 +695,45 @@ jobs:
             schema_version = "1.0"
             platform = $env:TARGET
             status = "pass"
+            distribution_policy = "market-ready"
             authenticode_verified = $true
             timestamp_verified = $true
+            files = $evidence
+          } | ConvertTo-Json -Depth 6 | Set-Content -Encoding utf8NoBOM "$env:RUNNER_TEMP/signing-evidence-$env:TARGET.json"
+
+      - name: Windows-Kompatibilität ohne Authenticode explizit VERIFIZIEREN
+        if: runner.os == 'Windows' && inputs.distribution_policy == 'legacy-v0.125'
+        shell: pwsh
+        env:
+          TARGET: ${{ matrix.target }}
+        run: |
+          $ErrorActionPreference = "Stop"
+          $releaseRoot = "src/src-tauri/target/$env:TARGET/release"
+          $files = @(
+            Get-ChildItem -Path $releaseRoot -Filter "*.exe" -File -ErrorAction SilentlyContinue
+            Get-ChildItem -Path "$releaseRoot/bundle/nsis" -Filter "*.exe" -File -ErrorAction SilentlyContinue
+          ) | Sort-Object FullName -Unique
+          if ($files.Count -lt 2) { throw "Anwendung und NSIS-Installer wurden nicht beide gefunden." }
+
+          $evidence = @()
+          foreach ($file in $files) {
+            $signature = Get-AuthenticodeSignature -FilePath $file.FullName
+            if ($signature.Status -ne "NotSigned") {
+              throw "legacy-v0.125 erwartet ein explizit unsigniertes Artefakt: $($file.Name) / $($signature.Status)"
+            }
+            $evidence += @{
+              file = $file.Name
+              sha256 = (Get-FileHash -Algorithm SHA256 -Path $file.FullName).Hash.ToLowerInvariant()
+              authenticode_status = $signature.Status.ToString()
+            }
+          }
+          @{
+            schema_version = "1.0"
+            platform = $env:TARGET
+            status = "pass"
+            distribution_policy = "legacy-v0.125"
+            authenticode_verified = $false
+            timestamp_verified = $false
             files = $evidence
           } | ConvertTo-Json -Depth 6 | Set-Content -Encoding utf8NoBOM "$env:RUNNER_TEMP/signing-evidence-$env:TARGET.json"
 
@@ -751,6 +848,7 @@ jobs:
           REPO: ${{ github.repository }}
           TAG: ${{ needs.release.outputs.tag }}
           SOURCE_SHA: ${{ needs.release.outputs.source_sha }}
+          DISTRIBUTION_POLICY: ${{ inputs.distribution_policy }}
         run: |
           set -euo pipefail
           IS_DRAFT=$(gh release view "$TAG" -R "$REPO" --json isDraft --jq .isDraft)
@@ -839,7 +937,8 @@ jobs:
             exit 1
           fi
           for target in aarch64-apple-darwin x86_64-apple-darwin aarch64-pc-windows-msvc x86_64-pc-windows-msvc; do
-            jq -e --arg target "$target" '.status == "pass" and .platform == $target' \
+            jq -e --arg target "$target" --arg policy "$DISTRIBUTION_POLICY" \
+              '.status == "pass" and .platform == $target and .distribution_policy == $policy' \
               "signing-evidence-$target.json" >/dev/null
           done
 
@@ -888,6 +987,7 @@ jobs:
           TAG: ${{ needs.release.outputs.tag }}
           SOURCE_SHA: ${{ needs.release.outputs.source_sha }}
           RELEASE_ID: ${{ inputs.release_id }}
+          DISTRIBUTION_POLICY: ${{ inputs.distribution_policy }}
         run: |
           set -euo pipefail
           RELEASE=$(gh release view "$TAG" -R "$REPO" --json isDraft,body,assets)
@@ -895,8 +995,9 @@ jobs:
           BODY=$(jq -r .body <<<"$RELEASE")
           printf '%s' "$BODY" | grep -Fq "Source-SHA: $SOURCE_SHA"
           printf '%s' "$BODY" | grep -Fq "Fleet-Release-ID: $RELEASE_ID"
+          printf '%s' "$BODY" | grep -Fq "Distribution-Policy: $DISTRIBUTION_POLICY"
           jq '{draft:.isDraft, assets:(.assets|length)}' <<<"$RELEASE"
-          echo "Technisches Draft-Evidence vollständig; Veröffentlichung bleibt bis Fleet-PASS gesperrt."
+          echo "Technisches Draft-Evidence für $DISTRIBUTION_POLICY vollständig; dieser Workflow veröffentlicht nie."
 
       - name: Private Trace-Credentials entfernen
         if: always()

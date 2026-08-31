@@ -49,16 +49,37 @@ test("a broad release upload cannot replace the explicit asset allowlist", () =>
 });
 
 test("updater signatures cannot be treated as native platform signing", () => {
-  const unsafe = fixture.replace("Get-AuthenticodeSignature", "Get-UnverifiedSignature");
+  const unsafe = fixture.replaceAll("Get-AuthenticodeSignature", "Get-UnverifiedSignature");
   assert.match(validateReleaseWorkflow(unsafe).join("\n"), /Windows Authenticode signature must be verified/);
 });
 
 test("the build workflow cannot publish its draft", () => {
   const unsafe = fixture.replace(
-    "echo \"Technisches Draft-Evidence vollständig; Veröffentlichung bleibt bis Fleet-PASS gesperrt.\"",
+    "echo \"Technisches Draft-Evidence für $DISTRIBUTION_POLICY vollständig; dieser Workflow veröffentlicht nie.\"",
     "gh release edit \"$TAG\" -R \"$REPO\" --draft=false",
   );
   assert.match(validateReleaseWorkflow(unsafe).join("\n"), /build workflow must never publish a draft/);
+});
+
+test("legacy compatibility cannot run without the exact risk acknowledgement", () => {
+  const unsafe = fixture.replace(
+    'COMPATIBILITY_ACKNOWLEDGEMENT" != "I_ACCEPT_GATEKEEPER_AND_SMARTSCREEN"',
+    'COMPATIBILITY_ACKNOWLEDGEMENT" != "ACK_OPTIONAL"',
+  );
+  assert.match(validateReleaseWorkflow(unsafe).join("\n"), /exact risk acknowledgement/);
+});
+
+test("legacy macOS cannot silently accept an arbitrary signing identity", () => {
+  const unsafe = fixture.replace('legacy-v0.125:"Apple Development:"*', "legacy-v0.125:*");
+  assert.match(validateReleaseWorkflow(unsafe).join("\n"), /historical Apple Development identity/);
+});
+
+test("legacy Windows must measure and disclose missing Authenticode", () => {
+  const unsafe = fixture.replace('.Status -ne "NotSigned"', '.Status -ne "Valid"');
+  assert.match(validateReleaseWorkflow(unsafe).join("\n"), /prove that both artifacts are unsigned/);
+
+  const dishonest = fixture.replace("authenticode_verified = $false", "authenticode_verified = $true");
+  assert.match(validateReleaseWorkflow(dishonest).join("\n"), /state the missing native signature/);
 });
 
 test("current publication workflow is fail-closed", () => {
