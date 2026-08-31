@@ -85,6 +85,14 @@ test("Windows plugin envelope diagnostics remain fixed-size and confidential", (
   assert.match(validateReleaseWorkflow(publicRunner).join("\n"), /plugin envelope failures must use the fixed-size indexed confidential runner/);
 });
 
+test("Windows ARM CXX flags cannot be converted into a fake Git installation path", () => {
+  const unsafe = fixture.replace(
+    "MSYS2_ENV_CONV_EXCL=CXXFLAGS_aarch64_pc_windows_msvc",
+    "MSYS2_ENV_CONV_EXCL=",
+  );
+  assert.match(validateReleaseWorkflow(unsafe).join("\n"), /excluded from MSYS path conversion/);
+});
+
 test("a broad release upload cannot replace the explicit asset allowlist", () => {
   const unsafe = fixture.replace('gh release upload "$TAG" "${ASSETS[@]}"', 'gh release upload "$TAG" "$BUNDLE_ROOT"');
   assert.match(validateReleaseWorkflow(unsafe).join("\n"), /explicit release asset allowlist/);

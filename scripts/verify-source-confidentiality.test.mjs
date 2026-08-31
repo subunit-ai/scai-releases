@@ -70,3 +70,14 @@ test("Windows ARM diagnostics cannot upload plaintext or a source-tree path", ()
   };
   assert.match(validateSourceConfidentiality(unsafe, assetSelector).join("\n"), /only a one-time-key encrypted envelope/);
 });
+
+test("Windows ARM smoke preserves the clang-cl exception flag", () => {
+  const unsafe = {
+    ...fixtures,
+    "windows-arm-smoke.yml": fixtures["windows-arm-smoke.yml"].replace(
+      "MSYS2_ENV_CONV_EXCL=CXXFLAGS_aarch64_pc_windows_msvc",
+      "MSYS2_ENV_CONV_EXCL=",
+    ),
+  };
+  assert.match(validateSourceConfidentiality(unsafe, assetSelector).join("\n"), /must not rewrite the clang-cl exception flag/);
+});
