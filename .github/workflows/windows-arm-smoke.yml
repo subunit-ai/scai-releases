@@ -103,6 +103,7 @@ jobs:
           "CC_aarch64_pc_windows_msvc=clang-cl" >> $env:GITHUB_ENV
           "CXX_aarch64_pc_windows_msvc=clang-cl" >> $env:GITHUB_ENV
           "CXXFLAGS_aarch64_pc_windows_msvc=/EHsc" >> $env:GITHUB_ENV
+          "MSYS2_ENV_CONV_EXCL=CXXFLAGS_aarch64_pc_windows_msvc" >> $env:GITHUB_ENV
 
       - name: Privaten Trace-Kern für Cargo freischalten (read-only)
         shell: bash

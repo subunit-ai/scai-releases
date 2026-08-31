@@ -98,6 +98,7 @@ export function validateReleaseWorkflow(workflow) {
   }
   require(has(/run-indexed-confidential\.sh"[\s\S]{0,100}?"windows-native-broker-\$TARGET" 30 npm run check:native-broker/), "Windows native broker failures must use the fixed-size indexed confidential runner");
   require(has(/run-indexed-confidential\.sh"[\s\S]{0,100}?"windows-plugin-envelope-\$TARGET" 14 npm run check:plugin-envelope/), "Windows plugin envelope failures must use the fixed-size indexed confidential runner");
+  require(has(/CXXFLAGS_aarch64_pc_windows_msvc=\/EHsc[\s\S]{0,260}?MSYS2_ENV_CONV_EXCL=CXXFLAGS_aarch64_pc_windows_msvc/), "Windows ARM C++ exception flags must be excluded from MSYS path conversion");
   require(has(/RUNNER_OS:-}" = "Windows"[\s\S]{0,2400}?BUILD_ARGS\+=\(--config '\{"build":\{"beforeBuildCommand":null\}\}'\)/), "Windows prepackage proof must disable only the already executed Tauri frontend hook");
   require(has(/gh release upload "\$TAG" "\$\{ASSETS\[@\]\}"/), "only the explicit release asset allowlist may be uploaded");
   require(has(/IS_DRAFT=.*isDraft[\s\S]{0,500}?Source-SHA:/), "existing release reuse must verify draft state and source SHA");
