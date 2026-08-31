@@ -20,6 +20,7 @@ export const EXPECTED_RELEASE_CONTRACT_PATHS = [
   "scripts/checkout-private-source.sh",
   "scripts/merge-cyclonedx.mjs",
   "scripts/run-confidential.sh",
+  "scripts/run-indexed-confidential.sh",
   "scripts/validate-release-assets.sh",
   "scripts/verify-fleet-manifest.mjs",
   "scripts/verify-fleet-source-workflow.mjs",
@@ -89,10 +90,11 @@ export function validateReleaseWorkflow(workflow) {
   require(has(/gh release create "\$TAG"[\s\S]{0,200}?--draft/), "release must be created as a draft");
   require(!has(/uses:\s*tauri-apps\/tauri-action@/), "public release builds must not stream private compiler output through tauri-action");
   require(has(/run-confidential\.sh" "tauri-build-\$TARGET"/), "release build output must pass through the confidential runner");
-  for (const label of ["runtime", "typescript", "vite", "native-broker", "plugin-envelope"]) {
+  for (const label of ["runtime", "typescript", "vite", "plugin-envelope"]) {
     require(has(new RegExp(`run-confidential\\.sh" "windows-${label}-\\$TARGET"`)), `Windows ${label} prepackage output must pass through the confidential runner`);
   }
-  require(has(/RUNNER_OS:-}" = "Windows"[\s\S]{0,1800}?BUILD_ARGS\+=\(--config '\{"build":\{"beforeBuildCommand":null\}\}'\)/), "Windows prepackage proof must disable only the already executed Tauri frontend hook");
+  require(has(/run-indexed-confidential\.sh"[\s\S]{0,100}?"windows-native-broker-\$TARGET" 30 npm run check:native-broker/), "Windows native broker failures must use the fixed-size indexed confidential runner");
+  require(has(/RUNNER_OS:-}" = "Windows"[\s\S]{0,2400}?BUILD_ARGS\+=\(--config '\{"build":\{"beforeBuildCommand":null\}\}'\)/), "Windows prepackage proof must disable only the already executed Tauri frontend hook");
   require(has(/gh release upload "\$TAG" "\$\{ASSETS\[@\]\}"/), "only the explicit release asset allowlist may be uploaded");
   require(has(/IS_DRAFT=.*isDraft[\s\S]{0,500}?Source-SHA:/), "existing release reuse must verify draft state and source SHA");
   require(has(/needs:\s*\[release, build\][\s\S]{0,180}?needs\.build\.result == 'success'/), "evidence job must depend on successful release and build jobs");
