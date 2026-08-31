@@ -25,6 +25,7 @@ function validate(target, root) {
 
 for (const [target, files] of [
   ["aarch64-apple-darwin", ["dmg/SCAI_0.126.0_aarch64.dmg", "macos/SCAI_aarch64.app.tar.gz", "macos/SCAI_aarch64.app.tar.gz.sig"]],
+  ["x86_64-apple-darwin", ["dmg/SCAI_0.126.0_x64.dmg", "macos/SCAI_x64.app.tar.gz", "macos/SCAI_x64.app.tar.gz.sig"]],
   ["x86_64-pc-windows-msvc", ["nsis/SCAI_0.126.0_x64-setup.exe", "nsis/SCAI_0.126.0_x64-setup.exe.sig"]],
   ["x86_64-unknown-linux-gnu", ["appimage/SCAI_0.126.0_amd64.AppImage", "appimage/SCAI_0.126.0_amd64.AppImage.sig", "deb/SCAI_0.126.0_amd64.deb", "deb/SCAI_0.126.0_amd64.deb.sig"]],
 ]) {
@@ -40,6 +41,26 @@ for (const [target, files] of [
 test("rejects an incomplete updater pair", () => {
   const root = fixture(["nsis/SCAI_0.126.0_x64-setup.exe"]);
   assert.notEqual(validate("x86_64-pc-windows-msvc", root).status, 0);
+  rmSync(root, { recursive: true, force: true });
+});
+
+test("rejects colliding generic macOS updater archive names", () => {
+  const root = fixture([
+    "dmg/SCAI_0.126.0_aarch64.dmg",
+    "macos/SCAI.app.tar.gz",
+    "macos/SCAI.app.tar.gz.sig",
+  ]);
+  assert.notEqual(validate("aarch64-apple-darwin", root).status, 0);
+  rmSync(root, { recursive: true, force: true });
+});
+
+test("rejects an updater archive labeled for the other macOS architecture", () => {
+  const root = fixture([
+    "dmg/SCAI_0.126.0_aarch64.dmg",
+    "macos/SCAI_x64.app.tar.gz",
+    "macos/SCAI_x64.app.tar.gz.sig",
+  ]);
+  assert.notEqual(validate("aarch64-apple-darwin", root).status, 0);
   rmSync(root, { recursive: true, force: true });
 });
 
