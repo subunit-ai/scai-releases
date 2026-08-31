@@ -18,6 +18,7 @@ export const EXPECTED_RELEASE_CONTRACT_PATHS = [
   "fleet/manifest.schema.json",
   "fleet/release-contract.paths",
   "scripts/checkout-private-source.sh",
+  "scripts/encrypt-confidential-log.mjs",
   "scripts/merge-cyclonedx.mjs",
   "scripts/run-confidential.sh",
   "scripts/run-indexed-confidential.sh",
