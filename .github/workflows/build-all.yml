@@ -547,6 +547,9 @@ jobs:
           BUNDLES: ${{ matrix.bundles }}
           ENABLE_MEET: ${{ matrix.meet_features != '' }}
           WINDOWS_SIGNING: ${{ matrix.signing_args != '' && inputs.distribution_policy == 'market-ready' }}
+          # Wird per option_env! in genau das gebaute Binary gebunden. Der
+          # Paket-Smoke vergleicht diese Compile-Time-Bindung nach Installation.
+          SCAI_BUILD_SOURCE_SHA: ${{ needs.release.outputs.source_sha }}
           # Updater-Signatur (minisign, derselbe Key wie beim lokalen Mac-Release) —
           # das ist NUR der Update-Mechanismus, nicht die Code-Signatur der App.
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
@@ -626,6 +629,53 @@ jobs:
 
           gh release upload "$TAG" "${ASSETS[@]}" -R "$REPO" --clobber
           echo "PASS $TARGET: ${#ASSETS[@]} allowlistete Draft-Assets hochgeladen; keine Build-Ausgabe veröffentlicht."
+
+      - name: Installer- und Updater-Payload installieren und starten (macOS/Linux)
+        if: runner.os != 'Windows'
+        shell: bash
+        env:
+          TARGET: ${{ matrix.target }}
+          SOURCE_SHA: ${{ needs.release.outputs.source_sha }}
+        run: |
+          set -euo pipefail
+          VERSION=$(node -p "require('./src/src-tauri/tauri.conf.json').version")
+          BUNDLE_ROOT="$GITHUB_WORKSPACE/src/src-tauri/target/$TARGET/release/bundle"
+          EVIDENCE="$RUNNER_TEMP/runtime-evidence-$TARGET.json"
+          bash "$GITHUB_WORKSPACE/gate/scripts/run-confidential.sh" "package-runtime-$TARGET" \
+            bash "$GITHUB_WORKSPACE/gate/scripts/run-package-smoke.sh" \
+            "$TARGET" "$BUNDLE_ROOT" "$VERSION" "$SOURCE_SHA" "$EVIDENCE"
+
+      - name: Installer- und Updater-Payload installieren und starten (Windows)
+        if: runner.os == 'Windows'
+        shell: bash
+        env:
+          TARGET: ${{ matrix.target }}
+          SOURCE_SHA: ${{ needs.release.outputs.source_sha }}
+        run: |
+          set -euo pipefail
+          VERSION=$(node -p "require('./src/src-tauri/tauri.conf.json').version")
+          BUNDLE_ROOT="$GITHUB_WORKSPACE/src/src-tauri/target/$TARGET/release/bundle"
+          EVIDENCE="$RUNNER_TEMP/runtime-evidence-$TARGET.json"
+          bash "$GITHUB_WORKSPACE/gate/scripts/run-confidential.sh" "package-runtime-$TARGET" \
+            pwsh -NoProfile -File "$GITHUB_WORKSPACE/gate/scripts/run-package-smoke.ps1" \
+            -Target "$TARGET" -BundleRoot "$BUNDLE_ROOT" -Version "$VERSION" \
+            -SourceSha "$SOURCE_SHA" -Output "$EVIDENCE"
+
+      - name: Secret-freien Runtime-Beleg validieren und sichern
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          TAG: ${{ needs.release.outputs.tag }}
+          TARGET: ${{ matrix.target }}
+          SOURCE_SHA: ${{ needs.release.outputs.source_sha }}
+        run: |
+          set -euo pipefail
+          VERSION=$(node -p "require('./src/src-tauri/tauri.conf.json').version")
+          EVIDENCE="$RUNNER_TEMP/runtime-evidence-$TARGET.json"
+          node "$GITHUB_WORKSPACE/gate/scripts/verify-runtime-evidence.mjs" \
+            "$EVIDENCE" "$TARGET" "$VERSION" "$SOURCE_SHA"
+          gh release upload "$TAG" "$EVIDENCE" -R "$REPO" --clobber
 
       # BEWEIS STATT BEHAUPTUNG. Der Keychain-Schritt oben kann grün sein und die App
       # trotzdem ad-hoc signiert rauskommen (falsche Identity, Tauri ignoriert die env,
@@ -1030,6 +1080,11 @@ jobs:
             jq -e --arg target "$target" --arg policy "$DISTRIBUTION_POLICY" \
               '.status == "pass" and .platform == $target and .distribution_policy == $policy' \
               "signing-evidence-$target.json" >/dev/null
+          done
+          VERSION=$(node -p "require('$GITHUB_WORKSPACE/src/src-tauri/tauri.conf.json').version")
+          for target in aarch64-apple-darwin x86_64-apple-darwin aarch64-pc-windows-msvc x86_64-pc-windows-msvc x86_64-unknown-linux-gnu; do
+            node "$GITHUB_WORKSPACE/scripts/verify-runtime-evidence.mjs" \
+              "runtime-evidence-$target.json" "$target" "$VERSION" "$SOURCE_SHA"
           done
 
           rm -f existing.json updater.pub

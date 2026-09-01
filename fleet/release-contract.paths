@@ -14,10 +14,13 @@ scripts/encrypt-confidential-log.mjs
 scripts/merge-cyclonedx.mjs
 scripts/run-confidential.sh
 scripts/run-indexed-confidential.sh
+scripts/run-package-smoke.ps1
+scripts/run-package-smoke.sh
 scripts/validate-release-assets.sh
 scripts/verify-fleet-manifest.mjs
 scripts/verify-fleet-source-workflow.mjs
 scripts/verify-market-evidence-binding.mjs
 scripts/verify-readiness-evidence.mjs
 scripts/verify-release-workflow.mjs
+scripts/verify-runtime-evidence.mjs
 scripts/verify-source-confidentiality.mjs
