@@ -1,0 +1,343 @@
+{
+  "$schema": "../manifest.schema.json",
+  "schema_version": "1.2",
+  "release_id": "scai-candidate-2026-09-01.6",
+  "status": "candidate",
+  "created_at": "2026-09-01T22:38:59Z",
+  "pins": {
+    "scai_source": {
+      "repository": "https://github.com/subunit-ai/subunit-scai",
+      "sha": "5bbde6dc91e9db6d0820bc8383867c3bcba6eb42",
+      "branch": "main",
+      "pr_url": "https://github.com/subunit-ai/subunit-scai/pull/480",
+      "merge_status": "merged"
+    },
+    "scai_release_contract": {
+      "repository": "https://github.com/subunit-ai/scai-releases",
+      "sha": "efe9935996ba533cec6233d31f58ab00edfa502f",
+      "branch": "main",
+      "pr_url": "https://github.com/subunit-ai/scai-releases/pull/54",
+      "merge_status": "merged"
+    },
+    "u1_chat": {
+      "repository": "https://github.com/subunit-ai/u1-chat",
+      "sha": "cf3eee6bc97fbb8c21e74714eb818468ccc21668",
+      "branch": "main",
+      "pr_url": "https://github.com/subunit-ai/u1-chat/pull/22",
+      "merge_status": "merged"
+    },
+    "atlas": {
+      "repository": "https://github.com/subunit-ai/atlas",
+      "sha": "76cdf87036660061cdb6055eaacc188bb055e2d1",
+      "branch": "main",
+      "pr_url": "https://github.com/subunit-ai/atlas/pull/87",
+      "merge_status": "merged"
+    },
+    "subunit_auth": {
+      "repository": "https://github.com/subunit-ai/subunit-auth",
+      "sha": "1cd0d25013152398802b0652d8b5edfa560e90c5",
+      "branch": "main",
+      "pr_url": "https://github.com/subunit-ai/subunit-auth/pull/12",
+      "merge_status": "merged"
+    },
+    "echo": {
+      "repository": "https://github.com/subunit-ai/echo",
+      "sha": "4cba565b877195ed3db5e88bfcff7926340ae41b",
+      "branch": "main",
+      "pr_url": "https://github.com/subunit-ai/echo/pull/33",
+      "merge_status": "merged"
+    }
+  },
+  "gates": {
+    "A1": {
+      "title": "Native Auth und echter OS-Credential-Store",
+      "release_pin": "scai-candidate-2026-09-01.6",
+      "status": "candidate",
+      "owner": "Subunit Engineering",
+      "judge": "",
+      "evidence": [
+        "https://github.com/subunit-ai/subunit-scai/pull/480",
+        "https://github.com/subunit-ai/scai-releases/actions/runs/33562204504"
+      ],
+      "acceptance": "PKCE/State/Redirect, realer OS-Credential-Store und gepackter Produktstart sind auf nativen Release-Runnern bestanden"
+    },
+    "A2": {
+      "title": "Default-deny Native Credential Broker",
+      "release_pin": "scai-candidate-2026-09-01.6",
+      "status": "candidate",
+      "owner": "Subunit Engineering",
+      "judge": "",
+      "evidence": [
+        "https://github.com/subunit-ai/subunit-scai/pull/395",
+        "https://github.com/subunit-ai/scai-releases/actions/runs/33544616326"
+      ],
+      "acceptance": "Keine Renderer-Credentials; feste Origins, Methoden, Limits, ACLs und Abbruchpfade sind belegt"
+    },
+    "A3": {
+      "title": "Signierte Plugin Supply Chain",
+      "release_pin": "scai-candidate-2026-09-01.6",
+      "status": "candidate",
+      "owner": "Subunit Engineering",
+      "judge": "",
+      "evidence": [
+        "https://github.com/subunit-ai/subunit-scai/pull/407",
+        "https://github.com/subunit-ai/scai-releases/actions/runs/33562204504"
+      ],
+      "acceptance": "Bundle, Manifest, SBOM, Provenance, Registry-Sequenz und Widerruf sind kryptografisch gebunden"
+    },
+    "A4": {
+      "title": "Autonome Ausführung mit Egress- und Consent-Gates",
+      "release_pin": "scai-candidate-2026-09-01.6",
+      "status": "candidate",
+      "owner": "Subunit Engineering",
+      "judge": "",
+      "evidence": [
+        "https://github.com/subunit-ai/subunit-scai/pull/402",
+        "https://github.com/subunit-ai/scai-releases/actions/runs/33544616326"
+      ],
+      "acceptance": "Pro Task isolierter Egress, explizites Consent und fail-closed Policy sind belegt"
+    },
+    "A5": {
+      "title": "Action Evidence und Audit Receipts",
+      "release_pin": "scai-candidate-2026-09-01.6",
+      "status": "candidate",
+      "owner": "Subunit Engineering",
+      "judge": "",
+      "evidence": [
+        "https://github.com/subunit-ai/u1-chat/pull/22",
+        "https://github.com/subunit-ai/scai-releases/actions/runs/33566984617"
+      ],
+      "acceptance": "Ausgeführte Aktionen liefern nachvollziehbare, manipulationsresistente Belege auf dem gepinnten Fleet-Stand"
+    },
+    "A6": {
+      "title": "Zentrale Autorisierung und Tenant-Grenzen",
+      "release_pin": "scai-candidate-2026-09-01.6",
+      "status": "candidate",
+      "owner": "Subunit Engineering",
+      "judge": "",
+      "evidence": [
+        "https://github.com/subunit-ai/atlas/pull/87",
+        "https://github.com/subunit-ai/scai-releases/actions/runs/33566984617"
+      ],
+      "acceptance": "Rollen, Workspace-Scope, Clearance und verweigerte Cross-Tenant-Zugriffe sind serverseitig belegt"
+    },
+    "A7": {
+      "title": "DSGVO, AI-Act und regulierte Nutzung",
+      "release_pin": "scai-candidate-2026-09-01.6",
+      "status": "open",
+      "owner": "",
+      "judge": "",
+      "evidence": [
+        "https://github.com/subunit-ai/subunit-auth/pull/12",
+        "https://github.com/subunit-ai/echo/pull/33",
+        "https://github.com/subunit-ai/scai-releases/actions/runs/33566984617"
+      ],
+      "acceptance": "Qualifizierter Legal/DPO-Owner und unabhängiger Judge genehmigen Datenflüsse, AVV/TOMs, DPIA und AI-Act-Use-Case-Grenzen"
+    },
+    "A8": {
+      "title": "Gemeinsamer Fleet Pin und Betriebsfreigabe",
+      "release_pin": "scai-candidate-2026-09-01.6",
+      "status": "open",
+      "owner": "Subunit Release Engineering",
+      "judge": "",
+      "evidence": [
+        "https://github.com/subunit-ai/scai-releases/pull/54",
+        "https://github.com/subunit-ai/scai-releases/actions/runs/33562204504",
+        "https://github.com/subunit-ai/scai-releases/actions/runs/33566984617",
+        "https://github.com/subunit-ai/scai-releases/releases/download/v0.144.0/runtime-evidence-aarch64-apple-darwin.json",
+        "https://github.com/subunit-ai/scai-releases/releases/download/v0.144.0/runtime-evidence-x86_64-apple-darwin.json",
+        "https://github.com/subunit-ai/scai-releases/releases/download/v0.144.0/runtime-evidence-aarch64-pc-windows-msvc.json",
+        "https://github.com/subunit-ai/scai-releases/releases/download/v0.144.0/runtime-evidence-x86_64-pc-windows-msvc.json",
+        "https://github.com/subunit-ai/scai-releases/releases/download/v0.144.0/runtime-evidence-x86_64-unknown-linux-gnu.json"
+      ],
+      "acceptance": "Alle Pins und CI grün, marktgerechte native Signaturen, SBOM/Provenance sowie autorisierter Health/Recovery/Rollback-Drill bestanden"
+    }
+  },
+  "market_gates": {
+    "R0": {
+      "title": "Externes Nachfrage-Commitment",
+      "status": "open",
+      "owner": "TJ / Subunit Sales",
+      "evidence": [],
+      "acceptance": "Mindestens ein qualifiziertes Unternehmen bestätigt Problem, Budgetpfad und nächsten Termin"
+    },
+    "R1": {
+      "title": "Bezahlte Diagnose mit messbarem Effekt",
+      "status": "open",
+      "owner": "TJ / Subunit Sales",
+      "evidence": [],
+      "acceptance": "Diagnose ist bezahlt und Vorher/Nachher-Kennzahl sowie Entscheider-Abnahme sind dokumentiert"
+    },
+    "R2": {
+      "title": "Produktisierter Pilot",
+      "status": "open",
+      "owner": "TJ / Subunit Sales",
+      "evidence": [],
+      "acceptance": "Pilot hat festen Scope, Preis, Laufzeit, Erfolgskriterien und belastbare Delivery-Kosten"
+    },
+    "R3": {
+      "title": "Drei ähnliche zahlende Kunden",
+      "status": "open",
+      "owner": "TJ / Subunit Sales",
+      "evidence": [],
+      "acceptance": "Drei Unternehmen desselben Kernsegments bezahlen für denselben wiederholbaren Outcome"
+    }
+  },
+  "market_evidence": {
+    "status": "open",
+    "release_pin": "scai-candidate-2026-09-01.6",
+    "source_sha": "5bbde6dc91e9db6d0820bc8383867c3bcba6eb42",
+    "report_schema_version": "1.0",
+    "report_url": "",
+    "report_sha256": "",
+    "validator_name": "",
+    "validator_role": "",
+    "validated_at": "",
+    "attestation_url": "",
+    "attestation_sha256": "",
+    "repeatable_paying_customers": 0
+  },
+  "source_ci": {
+    "status": "pass",
+    "sha": "5bbde6dc91e9db6d0820bc8383867c3bcba6eb42",
+    "run_url": "https://github.com/subunit-ai/scai-releases/actions/runs/33562204504",
+    "checks": [
+      "Build 33562204504 checked out exact merged SCAI SHA 5bbde6dc91e9db6d0820bc8383867c3bcba6eb42 and completed Linux x64, macOS ARM64/x64 and Windows ARM64/x64 successfully",
+      "Each packaged installer and updater payload executed subunit-scai headlessly and produced validated secret-free evidence bound to version 0.144.0 and the exact source SHA",
+      "Draft v0.144.0 contains 26 allowlisted assets, 25 checksum entries, 11 updater platform entries, a merged CycloneDX SBOM and independently verified GitHub provenance",
+      "Fleet Source Check 33566984617 completed successfully against exact merged main SHAs for u1-chat, Atlas, subunit-auth and Echo using separate read-only deploy keys",
+      "The draft remains unpublished and the legacy distribution policy truthfully records missing Gatekeeper/notarization and Windows Authenticode evidence"
+    ]
+  },
+  "artifacts": {
+    "status": "open",
+    "platforms": {
+      "macos_arm64": {
+        "status": "open",
+        "artifact_url": "https://github.com/subunit-ai/scai-releases/releases/download/v0.144.0/SCAI_0.144.0_aarch64.dmg",
+        "sha256": "84de483c6c53be6b34047f4a1cb3e8c2ec838717cf7c74b3e052709bf2cb4af1",
+        "updater_signature_url": "https://github.com/subunit-ai/scai-releases/releases/download/v0.144.0/SCAI_aarch64.app.tar.gz.sig",
+        "updater_signature_verified": true,
+        "code_signature_status": "failed",
+        "code_signer": "Apple Development: tom@jedlitschka.de (F9PX8Q63CH)",
+        "code_signature_evidence_url": "https://github.com/subunit-ai/scai-releases/releases/download/v0.144.0/signing-evidence-aarch64-apple-darwin.json",
+        "sbom_url": "https://github.com/subunit-ai/scai-releases/releases/download/v0.144.0/scai.cdx.json",
+        "sbom_sha256": "87178160dd483c537bb37e2eae05eed890a8c4f14060ebce212ef3ea0fc1dfd3",
+        "provenance_url": "https://github.com/subunit-ai/scai-releases/actions/runs/33562204504",
+        "provenance_verified": true
+      },
+      "macos_x64": {
+        "status": "open",
+        "artifact_url": "https://github.com/subunit-ai/scai-releases/releases/download/v0.144.0/SCAI_0.144.0_x64.dmg",
+        "sha256": "ae5157c66b9134221fad400f3596ba3c10d77d3bf3a24bc43950952db1e14582",
+        "updater_signature_url": "https://github.com/subunit-ai/scai-releases/releases/download/v0.144.0/SCAI_x64.app.tar.gz.sig",
+        "updater_signature_verified": true,
+        "code_signature_status": "failed",
+        "code_signer": "Apple Development: tom@jedlitschka.de (F9PX8Q63CH)",
+        "code_signature_evidence_url": "https://github.com/subunit-ai/scai-releases/releases/download/v0.144.0/signing-evidence-x86_64-apple-darwin.json",
+        "sbom_url": "https://github.com/subunit-ai/scai-releases/releases/download/v0.144.0/scai.cdx.json",
+        "sbom_sha256": "87178160dd483c537bb37e2eae05eed890a8c4f14060ebce212ef3ea0fc1dfd3",
+        "provenance_url": "https://github.com/subunit-ai/scai-releases/actions/runs/33562204504",
+        "provenance_verified": true
+      },
+      "windows_x64": {
+        "status": "open",
+        "artifact_url": "https://github.com/subunit-ai/scai-releases/releases/download/v0.144.0/SCAI_0.144.0_x64-setup.exe",
+        "sha256": "1eca08f23e2fcef22f21b1a7914d595948ff4370bde5b48a6b859db1d0cb6421",
+        "updater_signature_url": "https://github.com/subunit-ai/scai-releases/releases/download/v0.144.0/SCAI_0.144.0_x64-setup.exe.sig",
+        "updater_signature_verified": true,
+        "code_signature_status": "failed",
+        "code_signer": "",
+        "code_signature_evidence_url": "https://github.com/subunit-ai/scai-releases/releases/download/v0.144.0/signing-evidence-x86_64-pc-windows-msvc.json",
+        "sbom_url": "https://github.com/subunit-ai/scai-releases/releases/download/v0.144.0/scai.cdx.json",
+        "sbom_sha256": "87178160dd483c537bb37e2eae05eed890a8c4f14060ebce212ef3ea0fc1dfd3",
+        "provenance_url": "https://github.com/subunit-ai/scai-releases/actions/runs/33562204504",
+        "provenance_verified": true
+      },
+      "windows_arm64": {
+        "status": "open",
+        "artifact_url": "https://github.com/subunit-ai/scai-releases/releases/download/v0.144.0/SCAI_0.144.0_arm64-setup.exe",
+        "sha256": "1d5fe99fe40776ac083cb39839d561dabe9e6aa484a52bbe52fc78ab2df629dc",
+        "updater_signature_url": "https://github.com/subunit-ai/scai-releases/releases/download/v0.144.0/SCAI_0.144.0_arm64-setup.exe.sig",
+        "updater_signature_verified": true,
+        "code_signature_status": "failed",
+        "code_signer": "",
+        "code_signature_evidence_url": "https://github.com/subunit-ai/scai-releases/releases/download/v0.144.0/signing-evidence-aarch64-pc-windows-msvc.json",
+        "sbom_url": "https://github.com/subunit-ai/scai-releases/releases/download/v0.144.0/scai.cdx.json",
+        "sbom_sha256": "87178160dd483c537bb37e2eae05eed890a8c4f14060ebce212ef3ea0fc1dfd3",
+        "provenance_url": "https://github.com/subunit-ai/scai-releases/actions/runs/33562204504",
+        "provenance_verified": true
+      },
+      "linux_x64": {
+        "status": "pass",
+        "artifact_url": "https://github.com/subunit-ai/scai-releases/releases/download/v0.144.0/SCAI_0.144.0_amd64.AppImage",
+        "sha256": "eee60c0dedd57bb9571ca25274ae275d23012b64b9bd8e21a9514a047096a135",
+        "updater_signature_url": "https://github.com/subunit-ai/scai-releases/releases/download/v0.144.0/SCAI_0.144.0_amd64.AppImage.sig",
+        "updater_signature_verified": true,
+        "code_signature_status": "not_applicable",
+        "code_signer": "",
+        "code_signature_evidence_url": "",
+        "sbom_url": "https://github.com/subunit-ai/scai-releases/releases/download/v0.144.0/scai.cdx.json",
+        "sbom_sha256": "87178160dd483c537bb37e2eae05eed890a8c4f14060ebce212ef3ea0fc1dfd3",
+        "provenance_url": "https://github.com/subunit-ai/scai-releases/actions/runs/33562204504",
+        "provenance_verified": true
+      }
+    }
+  },
+  "governance": {
+    "status": "open",
+    "release_pin": "scai-candidate-2026-09-01.6",
+    "legal_owner": "",
+    "dpo_owner": "",
+    "independent_judge": "",
+    "decision": "open",
+    "evidence_url": "",
+    "evidence_sha256": ""
+  },
+  "operations": {
+    "status": "open",
+    "release_pin": "scai-candidate-2026-09-01.6",
+    "environment": "",
+    "operator": "",
+    "independent_judge": "",
+    "started_at": "",
+    "completed_at": "",
+    "deployed": false,
+    "health_verified": false,
+    "recovery_verified": false,
+    "rollback_verified": false,
+    "evidence_url": "",
+    "evidence_sha256": ""
+  },
+  "approvals": {
+    "product": { "name": "", "evidence_url": "", "evidence_sha256": "" },
+    "security": { "name": "", "evidence_url": "", "evidence_sha256": "" },
+    "legal": { "name": "", "evidence_url": "", "evidence_sha256": "" }
+  },
+  "blockers": [
+    {
+      "id": "market-ready-native-signing",
+      "owner": "TJ / Subunit Release Engineering",
+      "resolution": "Nach Vorliegen des Handelsregisterauszugs Apple Developer ID/Notarisierung und Windows Authenticode-Zertifikat autorisiert einrichten und denselben Source-Pin mit distribution_policy=market-ready neu bauen",
+      "evidence_required": "Gatekeeper- und Notarisierungs-PASS für beide macOS-Architekturen sowie Authenticode- und Timestamp-PASS für beide Windows-Architekturen"
+    },
+    {
+      "id": "legal-dpo-governance",
+      "owner": "TJ",
+      "resolution": "Qualifizierte Legal- und DPO-Verantwortliche sowie einen unabhängigen Judge benennen und die Entscheidung dokumentieren",
+      "evidence_required": "Freigegebene Legal-Matrix, AVV/TOMs, DPIA und AI-Act-Use-Case-Entscheidung mit HTTPS-Evidenz und SHA-256"
+    },
+    {
+      "id": "operations-drill",
+      "owner": "Subunit Release Engineering",
+      "resolution": "Den autorisierten Deploy-, Health-, Recovery- und Rollback-Drill exakt gegen diesen Fleet-Pin mit getrenntem Judge durchführen",
+      "evidence_required": "Gemessener Operations-Report mit Release-/Source-Bindung, RTO, Datenverlust, Health, Recovery, Rollback, HTTPS-URL und SHA-256"
+    },
+    {
+      "id": "market-evidence",
+      "owner": "TJ / Subunit Sales",
+      "resolution": "R0 bis R3 mit echten externen Kundenbelegen abschließen und unabhängig attestieren lassen",
+      "evidence_required": "Commitment, bezahlte Diagnose, produktisierter Pilot, drei ähnliche zahlende Kunden, privater Report-Digest und unabhängige Attestation"
+    }
+  ]
+}
