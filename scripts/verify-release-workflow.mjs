@@ -22,12 +22,15 @@ export const EXPECTED_RELEASE_CONTRACT_PATHS = [
   "scripts/merge-cyclonedx.mjs",
   "scripts/run-confidential.sh",
   "scripts/run-indexed-confidential.sh",
+  "scripts/run-package-smoke.ps1",
+  "scripts/run-package-smoke.sh",
   "scripts/validate-release-assets.sh",
   "scripts/verify-fleet-manifest.mjs",
   "scripts/verify-fleet-source-workflow.mjs",
   "scripts/verify-market-evidence-binding.mjs",
   "scripts/verify-readiness-evidence.mjs",
   "scripts/verify-release-workflow.mjs",
+  "scripts/verify-runtime-evidence.mjs",
   "scripts/verify-source-confidentiality.mjs",
 ];
 
@@ -93,6 +96,12 @@ export function validateReleaseWorkflow(workflow) {
   require(has(/gh release create "\$TAG"[\s\S]{0,200}?--draft/), "release must be created as a draft");
   require(!has(/uses:\s*tauri-apps\/tauri-action@/), "public release builds must not stream private compiler output through tauri-action");
   require(has(/run-confidential\.sh" "tauri-build-\$TARGET"/), "release build output must pass through the confidential runner");
+  require(has(/SCAI_BUILD_SOURCE_SHA:\s*\$\{\{ needs\.release\.outputs\.source_sha \}\}/), "packaged binary must embed the immutable source SHA");
+  require(has(/run-confidential\.sh" "package-runtime-\$TARGET"[\s\S]{0,240}?run-package-smoke\.sh/), "macOS/Linux package runtime smoke must stay confidential");
+  require(has(/run-confidential\.sh" "package-runtime-\$TARGET"[\s\S]{0,240}?run-package-smoke\.ps1/), "Windows package runtime smoke must stay confidential");
+  require(has(/verify-runtime-evidence\.mjs"[\s\\]*"\$EVIDENCE" "\$TARGET" "\$VERSION" "\$SOURCE_SHA"/), "every platform runtime evidence must be validated before upload");
+  require(has(/runtime-evidence-\$TARGET\.json[\s\S]{0,240}?gh release upload "\$TAG" "\$EVIDENCE"/), "only the validated runtime evidence file may be uploaded");
+  require(has(/for target in aarch64-apple-darwin x86_64-apple-darwin aarch64-pc-windows-msvc x86_64-pc-windows-msvc x86_64-unknown-linux-gnu; do[\s\S]{0,320}?verify-runtime-evidence\.mjs/), "final manifest must revalidate runtime evidence for all five targets");
   for (const label of ["runtime", "typescript", "vite"]) {
     require(has(new RegExp(`run-confidential\\.sh" "windows-${label}-\\$TARGET"`)), `Windows ${label} prepackage output must pass through the confidential runner`);
   }
