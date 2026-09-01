@@ -141,6 +141,20 @@ jobs:
         shell: bash
         run: bash "$GITHUB_WORKSPACE/gate/scripts/run-confidential.sh" playwright-install npx playwright install --with-deps chromium webkit
 
+      - name: Datenschutz-Diagnosepaket visuell und interaktiv beweisen
+        working-directory: src
+        shell: bash
+        run: bash "$GITHUB_WORKSPACE/gate/scripts/run-confidential.sh" support-diagnostics-proof node scripts/verify-support-diagnostics.mjs
+
+      - name: Diagnosepaket-Proof-Screenshots sichern
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4, immutable
+        with:
+          name: scai-support-diagnostics-proof-${{ github.run_id }}
+          path: ~/.cache/u1-shots/scai-support-diagnostics/
+          if-no-files-found: error
+          retention-days: 14
+
       - name: Pages-Versionsverlauf und Restore visuell beweisen
         working-directory: src
         shell: bash
