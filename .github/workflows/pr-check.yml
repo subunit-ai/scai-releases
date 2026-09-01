@@ -136,10 +136,10 @@ jobs:
         shell: bash
         run: bash "$GITHUB_WORKSPACE/gate/scripts/run-confidential.sh" frontend-build npm run build
 
-      - name: Chromium für Seh-Harnesse
+      - name: Browser für Seh-Harnesse
         working-directory: src
         shell: bash
-        run: bash "$GITHUB_WORKSPACE/gate/scripts/run-confidential.sh" playwright-install npx playwright install --with-deps chromium
+        run: bash "$GITHUB_WORKSPACE/gate/scripts/run-confidential.sh" playwright-install npx playwright install --with-deps chromium webkit
 
       - name: Pages-Versionsverlauf und Restore visuell beweisen
         working-directory: src
@@ -181,6 +181,20 @@ jobs:
           name: scai-meet-proof-${{ github.run_id }}
           path: ~/.cache/u1-shots/scai-meet-plugin/ci/
           if-no-files-found: warn
+          retention-days: 14
+
+      - name: Sentinel Forecast Command Desk beweisen
+        working-directory: src
+        shell: bash
+        run: bash "$GITHUB_WORKSPACE/gate/scripts/run-confidential.sh" sentinel-forecast-proof node scripts/verify-sentinel-forecast.mjs
+
+      - name: Sentinel-Forecast-Screenshots sichern
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4, immutable
+        with:
+          name: scai-sentinel-forecast-proof-${{ github.run_id }}
+          path: ~/.cache/u1-shots/sentinel-forecast/
+          if-no-files-found: error
           retention-days: 14
 
       # Rust-Kompilat + Unit-Tests. Tauri v2 linkt webkit2gtk/gtk auch für
