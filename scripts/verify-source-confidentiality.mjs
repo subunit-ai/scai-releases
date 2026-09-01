@@ -27,7 +27,7 @@ export function validateSourceConfidentiality(workflows, assetSelector) {
   const pr = workflows["pr-check.yml"] ?? "";
   for (const label of [
     "npm-ci", "cli-drift", "release-meta", "plugin-bundles", "no-demo-data",
-    "frontend-build", "meet-visual-proof", "cargo-test", "native-cargo-check",
+    "frontend-build", "support-diagnostics-proof", "meet-visual-proof", "cargo-test", "native-cargo-check",
     "native-product-binary", "native-pkce-tests", "native-keyring-smoke",
     "trace-fmt", "trace-core-check", "trace-core-clippy", "trace-core-test",
     "trace-native-check", "trace-native-clippy", "trace-native-test", "trace-native-build",
@@ -66,6 +66,10 @@ export function validateSourceConfidentiality(workflows, assetSelector) {
   require(
     /if: failure\(\) && matrix\.label == 'windows-x64' && inputs\.diagnostic_public_key_base64 != ''[\s\S]{0,350}?path: \$\{\{ runner\.temp \}\}\/trace-windows-diagnostic\.json/.test(pr),
     "pr-check.yml: Trace Windows diagnostics may upload only a one-time-key encrypted envelope",
+  );
+  require(
+    /if: failure\(\) && inputs\.diagnostic_public_key_base64 != ''[\s\S]{0,350}?path: \$\{\{ runner\.temp \}\}\/scai-support-diagnostic\.json/.test(pr),
+    "pr-check.yml: Support diagnostics may upload only a one-time-key encrypted envelope",
   );
   require(
     /if: failure\(\) && inputs\.diagnostic_public_key_base64 != ''[\s\S]{0,350}?path: \$\{\{ runner\.temp \}\}\/scai-pages-diagnostic\.json/.test(pr),
