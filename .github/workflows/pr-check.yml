@@ -154,6 +154,11 @@ jobs:
           else
             echo "support_diagnostics=false" >> "$GITHUB_OUTPUT"
           fi
+          if [ -f scripts/verify-sentinel-forecast.mjs ]; then
+            echo "sentinel_forecast=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "sentinel_forecast=false" >> "$GITHUB_OUTPUT"
+          fi
 
       - name: Datenschutz-Diagnosepaket visuell und interaktiv beweisen
         id: support_diagnostics_proof
@@ -228,6 +233,7 @@ jobs:
 
       - name: Sentinel Forecast Command Desk beweisen
         id: forecast_proof
+        if: steps.source_proofs.outputs.sentinel_forecast == 'true'
         working-directory: src
         shell: bash
         run: bash "$GITHUB_WORKSPACE/gate/scripts/run-confidential.sh" sentinel-forecast-proof node scripts/verify-sentinel-forecast.mjs
