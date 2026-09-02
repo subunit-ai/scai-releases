@@ -68,11 +68,11 @@ export function validateSourceConfidentiality(workflows, assetSelector) {
     "pr-check.yml: Trace Windows diagnostics may upload only a one-time-key encrypted envelope",
   );
   require(
-    /if: failure\(\) && inputs\.diagnostic_public_key_base64 != ''[\s\S]{0,350}?path: \$\{\{ runner\.temp \}\}\/scai-support-diagnostic\.json/.test(pr),
+    /if: failure\(\) &&[^\n]*inputs\.diagnostic_public_key_base64 != ''[\s\S]{0,350}?path: \$\{\{ runner\.temp \}\}\/scai-support-diagnostic\.json/.test(pr),
     "pr-check.yml: Support diagnostics may upload only a one-time-key encrypted envelope",
   );
   require(
-    /if: failure\(\) && inputs\.diagnostic_public_key_base64 != ''[\s\S]{0,350}?path: \$\{\{ runner\.temp \}\}\/scai-pages-diagnostic\.json/.test(pr),
+    /if: failure\(\) &&[^\n]*inputs\.diagnostic_public_key_base64 != ''[\s\S]{0,350}?path: \$\{\{ runner\.temp \}\}\/scai-pages-diagnostic\.json/.test(pr),
     "pr-check.yml: Pages diagnostics may upload only a one-time-key encrypted envelope",
   );
 
