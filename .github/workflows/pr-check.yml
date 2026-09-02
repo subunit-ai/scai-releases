@@ -50,6 +50,12 @@ jobs:
           path: gate
           persist-credentials: false
 
+      # Bun wird vor dem privaten Checkout bereitgestellt. Die gepinnte Action sieht
+      # damit keinen proprietären Source-Tree; alle späteren Testausgaben bleiben im
+      # Confidential-Runner.
+      - name: Bun einrichten
+        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2, immutable
+
       # Klon über Git Bash statt actions/checkout+ssh-key (siehe build-all.yml).
       # Ref + Key über env, nicht inline → Injection-sicher.
       - name: Quellcode auschecken (privates Repo, read-only Deploy-Key)
@@ -95,6 +101,11 @@ jobs:
         working-directory: src
         shell: bash
         run: bash "$GITHUB_WORKSPACE/gate/scripts/run-confidential.sh" npm-ci npm ci
+
+      - name: Frontend-Vertragstests ausführen
+        working-directory: src
+        shell: bash
+        run: bash "$GITHUB_WORKSPACE/gate/scripts/run-confidential.sh" frontend-unit-tests bun test src/lib
 
       # Vendored subunit-CLI muss mit Manifest/Signing-Key/Bundle-Wiring synchron
       # bleiben — schlägt bei veraltetem/handgepatchtem Vendor fehl.
@@ -163,6 +174,11 @@ jobs:
             echo "sentinel_routing=true" >> "$GITHUB_OUTPUT"
           else
             echo "sentinel_routing=false" >> "$GITHUB_OUTPUT"
+          fi
+          if [ -f scripts/verify-chat-dock.mjs ]; then
+            echo "chat_dock=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "chat_dock=false" >> "$GITHUB_OUTPUT"
           fi
 
       - name: Datenschutz-Diagnosepaket visuell und interaktiv beweisen
@@ -234,6 +250,22 @@ jobs:
           name: scai-meet-proof-${{ github.run_id }}
           path: ~/.cache/u1-shots/scai-meet-plugin/ci/
           if-no-files-found: warn
+          retention-days: 14
+
+      - name: Chat-Dock und lokale Laufzeitgrenze visuell beweisen
+        id: chat_dock_proof
+        if: steps.source_proofs.outputs.chat_dock == 'true'
+        working-directory: src
+        shell: bash
+        run: bash "$GITHUB_WORKSPACE/gate/scripts/run-confidential.sh" chat-dock-visual-proof npm run proof:chat-dock
+
+      - name: Chat-Dock-Proof-Screenshots sichern
+        if: always() && steps.chat_dock_proof.outcome != 'skipped'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4, immutable
+        with:
+          name: scai-chat-dock-proof-${{ github.run_id }}
+          path: ~/.cache/u1-shots/scai-chat-dock/
+          if-no-files-found: error
           retention-days: 14
 
       - name: Sentinel Forecast Command Desk beweisen
