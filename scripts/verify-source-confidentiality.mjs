@@ -85,6 +85,10 @@ export function validateSourceConfidentiality(workflows, assetSelector) {
     "pr-check.yml: Pages diagnostics may upload only a one-time-key encrypted envelope",
   );
   require(
+    /if: failure\(\) &&[^\n]*inputs\.diagnostic_public_key_base64 != ''[\s\S]{0,350}?path: \$\{\{ runner\.temp \}\}\/scai-chat-dock-diagnostic\.json/.test(pr),
+    "pr-check.yml: Chat-Dock diagnostics may upload only a one-time-key encrypted envelope",
+  );
+  require(
     /if \[ -f scripts\/verify-sentinel-forecast\.mjs \]; then[\s\S]{0,220}?sentinel_forecast=true[\s\S]{0,220}?sentinel_forecast=false/.test(pr),
     "pr-check.yml: newer Sentinel proofs must be detected before older source refs are gated",
   );

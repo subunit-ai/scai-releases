@@ -256,6 +256,9 @@ jobs:
         id: chat_dock_proof
         if: steps.source_proofs.outputs.chat_dock == 'true'
         working-directory: src
+        env:
+          SCAI_ENCRYPTED_DIAGNOSTIC_PUBLIC_KEY_BASE64: ${{ inputs.diagnostic_public_key_base64 }}
+          SCAI_ENCRYPTED_DIAGNOSTIC_PATH: ${{ inputs.diagnostic_public_key_base64 != '' && format('{0}/scai-chat-dock-diagnostic.json', runner.temp) || '' }}
         shell: bash
         run: bash "$GITHUB_WORKSPACE/gate/scripts/run-confidential.sh" chat-dock-visual-proof npm run proof:chat-dock
 
@@ -267,6 +270,15 @@ jobs:
           path: ~/.cache/u1-shots/scai-chat-dock/
           if-no-files-found: error
           retention-days: 14
+
+      - name: Verschlüsselte Chat-Dock-Fehlerdiagnostik bereitstellen
+        if: failure() && steps.chat_dock_proof.outcome == 'failure' && inputs.diagnostic_public_key_base64 != ''
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4, immutable
+        with:
+          name: scai-chat-dock-encrypted-diagnostic-${{ github.run_id }}
+          path: ${{ runner.temp }}/scai-chat-dock-diagnostic.json
+          if-no-files-found: error
+          retention-days: 1
 
       - name: Sentinel Forecast Command Desk beweisen
         id: forecast_proof
