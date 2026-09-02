@@ -50,6 +50,21 @@ test("private build outputs cannot enter a public Actions cache", () => {
   assert.match(validateSourceConfidentiality(unsafe, assetSelector).join("\n"), /private build outputs must not enter a public Actions cache/);
 });
 
+test("Bun setup cannot run after the private source checkout", () => {
+  const action = fixtures["pr-check.yml"].match(/\n      # Bun wird[\s\S]*?uses: oven-sh\/setup-bun@[0-9a-f]{40}[^\n]*\n/)?.[0];
+  assert.ok(action);
+  const withoutAction = fixtures["pr-check.yml"].replace(action, "\n");
+  const sourceStep = "      - name: Quellcode auschecken (privates Repo, read-only Deploy-Key)";
+  const unsafe = {
+    ...fixtures,
+    "pr-check.yml": withoutAction.replace(sourceStep, `${sourceStep}${action}`),
+  };
+  assert.match(
+    validateSourceConfidentiality(unsafe, assetSelector).join("\n"),
+    /Bun setup must complete before private source checkout/,
+  );
+});
+
 test("a broad upload cannot replace the release artifact allowlist", () => {
   const unsafe = { ...fixtures, "build-all.yml": fixtures["build-all.yml"].replace('gh release upload "$TAG" "${ASSETS[@]}"', 'gh release upload "$TAG" "$BUNDLE_ROOT"') };
   assert.match(validateSourceConfidentiality(unsafe, assetSelector).join("\n"), /validated asset array/);
@@ -91,6 +106,20 @@ test("Pages diagnostics cannot upload plaintext or a source-tree path", () => {
     ),
   };
   assert.match(validateSourceConfidentiality(unsafe, assetSelector).join("\n"), /Pages diagnostics may upload only a one-time-key encrypted envelope/);
+});
+
+test("Chat-Dock proof cannot upload the private source tree", () => {
+  const unsafe = {
+    ...fixtures,
+    "pr-check.yml": fixtures["pr-check.yml"].replace(
+      "path: ~/.cache/u1-shots/scai-chat-dock/",
+      "path: src/",
+    ),
+  };
+  assert.match(
+    validateSourceConfidentiality(unsafe, assetSelector).join("\n"),
+    /Chat-Dock proof may upload only its sanitized screenshot directory/,
+  );
 });
 
 test("Windows ARM smoke preserves the clang-cl exception flag", () => {

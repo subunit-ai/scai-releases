@@ -26,8 +26,8 @@ export function validateSourceConfidentiality(workflows, assetSelector) {
 
   const pr = workflows["pr-check.yml"] ?? "";
   for (const label of [
-    "npm-ci", "cli-drift", "release-meta", "plugin-bundles", "no-demo-data",
-    "frontend-build", "support-diagnostics-proof", "meet-visual-proof", "cargo-test", "native-cargo-check",
+    "npm-ci", "frontend-unit-tests", "cli-drift", "release-meta", "plugin-bundles", "no-demo-data",
+    "frontend-build", "support-diagnostics-proof", "meet-visual-proof", "chat-dock-visual-proof", "cargo-test", "native-cargo-check",
     "native-product-binary", "native-pkce-tests", "native-keyring-smoke",
     "trace-fmt", "trace-core-check", "trace-core-clippy", "trace-core-test",
     "trace-native-check", "trace-native-clippy", "trace-native-test", "trace-native-build",
@@ -35,10 +35,19 @@ export function validateSourceConfidentiality(workflows, assetSelector) {
     require(pr.includes(`run-confidential.sh\" ${label}`), `pr-check.yml: ${label} must suppress private output`);
   }
   require(!/git clone[^\n]*--branch/.test(pr), "pr-check.yml: a mutable branch clone cannot prove an exact source SHA");
+  require(
+    pr.indexOf("uses: oven-sh/setup-bun@") >= 0
+      && pr.indexOf("uses: oven-sh/setup-bun@") < pr.indexOf("name: Quellcode auschecken (privates Repo, read-only Deploy-Key)"),
+    "pr-check.yml: Bun setup must complete before private source checkout",
+  );
   require((pr.match(/git -C src fetch --depth 1 origin "\$SRC_REF"/g) ?? []).length === 2, "pr-check.yml: both jobs must fetch the requested immutable source ref");
   require((pr.match(/echo "::error::Checkout-Drift: erwartet \$SRC_REF/g) ?? []).length === 2, "pr-check.yml: both jobs must reject exact-SHA checkout drift");
   require(!/^\s+path:\s*src\/?\s*$/m.test(pr), "pr-check.yml: the private source tree must never be uploaded as an artifact");
   require(!/^\s+path:\s*trace-src\/?\s*$/m.test(pr), "pr-check.yml: the private Trace source tree must never be uploaded as an artifact");
+  require(
+    /name: Chat-Dock-Proof-Screenshots sichern[\s\S]{0,450}?path: ~\/\.cache\/u1-shots\/scai-chat-dock\//.test(pr),
+    "pr-check.yml: Chat-Dock proof may upload only its sanitized screenshot directory",
+  );
   require(
     (pr.match(/run-confidential\.sh" native-keyring-smoke/g) ?? []).length === 2
       && (pr.match(/--example a1_keyring_smoke/g) ?? []).length === 2,

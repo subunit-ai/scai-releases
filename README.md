@@ -77,10 +77,12 @@ veröffentlicht keine privaten Befehlsausgaben, Evidence- oder Build-Artefakte.
 Die temporären Source-Checkouts werden vor den Post-Actions entfernt. Ohne die
 vier Credentials stoppt der Checkout fail-closed.
 
-Die vom PR-Check hochgeladenen Meet-Screenshots zeigen ausschließlich die gebaute
-Produktoberfläche aus dem Test-Harness; sie enthalten weder den privaten Source-Tree
-noch Build-Logs. GitHubs automatisch angebotene Source-Archive eines Releases
-enthalten nur dieses öffentliche Release-Repo.
+Die vom PR-Check hochgeladenen Meet- und Chat-Dock-Screenshots zeigen ausschließlich
+die gebaute Produktoberfläche aus deterministischen Test-Harnessen; sie enthalten
+weder den privaten Source-Tree noch Build-Logs. Der Chat-Dock-Beweis deckt Desktop,
+Mobile, Browser, die freigegebene macOS-Lane und die gesperrte Windows-Pilot-Lane ab.
+GitHubs automatisch angebotene Source-Archive eines Releases enthalten nur dieses
+öffentliche Release-Repo.
 
 ```bash
 node scripts/verify-fleet-manifest.mjs
