@@ -23,24 +23,32 @@ Regeln:
 3. Release-Workflows nur mit verifizierten vollständigen Quell-SHAs auslösen.
 4. Den Stand nach Änderungen im Handoff `subunit-scai.md` dokumentieren.
 
-## Aktueller Fleet-Status (2026-08-31)
+## Aktueller Fleet-Status (2026-09-02)
 
 Der historische `scai-candidate-2026-08-24.1` pinnt SCAI `0.126.0` und ist über
 [PR #29](https://github.com/subunit-ai/scai-releases/pull/29), Merge
 `291ea267b57585db5c4bee9c458617faf1d426a3`, als `superseded` markiert. Seine Evidenz bleibt
 auditierbar, darf aber nicht auf die aktuelle Produktlinie übertragen werden.
 
-SCAI `0.138.0` ist der aktuelle öffentliche technische Desktop-Release. Er bindet den Quell-SHA
-`14eacdf5cccc726f19ba58553da103580a541244` an die Fleet-ID
-`scai-candidate-2026-08-31.7`; Build-Lauf
-[`33436306279`](https://github.com/subunit-ai/scai-releases/actions/runs/33436306279) ist über die
-vollständige Matrix macOS Apple Silicon/Intel, Windows ARM64/x64, Linux x64 und den abschließenden
-Signatur-, SBOM- und Provenance-Job grün. Der öffentliche Release enthält 21 Artefakte,
-20 deckungsgleiche `SHA256SUMS`-Einträge, 11 Updater-Ziele und sechs gültige
-Updater-Signaturen.
+SCAI `0.139.0` ist weiterhin der aktuelle öffentliche technische Desktop-Release. Der neueste
+reproduzierbare Stand `0.146.0` bleibt dagegen bewusst ein **unveröffentlichter Draft**. Er bindet
+Source `96971a1784397daaae8b7dfcf20b9c4cae98b9d2` an
+`scai-candidate-2026-09-02.7`. Build
+[`33580984759`](https://github.com/subunit-ai/scai-releases/actions/runs/33580984759) ist über
+macOS Apple Silicon/Intel, Windows ARM64/x64, Linux x64 und den abschließenden Signatur-, SBOM-
+und Provenance-Job vollständig grün. Der Draft enthält 26 allowlistete Assets, 25 mit GitHubs
+Asset-Digests deckungsgleiche `SHA256SUMS`-Einträge, fünf aus den gepackten Produkten erzeugte
+Runtime-Evidenzen, vier Signing-Evidenzen und elf Updater-Ziele.
 
-Die Veröffentlichung läuft bewusst unter `legacy-v0.125`: macOS ist Apple-Development-signiert,
-aber nicht notarisiert/Gatekeeper-freigegeben; Windows besitzt noch kein Authenticode-Zertifikat.
-Damit ist `0.138.0` ein funktionaler Desktop-Release, aber kein `market-ready`-Nachweis und kein
-Ersatz für Legal/DPO, Operations oder R0–R3. Die überholten beziehungsweise fehlerhaften Stände
-`0.131.0` bis `0.137.0` bleiben als nicht öffentliche Drafts auditierbar; nichts wurde gelöscht.
+Fleet-Lauf [`33580986805`](https://github.com/subunit-ai/scai-releases/actions/runs/33580986805)
+bestand im zweiten Versuch die exakten Main-SHAs von u1-chat, Atlas, subunit-auth und Echo. Der
+erste Atlas-Versuch bleibt als fehlgeschlagener isolierter Testlauf auditierbar. Das Manifest
+`fleet/manifests/scai-candidate-2026-09-02.7.json` bleibt fail-closed auf `status: candidate`:
+A1–A6 sind Kandidatenbelege, A7/A8 sowie R0–R3 bleiben offen.
+
+Die technische Distribution nutzt bewusst `legacy-v0.125`: macOS ist
+Apple-Development-signiert, aber nicht notarisiert/Gatekeeper-freigegeben; Windows besitzt noch
+kein Authenticode-Zertifikat. Signing folgt nach dem Handelsregisterauszug. Deshalb ist
+`0.146.0` ein reproduzierbarer G1-Fleet-Candidate, aber kein `market-ready`-Nachweis und kein
+Ersatz für Legal/DPO, unabhängigen Operations-/Recovery-/Rollback-Judge oder drei vergleichbare
+zahlende Kunden. Kein privater Quellcode wurde veröffentlicht.
