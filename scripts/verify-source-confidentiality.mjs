@@ -75,6 +75,14 @@ export function validateSourceConfidentiality(workflows, assetSelector) {
     /if: failure\(\) &&[^\n]*inputs\.diagnostic_public_key_base64 != ''[\s\S]{0,350}?path: \$\{\{ runner\.temp \}\}\/scai-pages-diagnostic\.json/.test(pr),
     "pr-check.yml: Pages diagnostics may upload only a one-time-key encrypted envelope",
   );
+  require(
+    /if \[ -f scripts\/verify-sentinel-forecast\.mjs \]; then[\s\S]{0,220}?sentinel_forecast=true[\s\S]{0,220}?sentinel_forecast=false/.test(pr),
+    "pr-check.yml: newer Sentinel proofs must be detected before older source refs are gated",
+  );
+  require(
+    /name: Sentinel Forecast Command Desk beweisen[\s\S]{0,180}?if: steps\.source_proofs\.outputs\.sentinel_forecast == 'true'/.test(pr),
+    "pr-check.yml: Sentinel forecast proof must stay strict when its source harness exists",
+  );
 
   const release = workflows["build-all.yml"] ?? "";
   require(!/uses:\s*tauri-apps\/tauri-action@/.test(release), "build-all.yml: tauri-action may expose private compiler output");
