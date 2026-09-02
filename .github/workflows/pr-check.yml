@@ -159,6 +159,11 @@ jobs:
           else
             echo "sentinel_forecast=false" >> "$GITHUB_OUTPUT"
           fi
+          if [ -f scripts/verify-sentinel-routing.mjs ]; then
+            echo "sentinel_routing=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "sentinel_routing=false" >> "$GITHUB_OUTPUT"
+          fi
 
       - name: Datenschutz-Diagnosepaket visuell und interaktiv beweisen
         id: support_diagnostics_proof
@@ -244,6 +249,22 @@ jobs:
         with:
           name: scai-sentinel-forecast-proof-${{ github.run_id }}
           path: ~/.cache/u1-shots/sentinel-forecast/
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Sentinel Lead Ownership und SLA Routing beweisen
+        id: routing_proof
+        if: steps.source_proofs.outputs.sentinel_routing == 'true'
+        working-directory: src
+        shell: bash
+        run: bash "$GITHUB_WORKSPACE/gate/scripts/run-confidential.sh" sentinel-routing-proof node scripts/verify-sentinel-routing.mjs
+
+      - name: Sentinel-Routing-Screenshots sichern
+        if: always() && steps.routing_proof.outcome != 'skipped'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4, immutable
+        with:
+          name: scai-sentinel-routing-proof-${{ github.run_id }}
+          path: ~/.cache/u1-shots/sentinel-routing/
           if-no-files-found: error
           retention-days: 14
 
