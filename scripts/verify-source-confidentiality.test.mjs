@@ -122,6 +122,20 @@ test("Chat-Dock proof cannot upload the private source tree", () => {
   );
 });
 
+test("Sentinel CRM proof cannot upload the private source tree", () => {
+  const unsafe = {
+    ...fixtures,
+    "pr-check.yml": fixtures["pr-check.yml"].replace(
+      "path: ~/.cache/u1-shots/sentinel-crm-2026/",
+      "path: src/",
+    ),
+  };
+  assert.match(
+    validateSourceConfidentiality(unsafe, assetSelector).join("\n"),
+    /Sentinel CRM proof may upload only its sanitized screenshot directory/,
+  );
+});
+
 test("Chat-Dock diagnostics cannot upload plaintext or a source-tree path", () => {
   const unsafe = {
     ...fixtures,

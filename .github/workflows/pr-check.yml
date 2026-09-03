@@ -170,6 +170,11 @@ jobs:
           else
             echo "sentinel_forecast=false" >> "$GITHUB_OUTPUT"
           fi
+          if [ -f scripts/verify-sentinel-crm-2026.mjs ]; then
+            echo "sentinel_crm=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "sentinel_crm=false" >> "$GITHUB_OUTPUT"
+          fi
           if [ -f scripts/verify-sentinel-routing.mjs ]; then
             echo "sentinel_routing=true" >> "$GITHUB_OUTPUT"
           else
@@ -279,6 +284,22 @@ jobs:
           path: ${{ runner.temp }}/scai-chat-dock-diagnostic.json
           if-no-files-found: error
           retention-days: 1
+
+      - name: Sentinel CRM 2026 visuell und interaktiv beweisen
+        id: sentinel_crm_proof
+        if: steps.source_proofs.outputs.sentinel_crm == 'true'
+        working-directory: src
+        shell: bash
+        run: bash "$GITHUB_WORKSPACE/gate/scripts/run-confidential.sh" sentinel-crm-proof npm run proof:sentinel-crm
+
+      - name: Sentinel-CRM-Proof-Screenshots sichern
+        if: always() && steps.sentinel_crm_proof.outcome != 'skipped'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4, immutable
+        with:
+          name: scai-sentinel-crm-proof-${{ github.run_id }}
+          path: ~/.cache/u1-shots/sentinel-crm-2026/
+          if-no-files-found: error
+          retention-days: 14
 
       - name: Sentinel Forecast Command Desk beweisen
         id: forecast_proof
