@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, copyFileSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import test from "node:test";
@@ -87,8 +87,12 @@ function linuxBundle(home, { binaryName = "subunit-scai", product = productScrip
   const built = spawnSync("dpkg-deb", ["--build", staging, deb], { encoding: "utf8" });
   assert.equal(built.status, 0, built.stderr);
   if (extraDeb) {
-    spawnSync("dpkg-deb", ["--build", staging, join(bundleRoot, "deb", `SCAI_${VERSION}_amd64.zweites.deb`)]);
+    // Kopieren statt ein zweites Mal bauen: die Fixture-Aussage ist "zwei .deb im
+    // Bundle-Root", die darf nicht davon abhaengen, ob dpkg-deb ein zweites Mal laeuft.
+    copyFileSync(deb, join(bundleRoot, "deb", `SCAI_${VERSION}_amd64.kopie.deb`));
   }
+  const debs = readdirSync(join(bundleRoot, "deb")).filter((name) => name.endsWith(".deb"));
+  assert.equal(debs.length, extraDeb ? 2 : 1, `Fixture unbrauchbar: ${debs.length} .deb im Bundle-Root`);
   writeExecutable(join(bundleRoot, "appimage", `SCAI_${VERSION}_amd64.AppImage`), product);
   return bundleRoot;
 }
