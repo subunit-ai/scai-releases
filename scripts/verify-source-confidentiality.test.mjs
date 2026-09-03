@@ -136,6 +136,20 @@ test("Sentinel CRM proof cannot upload the private source tree", () => {
   );
 });
 
+test("Sentinel CRM diagnostics cannot upload plaintext or a source-tree path", () => {
+  const unsafe = {
+    ...fixtures,
+    "pr-check.yml": fixtures["pr-check.yml"].replace(
+      "path: ${{ runner.temp }}/scai-sentinel-crm-diagnostic.json",
+      "path: src/private-sentinel-crm.log",
+    ),
+  };
+  assert.match(
+    validateSourceConfidentiality(unsafe, assetSelector).join("\n"),
+    /Sentinel CRM diagnostics may upload only a one-time-key encrypted envelope/,
+  );
+});
+
 test("Chat-Dock diagnostics cannot upload plaintext or a source-tree path", () => {
   const unsafe = {
     ...fixtures,
