@@ -27,7 +27,7 @@ export function validateSourceConfidentiality(workflows, assetSelector) {
   const pr = workflows["pr-check.yml"] ?? "";
   for (const label of [
     "npm-ci", "frontend-unit-tests", "cli-drift", "release-meta", "plugin-bundles", "no-demo-data",
-    "frontend-build", "support-diagnostics-proof", "meet-visual-proof", "chat-dock-visual-proof", "cargo-test", "native-cargo-check",
+    "frontend-build", "support-diagnostics-proof", "meet-visual-proof", "chat-dock-visual-proof", "sentinel-crm-proof", "cargo-test", "native-cargo-check",
     "native-product-binary", "native-pkce-tests", "native-keyring-smoke",
     "trace-fmt", "trace-core-check", "trace-core-clippy", "trace-core-test",
     "trace-native-check", "trace-native-clippy", "trace-native-test", "trace-native-build",
@@ -47,6 +47,10 @@ export function validateSourceConfidentiality(workflows, assetSelector) {
   require(
     /name: Chat-Dock-Proof-Screenshots sichern[\s\S]{0,450}?path: ~\/\.cache\/u1-shots\/scai-chat-dock\//.test(pr),
     "pr-check.yml: Chat-Dock proof may upload only its sanitized screenshot directory",
+  );
+  require(
+    /name: Sentinel-CRM-Proof-Screenshots sichern[\s\S]{0,450}?path: ~\/\.cache\/u1-shots\/sentinel-crm-2026\//.test(pr),
+    "pr-check.yml: Sentinel CRM proof may upload only its sanitized screenshot directory",
   );
   require(
     (pr.match(/run-confidential\.sh" native-keyring-smoke/g) ?? []).length === 2
@@ -91,6 +95,14 @@ export function validateSourceConfidentiality(workflows, assetSelector) {
   require(
     /if \[ -f scripts\/verify-sentinel-forecast\.mjs \]; then[\s\S]{0,220}?sentinel_forecast=true[\s\S]{0,220}?sentinel_forecast=false/.test(pr),
     "pr-check.yml: newer Sentinel proofs must be detected before older source refs are gated",
+  );
+  require(
+    /if \[ -f scripts\/verify-sentinel-crm-2026\.mjs \]; then[\s\S]{0,220}?sentinel_crm=true[\s\S]{0,220}?sentinel_crm=false/.test(pr),
+    "pr-check.yml: Sentinel CRM proof must be detected before older source refs are gated",
+  );
+  require(
+    /name: Sentinel CRM 2026 visuell und interaktiv beweisen[\s\S]{0,180}?if: steps\.source_proofs\.outputs\.sentinel_crm == 'true'/.test(pr),
+    "pr-check.yml: Sentinel CRM proof must stay strict when its source harness exists",
   );
   require(
     /name: Sentinel Forecast Command Desk beweisen[\s\S]{0,180}?if: steps\.source_proofs\.outputs\.sentinel_forecast == 'true'/.test(pr),
