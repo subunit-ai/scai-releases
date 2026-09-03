@@ -20,14 +20,27 @@ printf '%s' "$source_sha" | grep -Eq '^[0-9a-f]{40}$'
 test -n "${RUNNER_TEMP:-}"
 mkdir -p "$(dirname "$output")"
 
+# Aufrufer nutzen diese Funktion ausschliesslich in einer Kommandosubstitution
+# ("x=$(find_exactly_one ...)"). Darin greift set -e NICHT: ein fehlschlagendes
+# `test` beendet die Funktion nicht, sie lief weiter und endete mit dem Status
+# des letzten Befehls - also 0. Die Zusicherungen waren damit tot und die
+# Schiene nahm bei mehreren Treffern stillschweigend den ersten. Der Ausstieg
+# muss deshalb ein explizites `return` sein, das den Status der Substitution
+# setzt. Kein `shopt -s inherit_errexit`: die Schiene muss unter Bash 3.2 laufen.
 find_exactly_one() {
   root=$1
   kind=$2
   pattern=$3
-  candidate=$(find "$root" -type "$kind" -name "$pattern" -print -quit)
   count=$(find "$root" -type "$kind" -name "$pattern" -print | awk 'END { print NR + 0 }')
-  test "$count" -eq 1
-  test -n "$candidate"
+  if [ "$count" -ne 1 ]; then
+    echo "run-package-smoke: erwartet genau ein '$pattern' unter $root, gefunden $count" >&2
+    return 1
+  fi
+  candidate=$(find "$root" -type "$kind" -name "$pattern" -print -quit)
+  if [ -z "$candidate" ]; then
+    echo "run-package-smoke: '$pattern' unter $root nicht auflösbar" >&2
+    return 1
+  fi
   printf '%s\n' "$candidate"
 }
 

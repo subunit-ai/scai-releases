@@ -71,6 +71,52 @@ test("rejects a malformed version or source SHA", () => {
   rmSync(home, { recursive: true, force: true });
 });
 
+// ── find_exactly_one: die Zusicherung, die in der Substitution starb ────────────
+//
+// Die Funktion wird ausschliesslich als "x=$(find_exactly_one ...)" benutzt. In
+// einer Kommandosubstitution greift set -e nicht: ein fehlschlagendes `test`
+// beendet die Funktion nicht, sie lief weiter bis zum abschliessenden printf und
+// endete mit 0. Diese Tests schneiden die Funktion aus dem ECHTEN Skript und
+// pruefen genau diesen Aufrufweg - sie laufen auf jeder Plattform.
+
+function callFindExactlyOne(root, pattern) {
+  const source = readFileSync(SMOKE, "utf8");
+  const start = source.indexOf("find_exactly_one() {");
+  assert.notEqual(start, -1, "find_exactly_one nicht im Skript gefunden");
+  const end = source.indexOf("\n}\n", start);
+  assert.notEqual(end, -1, "Ende von find_exactly_one nicht gefunden");
+  const fn = source.slice(start, end + 3);
+  const script = ["set -euo pipefail", fn, `hit=$(find_exactly_one "${root}" f '${pattern}')`, 'echo "DURCHGERUTSCHT:$hit"', ""].join("\n");
+  return spawnSync("bash", ["-c", script], { encoding: "utf8" });
+}
+
+test("find_exactly_one hands back the single match", () => {
+  const home = workspace();
+  writeFileSync(join(home, "SCAI_0.139.0_amd64.deb"), "paket");
+  const result = callFindExactlyOne(home, "*.deb");
+  assert.equal(result.status, 0, result.stderr);
+  assert.match(result.stdout, /DURCHGERUTSCHT:.*SCAI_0\.139\.0_amd64\.deb/);
+  rmSync(home, { recursive: true, force: true });
+});
+
+test("find_exactly_one aborts the caller instead of silently taking the first of several", () => {
+  const home = workspace();
+  writeFileSync(join(home, "erstes.deb"), "paket");
+  writeFileSync(join(home, "zweites.deb"), "paket");
+  const result = callFindExactlyOne(home, "*.deb");
+  assert.notEqual(result.status, 0, `hat zwei Treffer akzeptiert: ${result.stdout}`);
+  assert.doesNotMatch(result.stdout, /DURCHGERUTSCHT/);
+  rmSync(home, { recursive: true, force: true });
+});
+
+test("find_exactly_one aborts the caller when nothing matches", () => {
+  const home = workspace();
+  const result = callFindExactlyOne(home, "*.deb");
+  assert.notEqual(result.status, 0, `hat null Treffer akzeptiert: ${result.stdout}`);
+  assert.doesNotMatch(result.stdout, /DURCHGERUTSCHT/);
+  rmSync(home, { recursive: true, force: true });
+});
+
 // ── Linux-Schiene: .deb + AppImage ──────────────────────────────────────────────
 
 function linuxBundle(home, { binaryName = "subunit-scai", product = productScript(), extraDeb = false } = {}) {
