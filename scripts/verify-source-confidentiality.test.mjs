@@ -150,6 +150,68 @@ test("Sentinel CRM diagnostics cannot upload plaintext or a source-tree path", (
   );
 });
 
+test("Revenue harnesses cannot be partially present or bypass confidential execution", () => {
+  const partialAllowed = {
+    ...fixtures,
+    "pr-check.yml": fixtures["pr-check.yml"].replace(
+      `            echo "::error::Revenue-Browser-Proof ist unvollständig; Billing- und Offers-Harness müssen gemeinsam vorliegen."
+            exit 1`,
+      '            echo "revenue_browser=false" >> "$GITHUB_OUTPUT"',
+    ),
+  };
+  assert.match(
+    validateSourceConfidentiality(partialAllowed, assetSelector).join("\n"),
+    /partial Revenue harness availability must fail closed/,
+  );
+
+  const publicHarness = {
+    ...fixtures,
+    "pr-check.yml": fixtures["pr-check.yml"].replace("billing-production-proof", "billing-public-proof"),
+  };
+  assert.match(
+    validateSourceConfidentiality(publicHarness, assetSelector).join("\n"),
+    /billing-production-proof must suppress private output/,
+  );
+});
+
+test("Revenue screenshots can upload only after closed sanitization", () => {
+  const rawUpload = {
+    ...fixtures,
+    "pr-check.yml": fixtures["pr-check.yml"].replace(
+      "path: ${{ runner.temp }}/scai-revenue-browser-proof/",
+      "path: ${{ runner.temp }}/scai-revenue-source-shots/",
+    ),
+  };
+  const errors = validateSourceConfidentiality(rawUpload, assetSelector).join("\n");
+  assert.match(errors, /raw Revenue source proof output must never be uploaded/);
+  assert.match(errors, /may upload only its sanitized fixture screenshot directory/);
+
+  const noSanitizer = {
+    ...fixtures,
+    "pr-check.yml": fixtures["pr-check.yml"].replace(
+      "steps.revenue_artifacts.outcome == 'success'",
+      "steps.offers_revenue_proof.outcome == 'success'",
+    ),
+  };
+  assert.match(
+    validateSourceConfidentiality(noSanitizer, assetSelector).join("\n"),
+    /may upload only its sanitized fixture screenshot directory/,
+  );
+});
+
+test("Revenue diagnostics cannot upload plaintext or a source-tree path", () => {
+  for (const [safePath, unsafePath, expected] of [
+    ["${{ runner.temp }}/scai-revenue-billing-diagnostic.json", "src/private-billing.log", /Billing Revenue diagnostics/],
+    ["${{ runner.temp }}/scai-revenue-offers-diagnostic.json", "src/private-offers.log", /Offers Revenue diagnostics/],
+  ]) {
+    const unsafe = {
+      ...fixtures,
+      "pr-check.yml": fixtures["pr-check.yml"].replace(`path: ${safePath}`, `path: ${unsafePath}`),
+    };
+    assert.match(validateSourceConfidentiality(unsafe, assetSelector).join("\n"), expected);
+  }
+});
+
 test("Chat-Dock diagnostics cannot upload plaintext or a source-tree path", () => {
   const unsafe = {
     ...fixtures,

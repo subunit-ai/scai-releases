@@ -29,6 +29,7 @@ export const EXPECTED_RELEASE_CONTRACT_PATHS = [
   "scripts/verify-fleet-source-workflow.mjs",
   "scripts/verify-market-evidence-binding.mjs",
   "scripts/verify-readiness-evidence.mjs",
+  "scripts/verify-revenue-proof-artifacts.mjs",
   "scripts/verify-release-workflow.mjs",
   "scripts/verify-runtime-evidence.mjs",
   "scripts/verify-source-confidentiality.mjs",

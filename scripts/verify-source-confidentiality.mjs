@@ -28,6 +28,7 @@ export function validateSourceConfidentiality(workflows, assetSelector) {
   for (const label of [
     "npm-ci", "frontend-unit-tests", "cli-drift", "release-meta", "plugin-bundles", "no-demo-data",
     "frontend-build", "support-diagnostics-proof", "meet-visual-proof", "chat-dock-visual-proof", "sentinel-crm-proof", "cargo-test", "native-cargo-check",
+    "revenue-proof-dependencies", "revenue-proof-esbuild", "billing-production-proof", "offers-v01-proof", "revenue-proof-artifacts",
     "native-product-binary", "native-pkce-tests", "native-keyring-smoke",
     "trace-fmt", "trace-core-check", "trace-core-clippy", "trace-core-test",
     "trace-native-check", "trace-native-clippy", "trace-native-test", "trace-native-build",
@@ -44,6 +45,7 @@ export function validateSourceConfidentiality(workflows, assetSelector) {
   require((pr.match(/echo "::error::Checkout-Drift: erwartet \$SRC_REF/g) ?? []).length === 2, "pr-check.yml: both jobs must reject exact-SHA checkout drift");
   require(!/^\s+path:\s*src\/?\s*$/m.test(pr), "pr-check.yml: the private source tree must never be uploaded as an artifact");
   require(!/^\s+path:\s*trace-src\/?\s*$/m.test(pr), "pr-check.yml: the private Trace source tree must never be uploaded as an artifact");
+  require(!/^\s+path:.*scai-revenue-source-shots/m.test(pr), "pr-check.yml: raw Revenue source proof output must never be uploaded as an artifact");
   require(
     /name: Chat-Dock-Proof-Screenshots sichern[\s\S]{0,450}?path: ~\/\.cache\/u1-shots\/scai-chat-dock\//.test(pr),
     "pr-check.yml: Chat-Dock proof may upload only its sanitized screenshot directory",
@@ -111,6 +113,48 @@ export function validateSourceConfidentiality(workflows, assetSelector) {
   require(
     /name: Sentinel Forecast Command Desk beweisen[\s\S]{0,180}?if: steps\.source_proofs\.outputs\.sentinel_forecast == 'true'/.test(pr),
     "pr-check.yml: Sentinel forecast proof must stay strict when its source harness exists",
+  );
+  for (const contract of [
+    "billing_revenue=false",
+    "offers_revenue=false",
+    "[ ! -f scripts/verify-billing-production.mjs ] || billing_revenue=true",
+    "[ ! -f scripts/verify-offers-v01.mjs ] || offers_revenue=true",
+    "echo \"revenue_browser=true\" >> \"$GITHUB_OUTPUT\"",
+    "echo \"revenue_browser=false\" >> \"$GITHUB_OUTPUT\"",
+  ]) {
+    require(pr.includes(contract), `pr-check.yml: Revenue proof detection must retain: ${contract}`);
+  }
+  require(
+    /if \[ "\$billing_revenue" = true \] && \[ "\$offers_revenue" = true \]; then[\s\S]{0,180}?elif \[ "\$billing_revenue" = false \] && \[ "\$offers_revenue" = false \]; then[\s\S]{0,260}?else[\s\S]{0,220}?exit 1/.test(pr),
+    "pr-check.yml: partial Revenue harness availability must fail closed",
+  );
+  require(
+    /name: Revenue-Browser-Abhängigkeiten prüfen[\s\S]{0,500}?if: steps\.source_proofs\.outputs\.revenue_browser == 'true'[\s\S]{0,500}?run-confidential\.sh" revenue-proof-dependencies npx --no-install playwright --version[\s\S]{0,180}?run-confidential\.sh" revenue-proof-esbuild npx --no-install esbuild --version/.test(pr),
+    "pr-check.yml: Revenue browser dependencies must be installed and resolved without an implicit npx download",
+  );
+  require(
+    /name: Billing produktionsnah visuell und interaktiv beweisen[\s\S]{0,700}?if: always\(\) && steps\.source_proofs\.outputs\.revenue_browser == 'true' && steps\.revenue_proof_dependencies\.outcome == 'success'[\s\S]{0,700}?SCAI_BILLING_PROOF_DIR: \$\{\{ runner\.temp \}\}\/scai-revenue-source-shots\/billing[\s\S]{0,700}?run-confidential\.sh" billing-production-proof node scripts\/verify-billing-production\.mjs/.test(pr),
+    "pr-check.yml: Billing Revenue proof must run confidentially into its isolated fixture directory",
+  );
+  require(
+    /name: Angebote v0\.1 visuell und interaktiv beweisen[\s\S]{0,700}?if: always\(\) && steps\.source_proofs\.outputs\.revenue_browser == 'true' && steps\.revenue_proof_dependencies\.outcome == 'success'[\s\S]{0,700}?SCAI_OFFERS_PROOF_DIR: \$\{\{ runner\.temp \}\}\/scai-revenue-source-shots\/offers[\s\S]{0,700}?run-confidential\.sh" offers-v01-proof node scripts\/verify-offers-v01\.mjs/.test(pr),
+    "pr-check.yml: Offers Revenue proof must run confidentially into its isolated fixture directory",
+  );
+  require(
+    /name: Revenue-Fixture-Screenshots geschlossen prüfen[\s\S]{0,900}?if: always\(\) && steps\.billing_revenue_proof\.outcome == 'success' && steps\.offers_revenue_proof\.outcome == 'success'[\s\S]{0,900}?REVENUE_ARTIFACT_DIR: \$\{\{ runner\.temp \}\}\/scai-revenue-browser-proof[\s\S]{0,900}?run-confidential\.sh" revenue-proof-artifacts node "\$GITHUB_WORKSPACE\/gate\/scripts\/verify-revenue-proof-artifacts\.mjs" "\$BILLING_PROOF_DIR" "\$OFFERS_PROOF_DIR" "\$REVENUE_ARTIFACT_DIR"/.test(pr),
+    "pr-check.yml: Revenue screenshots must pass the public closed artifact sanitizer",
+  );
+  require(
+    /name: Revenue-Browser-Proof-Screenshots sichern[\s\S]{0,450}?if: always\(\) && steps\.revenue_artifacts\.outcome == 'success'[\s\S]{0,450}?path: \$\{\{ runner\.temp \}\}\/scai-revenue-browser-proof\//.test(pr),
+    "pr-check.yml: Revenue proof may upload only its sanitized fixture screenshot directory",
+  );
+  require(
+    /if: failure\(\) && steps\.billing_revenue_proof\.outcome == 'failure' && inputs\.diagnostic_public_key_base64 != ''[\s\S]{0,350}?path: \$\{\{ runner\.temp \}\}\/scai-revenue-billing-diagnostic\.json/.test(pr),
+    "pr-check.yml: Billing Revenue diagnostics may upload only a one-time-key encrypted envelope",
+  );
+  require(
+    /if: failure\(\) && steps\.offers_revenue_proof\.outcome == 'failure' && inputs\.diagnostic_public_key_base64 != ''[\s\S]{0,350}?path: \$\{\{ runner\.temp \}\}\/scai-revenue-offers-diagnostic\.json/.test(pr),
+    "pr-check.yml: Offers Revenue diagnostics may upload only a one-time-key encrypted envelope",
   );
 
   const release = workflows["build-all.yml"] ?? "";
