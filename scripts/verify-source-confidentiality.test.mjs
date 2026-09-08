@@ -8,7 +8,7 @@ import { validateSourceConfidentiality } from "./verify-source-confidentiality.m
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const fixtures = Object.fromEntries(
-  ["pr-check.yml", "build-all.yml", "windows-arm-smoke.yml"].map((name) => [
+  ["pr-check.yml", "build-all.yml", "windows-arm-smoke.yml", "auth-pr-check.yml"].map((name) => [
     name,
     readFileSync(join(ROOT, ".github/workflows", name), "utf8"),
   ]),
@@ -367,4 +367,30 @@ test("the ARM64 release lane cannot drop the triplet the smoke mirrors", () => {
     ),
   };
   assert.match(validateSourceConfidentiality(unsafe, assetSelector).join("\n"), /triplet the smoke mirrors/);
+});
+
+for (const label of ["auth-install", "auth-db-fixture", "auth-tests", "auth-build", "auth-deploy-gate"]) {
+  test(`Auth ${label} cannot expose private output`, () => {
+    const unsafe = { ...fixtures, "auth-pr-check.yml": fixtures["auth-pr-check.yml"].replace(`run-confidential.sh" ${label}`, `plain.sh" ${label}`) };
+    assert.match(validateSourceConfidentiality(unsafe, assetSelector).join("\n"), /must suppress private output/);
+  });
+}
+test("Auth diagnostic artifact cannot point at private source", () => {
+  const unsafe = { ...fixtures, "auth-pr-check.yml": fixtures["auth-pr-check.yml"].replace("path: ${{ runner.temp }}/auth-diagnostic.json", "path: private/subunit-auth") };
+  assert.match(validateSourceConfidentiality(unsafe, assetSelector).join("\n"), /encrypted diagnostic envelope/);
+});
+
+test("Auth PostgreSQL image cannot use a mutable tag", () => {
+  const unsafe = { ...fixtures, "auth-pr-check.yml": fixtures["auth-pr-check.yml"].replace(/postgres@sha256:[0-9a-f]{64}/, "postgres:16") };
+  assert.match(validateSourceConfidentiality(unsafe, assetSelector).join("\n"), /immutable digest/);
+});
+
+test("Auth full suite cannot become a partial test selection", () => {
+  const unsafe = { ...fixtures, "auth-pr-check.yml": fixtures["auth-pr-check.yml"].replace("bash scripts/ci/run-proof-suite.sh", "bun test test/one.test.ts") };
+  assert.match(validateSourceConfidentiality(unsafe, assetSelector).join("\n"), /partial test commands/);
+});
+test("Auth discovery keys require unconditional cleanup", () => {
+  const workflow = fixtures["auth-pr-check.yml"].replace('"$RUNNER_TEMP/auth-cutover-discovery-public.pem"\n', '\n');
+  const unsafe = { ...fixtures, "auth-pr-check.yml": workflow.replace('"$RUNNER_TEMP/auth-cutover-discovery-private.pem" "$RUNNER_TEMP/auth-cutover-discovery-public.pem"','') };
+  assert.match(validateSourceConfidentiality(unsafe, assetSelector).join("\n"), /unconditional cleanup/);
 });
