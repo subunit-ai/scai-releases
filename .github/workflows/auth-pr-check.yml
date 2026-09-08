@@ -13,6 +13,11 @@ on:
         description: "Vollstaendiger subunit-auth Commit-SHA"
         required: true
         type: string
+      diagnostic_public_key_base64:
+        description: "Optionaler einmaliger RSA-3072+-Public-Key im PEM-Base64-Format für verschlüsselte private Fehlerdiagnostik"
+        required: false
+        default: ""
+        type: string
 
 permissions:
   contents: read
@@ -26,7 +31,22 @@ jobs:
     name: subunit-auth consent, DSAR and boundary
     runs-on: ubuntu-24.04
     timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres@sha256:95206741a5b214807675e14165369d05b93a9cf692223b616d07cca227e74b0b # 16.14, immutable manifest
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
     env:
+      NODE_ENV: test
       SOURCE_SHA: ${{ inputs.source_sha }}
       DATABASE_URL: postgres://release-gate:release-gate@127.0.0.1:9/release-gate
       RESEND_API_KEY: release-gate-no-network
@@ -54,6 +74,7 @@ jobs:
             -out "$RUNNER_TEMP/jwt-private.pem" >/dev/null 2>&1
           openssl rsa -pubout -in "$RUNNER_TEMP/jwt-private.pem" \
             -out "$RUNNER_TEMP/jwt-public.pem" >/dev/null 2>&1
+          chmod 600 "$RUNNER_TEMP/jwt-private.pem" "$RUNNER_TEMP/jwt-public.pem"
           echo "JWT_PRIVATE_KEY_PATH=$RUNNER_TEMP/jwt-private.pem" >> "$GITHUB_ENV"
           echo "JWT_PUBLIC_KEY_PATH=$RUNNER_TEMP/jwt-public.pem" >> "$GITHUB_ENV"
       - name: subunit-auth exakt und read-only auschecken
@@ -63,16 +84,46 @@ jobs:
       - name: Abhaengigkeiten installieren
         working-directory: private/subunit-auth
         run: bash "$GITHUB_WORKSPACE/gate/scripts/run-confidential.sh" auth-install bun install --frozen-lockfile
+      - name: Isolierte Auth-PostgreSQL-Fixtures vorbereiten
+        working-directory: private/subunit-auth
+        shell: bash
+        env:
+          SCAI_ENCRYPTED_DIAGNOSTIC_PUBLIC_KEY_BASE64: ${{ inputs.diagnostic_public_key_base64 }}
+          SCAI_ENCRYPTED_DIAGNOSTIC_PATH: ${{ inputs.diagnostic_public_key_base64 != '' && format('{0}/auth-diagnostic.json', runner.temp) || '' }}
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y postgresql-client
+          openssl genpkey -algorithm ED25519 -out "$RUNNER_TEMP/auth-cutover-discovery-private.pem" >/dev/null 2>&1
+          openssl pkey -pubout -in "$RUNNER_TEMP/auth-cutover-discovery-private.pem" -out "$RUNNER_TEMP/auth-cutover-discovery-public.pem" >/dev/null 2>&1
+          chmod 600 "$RUNNER_TEMP/auth-cutover-discovery-private.pem" "$RUNNER_TEMP/auth-cutover-discovery-public.pem"
+          echo "AUTH_CUTOVER_DISCOVERY_PRIVATE_KEY_PATH=$RUNNER_TEMP/auth-cutover-discovery-private.pem" >> "$GITHUB_ENV"
+          echo "MOCO_CONNECTIONS_DISCOVERY_PUBLIC_KEY_PATH=$RUNNER_TEMP/auth-cutover-discovery-public.pem" >> "$GITHUB_ENV"
+          bash "$GITHUB_WORKSPACE/gate/scripts/run-confidential.sh" auth-db-fixture \
+            bash "$GITHUB_WORKSPACE/gate/scripts/setup-auth-ci-databases.sh" \
+            "$GITHUB_WORKSPACE/private/subunit-auth" "$GITHUB_ENV"
       - name: Auth-/Privacy-Suite und Bundle
         working-directory: private/subunit-auth
+        env:
+          SCAI_ENCRYPTED_DIAGNOSTIC_PUBLIC_KEY_BASE64: ${{ inputs.diagnostic_public_key_base64 }}
+          SCAI_ENCRYPTED_DIAGNOSTIC_PATH: ${{ inputs.diagnostic_public_key_base64 != '' && format('{0}/auth-diagnostic.json', runner.temp) || '' }}
         run: |
-          bash "$GITHUB_WORKSPACE/gate/scripts/run-confidential.sh" auth-tests bun test
+          set -euo pipefail
+          bash "$GITHUB_WORKSPACE/gate/scripts/run-confidential.sh" auth-tests bash scripts/ci/run-proof-suite.sh
           bash "$GITHUB_WORKSPACE/gate/scripts/run-confidential.sh" auth-build bun build src/server.ts --target bun --outdir "$RUNNER_TEMP/subunit-auth-build"
           bash "$GITHUB_WORKSPACE/gate/scripts/run-confidential.sh" auth-deploy-gate bash -n scripts/deploy.sh
+      - name: Verschluesselte Auth-Diagnostik sichern
+        if: failure() && inputs.diagnostic_public_key_base64 != ''
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4, immutable
+        with:
+          name: auth-encrypted-diagnostic-${{ inputs.source_sha }}
+          path: ${{ runner.temp }}/auth-diagnostic.json
+          if-no-files-found: error
+          retention-days: 1
       - name: Temporaeren privaten Checkout entfernen
         if: always()
         shell: bash
         run: rm -rf -- "$GITHUB_WORKSPACE/private/subunit-auth"
       - name: Ephemere JWT-Testschluessel entfernen
         if: always()
-        run: rm -f "$RUNNER_TEMP/jwt-private.pem" "$RUNNER_TEMP/jwt-public.pem"
+        run: rm -f "$RUNNER_TEMP/jwt-private.pem" "$RUNNER_TEMP/jwt-public.pem" "$RUNNER_TEMP/auth-cutover-discovery-private.pem" "$RUNNER_TEMP/auth-cutover-discovery-public.pem"

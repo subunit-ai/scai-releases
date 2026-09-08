@@ -187,6 +187,22 @@ export function validateSourceConfidentiality(workflows, assetSelector) {
     "pr-check.yml: Workgraph diagnostics may upload only a one-time-key encrypted envelope",
   );
 
+  const auth = workflows["auth-pr-check.yml"] ?? "";
+  require(/^\s+image: postgres@sha256:[0-9a-f]{64}(?:\s+#.*)?$/m.test(auth), "auth-pr-check.yml: PostgreSQL fixture image must use an immutable digest");
+  for (const label of ["auth-install", "auth-db-fixture", "auth-tests", "auth-build", "auth-deploy-gate"]) {
+    require(auth.includes(`run-confidential.sh" ${label}`), `auth-pr-check.yml: ${label} must suppress private output`);
+  }
+  require(auth.includes('scripts/checkout-private-source.sh subunit-auth') && auth.includes('"$SOURCE_SHA"'), "auth-pr-check.yml: private checkout must retain its exact source pin");
+  require(auth.includes('scripts/ci/run-proof-suite.sh'), "auth-pr-check.yml: all source proof files must use the private isolated suite runner");
+  require(auth.includes("SCAI_ENCRYPTED_DIAGNOSTIC_PUBLIC_KEY_BASE64") && auth.includes("SCAI_ENCRYPTED_DIAGNOSTIC_PATH"), "auth-pr-check.yml: private failures require optional one-time-key encryption");
+  require(auth.includes('run-confidential.sh" auth-tests bash scripts/ci/run-proof-suite.sh'), "auth-pr-check.yml: partial test commands cannot replace the full private runner");
+  require(auth.includes('scripts/setup-auth-ci-databases.sh'), "auth-pr-check.yml: isolated database setup is required");
+  require(auth.includes("if: failure() && inputs.diagnostic_public_key_base64 != ''"), "auth-pr-check.yml: diagnostic upload requires failure and an explicit public key");
+  const authCleanup = auth.slice(auth.indexOf("      - name: Ephemere JWT-Testschluessel entfernen"));
+  require(authCleanup.includes("if: always()") && ["jwt-private.pem", "jwt-public.pem", "auth-cutover-discovery-private.pem", "auth-cutover-discovery-public.pem"].every(file => authCleanup.includes(file)), "auth-pr-check.yml: both generated key families require unconditional cleanup");
+  const authArtifacts = [...auth.matchAll(/uses:\s*actions\/upload-artifact@[0-9a-f]{40}[^]*?(?=\n      - name:|$)/g)];
+  require(authArtifacts.length === 1 && /^\s+path: \$\{\{ runner.temp \}\}\/auth-diagnostic\.json$/m.test(authArtifacts[0]?.[0] ?? ""), "auth-pr-check.yml: artifacts must contain only the encrypted diagnostic envelope");
+
   const release = workflows["build-all.yml"] ?? "";
   require(!/uses:\s*tauri-apps\/tauri-action@/.test(release), "build-all.yml: tauri-action may expose private compiler output");
   require(release.includes('run-confidential.sh\" release-npm-ci'), "build-all.yml: npm install output must be suppressed");
@@ -215,7 +231,7 @@ export function validateSourceConfidentiality(workflows, assetSelector) {
 
 function loadWorkflows() {
   return Object.fromEntries(
-    ["pr-check.yml", "build-all.yml", "windows-arm-smoke.yml"].map((name) => [
+    ["pr-check.yml", "build-all.yml", "windows-arm-smoke.yml", "auth-pr-check.yml"].map((name) => [
       name,
       readFileSync(join(ROOT, ".github/workflows", name), "utf8"),
     ]),
