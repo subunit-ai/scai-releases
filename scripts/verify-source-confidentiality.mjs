@@ -32,6 +32,7 @@ export function validateSourceConfidentiality(workflows, assetSelector) {
     "native-product-binary", "native-pkce-tests", "native-keyring-smoke",
     "trace-fmt", "trace-core-check", "trace-core-clippy", "trace-core-test",
     "trace-native-check", "trace-native-clippy", "trace-native-test", "trace-native-build",
+    "trace-macos-app-package",
   ]) {
     require(pr.includes(`run-confidential.sh\" ${label}`), `pr-check.yml: ${label} must suppress private output`);
   }
@@ -90,6 +91,43 @@ export function validateSourceConfidentiality(workflows, assetSelector) {
   require(
     /if: failure\(\) && matrix\.label == 'windows-x64' && inputs\.diagnostic_public_key_base64 != ''[\s\S]{0,350}?path: \$\{\{ runner\.temp \}\}\/trace-windows-diagnostic\.json/.test(pr),
     "pr-check.yml: Trace Windows diagnostics may upload only a one-time-key encrypted envelope",
+  );
+  require(
+    pr.includes("trace_bundle_public_key_base64"),
+    "pr-check.yml: internal Trace bundles require an explicit one-time recipient key",
+  );
+  require(
+    /name: Verschlüsselten internen Trace-Mac-Bundle bereitstellen[\s\S]{0,500}?if: matrix\.label == 'macos-arm64' && inputs\.trace_bundle_public_key_base64 != ''[\s\S]{0,500}?path: \$\{\{ runner\.temp \}\}\/trace-host-macos-arm64-internal\.dmg\.envelope\.json/.test(pr),
+    "pr-check.yml: internal Trace bundle uploads must contain only the one-time-key encrypted envelope",
+  );
+  require(
+    pr.includes('node "$GITHUB_WORKSPACE/gate/scripts/encrypt-confidential-log.mjs"')
+      && pr.includes('rm -rf "$bundle_root" "$dmg"'),
+    "pr-check.yml: plaintext Trace bundles must be encrypted and removed before upload",
+  );
+  require(
+    pr.includes('customer_ready:false') && pr.includes('distribution_policy:"internal-signed-not-notarized"'),
+    "pr-check.yml: Apple-Development Trace artifacts must remain explicitly non-customer-ready",
+  );
+  const tracePrepackage = pr.indexOf("name: Trace-App ohne vertrauliche Codeidentität vorpaketieren");
+  const traceSigningImport = pr.indexOf("name: Interne macOS-Codeidentität für Trace importieren");
+  const traceSigning = pr.indexOf("name: Signierten Trace-App-Bundle bauen und einmalig verschlüsseln");
+  require(
+    tracePrepackage >= 0 && tracePrepackage < traceSigningImport && traceSigningImport < traceSigning,
+    "pr-check.yml: private Trace packaging must finish before signing secrets are imported",
+  );
+  require(
+    traceSigningImport < 0 || !pr.slice(traceSigningImport).includes("bash scripts/build-macos-app.sh"),
+    "pr-check.yml: no private Trace packaging script may execute after signing secrets are imported",
+  );
+  require(
+    pr.includes('test ! -L "$bundle_root/Trace Host.app"')
+      && pr.includes('test -z "$(find "$bundle_root/Trace Host.app" -type l -print -quit)"'),
+    "pr-check.yml: the prepackaged Trace app must reject symlinks before signing",
+  );
+  require(
+    !/^\s+path: .*trace-host.*\.dmg\s*$/m.test(pr),
+    "pr-check.yml: plaintext Trace DMGs must never be uploaded from the public workflow",
   );
   require(
     /if: failure\(\) &&[^\n]*inputs\.diagnostic_public_key_base64 != ''[\s\S]{0,350}?path: \$\{\{ runner\.temp \}\}\/scai-support-diagnostic\.json/.test(pr),

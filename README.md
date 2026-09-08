@@ -90,7 +90,7 @@ node --test scripts/verify-fleet-manifest.test.mjs
 node scripts/verify-release-workflow.mjs
 node --test scripts/verify-release-workflow.test.mjs scripts/merge-cyclonedx.test.mjs
 node scripts/verify-source-confidentiality.mjs
-node --test scripts/run-confidential.test.mjs scripts/validate-release-assets.test.mjs scripts/verify-source-confidentiality.test.mjs
+node --test scripts/run-confidential.test.mjs scripts/decrypt-confidential-envelope.test.mjs scripts/validate-release-assets.test.mjs scripts/verify-source-confidentiality.test.mjs
 node scripts/verify-fleet-source-workflow.mjs
 node --test scripts/checkout-private-source.test.mjs scripts/verify-fleet-source-workflow.test.mjs
 node scripts/verify-echo-pr-workflow.mjs
@@ -98,3 +98,16 @@ node --test scripts/verify-echo-pr-workflow.test.mjs
 node scripts/verify-readiness-evidence.mjs fleet/evidence/operations-template.json fleet/evidence/market-template.json
 node --test scripts/verify-market-evidence-binding.test.mjs
 ```
+
+Ein interner, Apple-signierter Trace-macOS-Pilotbundle kann im `pr-check.yml` ausschließlich für
+einen exakten `trace_ref` und einen einmaligen RSA-3072+-Empfängerschlüssel erzeugt werden. Der
+öffentliche Runner lädt nur den AES-256-GCM-/RSA-OAEP-verschlüsselten Umschlag für einen Tag hoch;
+DMG, Build-Logs und privater Source bleiben plaintext-frei. Lokal wird er so entschlüsselt:
+
+```bash
+node scripts/decrypt-confidential-envelope.mjs envelope.json trace-host.dmg private-key.pem
+```
+
+Dieser interne Bundle ist ausdrücklich **nicht kundentauglich**: Solange Developer ID,
+Notarisierung und Gatekeeper-Abnahme fehlen, dient er ausschließlich dem physischen TCC-/Capture-
+Canary auf unserem eigenen Mac.

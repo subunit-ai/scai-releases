@@ -77,6 +77,44 @@ test("private build outputs cannot enter a public Actions cache", () => {
   assert.match(validateSourceConfidentiality(unsafe, assetSelector).join("\n"), /private build outputs must not enter a public Actions cache/);
 });
 
+test("an internal Trace bundle can leave the public runner only as a keyed encrypted envelope", () => {
+  const plaintextUpload = {
+    ...fixtures,
+    "pr-check.yml": fixtures["pr-check.yml"].replace(
+      "path: ${{ runner.temp }}/trace-host-macos-arm64-internal.dmg.envelope.json",
+      "path: ${{ runner.temp }}/trace-host-macos-arm64-internal.dmg",
+    ),
+  };
+  assert.match(
+    validateSourceConfidentiality(plaintextUpload, assetSelector).join("\n"),
+    /encrypted envelope|plaintext Trace DMGs/,
+  );
+
+  const missingKeyGate = {
+    ...fixtures,
+    "pr-check.yml": fixtures["pr-check.yml"].replaceAll(
+      "inputs.trace_bundle_public_key_base64 != ''",
+      "always()",
+    ),
+  };
+  assert.match(
+    validateSourceConfidentiality(missingKeyGate, assetSelector).join("\n"),
+    /explicit one-time recipient key|encrypted envelope/,
+  );
+
+  const sourceAfterSecrets = {
+    ...fixtures,
+    "pr-check.yml": fixtures["pr-check.yml"].replace(
+      "name: Signierten Trace-App-Bundle bauen und einmalig verschlüsseln",
+      "name: Signierten Trace-App-Bundle bauen und einmalig verschlüsseln\n        run-private-after-import: bash scripts/build-macos-app.sh",
+    ),
+  };
+  assert.match(
+    validateSourceConfidentiality(sourceAfterSecrets, assetSelector).join("\n"),
+    /no private Trace packaging script may execute after signing secrets/,
+  );
+});
+
 test("Bun setup cannot run after the private source checkout", () => {
   const action = fixtures["pr-check.yml"].match(/\n      # Bun wird[\s\S]*?uses: oven-sh\/setup-bun@[0-9a-f]{40}[^\n]*\n/)?.[0];
   assert.ok(action);

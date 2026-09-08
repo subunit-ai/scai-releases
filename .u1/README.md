@@ -16,6 +16,10 @@ Linux-Release-Artefakte. Der private Quellcode bleibt in `subunit-scai`,
 `u1-chat`, `atlas`, `subunit-auth` und `echo`; Workflows greifen nur über je Repo
 getrennte read-only Deploy-Keys auf vollständige Kandidaten-SHAs zu.
 
+Der manuelle Trace-Pilotpfad darf zusätzlich einen intern signierten macOS-Bundle erzeugen, aber
+nur verschlüsselt auf einen einmaligen RSA-3072+-Empfängerschlüssel und mit eintägiger Retention.
+Das Artefakt bleibt bis Developer ID + Notarisierung ausdrücklich nicht kundenfreigegeben.
+
 Regeln:
 
 1. Kein Quellcode und keine Secrets in Logs oder Artefakte schreiben.
