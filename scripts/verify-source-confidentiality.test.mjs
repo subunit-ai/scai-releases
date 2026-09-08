@@ -226,6 +226,41 @@ test("Revenue screenshots can upload only after closed sanitization", () => {
   );
 });
 
+test("Workgraph harness remains optional, but runs confidentially and sanitizes all output when present", () => {
+  const undetected = {
+    ...fixtures,
+    "pr-check.yml": fixtures["pr-check.yml"].replace(
+      "if [ -f scripts/verify-workgraph-blackbox.mjs ]; then",
+      "if false; then",
+    ),
+  };
+  assert.match(validateSourceConfidentiality(undetected, assetSelector).join("\n"), /Workgraph proof must be optional/);
+
+  const publicHarness = {
+    ...fixtures,
+    "pr-check.yml": fixtures["pr-check.yml"].replace("workgraph-blackbox-proof", "workgraph-public-proof"),
+  };
+  assert.match(validateSourceConfidentiality(publicHarness, assetSelector).join("\n"), /workgraph-blackbox-proof must suppress private output/);
+
+  const noWorkgraphSanitizer = {
+    ...fixtures,
+    "pr-check.yml": fixtures["pr-check.yml"].replace(
+      'workgraph_args+=("$HOME/.cache/u1-shots/scai-workgraph-blackbox")',
+      "true",
+    ),
+  };
+  assert.match(validateSourceConfidentiality(noWorkgraphSanitizer, assetSelector).join("\n"), /Workgraph screenshots must pass/);
+
+  const rawUpload = {
+    ...fixtures,
+    "pr-check.yml": fixtures["pr-check.yml"].replace(
+      "path: ${{ runner.temp }}/scai-revenue-browser-proof/",
+      "path: ~/.cache/u1-shots/scai-workgraph-blackbox/",
+    ),
+  };
+  assert.match(validateSourceConfidentiality(rawUpload, assetSelector).join("\n"), /raw Workgraph source proof output/);
+});
+
 test("Revenue diagnostics cannot upload plaintext or a source-tree path", () => {
   for (const [safePath, unsafePath, expected] of [
     ["${{ runner.temp }}/scai-revenue-billing-diagnostic.json", "src/private-billing.log", /Billing Revenue diagnostics/],
@@ -237,6 +272,20 @@ test("Revenue diagnostics cannot upload plaintext or a source-tree path", () => 
     };
     assert.match(validateSourceConfidentiality(unsafe, assetSelector).join("\n"), expected);
   }
+});
+
+test("Workgraph diagnostics cannot upload plaintext or a source-tree path", () => {
+  const unsafe = {
+    ...fixtures,
+    "pr-check.yml": fixtures["pr-check.yml"].replace(
+      "path: ${{ runner.temp }}/scai-workgraph-blackbox-diagnostic.json",
+      "path: src/private-workgraph.log",
+    ),
+  };
+  assert.match(
+    validateSourceConfidentiality(unsafe, assetSelector).join("\n"),
+    /Workgraph diagnostics may upload only a one-time-key encrypted envelope/,
+  );
 });
 
 test("Chat-Dock diagnostics cannot upload plaintext or a source-tree path", () => {

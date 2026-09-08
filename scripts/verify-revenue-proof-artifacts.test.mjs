@@ -26,6 +26,22 @@ const REQUIRED = {
     ["offers-mobile-light.png", 390, 844],
     ["offers-mobile-dark.png", 390, 844],
   ],
+  workgraph: [
+    ...["desktop-hell", "desktop-dunkel"].flatMap((viewport) => [
+      "dialog-start",
+      "abschlusspruefung",
+      "retry",
+      "tageskarte",
+      "korrektur-fassung-2",
+    ].map((state) => [`${viewport}-${state}.png`, 1360, 900])),
+    ...["mobil-hell", "mobil-dunkel"].flatMap((viewport) => [
+      "dialog-start",
+      "abschlusspruefung",
+      "retry",
+      "tageskarte",
+      "korrektur-fassung-2",
+    ].map((state) => [`${viewport}-${state}.png`, 390, 844])),
+  ],
 };
 
 function chunk(type, data = Buffer.alloc(0)) {
@@ -66,13 +82,23 @@ function fixture() {
   const root = mkdtempSync(join(tmpdir(), "scai-revenue-proof-"));
   const billing = join(root, "billing");
   const offers = join(root, "offers");
+  const workgraph = join(root, "workgraph");
   const artifact = join(root, "artifact");
   mkdirSync(billing);
   mkdirSync(offers);
+  mkdirSync(workgraph);
   for (const [name, width, height] of REQUIRED.billing) writeFileSync(join(billing, name), png(width, height));
   for (const [name, width, height] of REQUIRED.offers) writeFileSync(join(offers, name), png(width, height));
-  return { root, billing, offers, artifact };
+  for (const [name, width, height] of REQUIRED.workgraph) writeFileSync(join(workgraph, name), png(width, height));
+  return { root, billing, offers, workgraph, artifact };
 }
+
+test("stages the exact twenty Workgraph screenshots with the Revenue proof", () => {
+  const paths = fixture();
+  const staged = verifyRevenueProofArtifacts(paths.billing, paths.offers, paths.artifact, paths.workgraph);
+  assert.equal(staged.length, 28);
+  assert.deepEqual(staged.filter((name) => REQUIRED.workgraph.some(([required]) => required === name)), REQUIRED.workgraph.map(([name]) => name).sort());
+});
 
 test("stages the eight required fixture screenshots and two optional billing screenshots", () => {
   const paths = fixture();
@@ -103,6 +129,30 @@ test("rejects missing and arbitrary extra artifacts", () => {
   assert.throws(
     () => verifyRevenueProofArtifacts(extra.billing, extra.offers, extra.artifact),
     /non-allowlisted artifact/,
+  );
+});
+
+test("fails closed on missing, extra, or dimensionally invalid Workgraph screenshots", () => {
+  const missing = fixture();
+  const first = REQUIRED.workgraph[0][0];
+  renameSync(join(missing.workgraph, first), join(missing.root, first));
+  assert.throws(
+    () => verifyRevenueProofArtifacts(missing.billing, missing.offers, missing.artifact, missing.workgraph),
+    new RegExp(`is missing: ${first}`),
+  );
+
+  const extra = fixture();
+  writeFileSync(join(extra.workgraph, "workgraph-private.log"), "private output");
+  assert.throws(
+    () => verifyRevenueProofArtifacts(extra.billing, extra.offers, extra.artifact, extra.workgraph),
+    /non-allowlisted artifact/,
+  );
+
+  const wrongWidth = fixture();
+  writeFileSync(join(wrongWidth.workgraph, REQUIRED.workgraph[10][0]), png(1360, 844));
+  assert.throws(
+    () => verifyRevenueProofArtifacts(wrongWidth.billing, wrongWidth.offers, wrongWidth.artifact, wrongWidth.workgraph),
+    /dimensions are invalid/,
   );
 });
 

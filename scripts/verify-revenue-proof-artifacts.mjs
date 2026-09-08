@@ -40,6 +40,21 @@ const OFFERS_SCREENSHOTS = new Map([
   ["offers-mobile-dark.png", { width: 390, minHeight: 600 }],
 ]);
 
+const WORKGRAPH_SCREENSHOTS = new Map(
+  [
+    ["desktop-hell", 1360],
+    ["desktop-dunkel", 1360],
+    ["mobil-hell", 390],
+    ["mobil-dunkel", 390],
+  ].flatMap(([viewport, width]) => [
+    "dialog-start",
+    "abschlusspruefung",
+    "retry",
+    "tageskarte",
+    "korrektur-fassung-2",
+  ].map((state) => [`${viewport}-${state}.png`, { width, minHeight: 600 }])),
+);
+
 function assertPlainDirectory(path, label) {
   const stat = lstatSync(path);
   if (stat.isSymbolicLink() || !stat.isDirectory()) {
@@ -132,16 +147,19 @@ function validateDirectory(path, required, optional = new Map()) {
   return [...names].sort();
 }
 
-export function verifyRevenueProofArtifacts(billingDir, offersDir, artifactDir) {
+export function verifyRevenueProofArtifacts(billingDir, offersDir, artifactDir, workgraphDir) {
   const billing = resolve(billingDir);
   const offers = resolve(offersDir);
   const destination = resolve(artifactDir);
-  if (billing === offers || billing === destination || offers === destination) {
+  const workgraph = workgraphDir === undefined ? undefined : resolve(workgraphDir);
+  const directories = [billing, offers, destination, ...(workgraph ? [workgraph] : [])];
+  if (new Set(directories).size !== directories.length) {
     throw new Error("proof input and artifact directories must be distinct");
   }
 
   const billingNames = validateDirectory(billing, BILLING_SCREENSHOTS, OPTIONAL_BILLING_SCREENSHOTS);
   const offersNames = validateDirectory(offers, OFFERS_SCREENSHOTS);
+  const workgraphNames = workgraph ? validateDirectory(workgraph, WORKGRAPH_SCREENSHOTS) : [];
 
   try {
     lstatSync(destination);
@@ -151,7 +169,11 @@ export function verifyRevenueProofArtifacts(billingDir, offersDir, artifactDir) 
   }
   mkdirSync(destination, { mode: 0o700 });
 
-  for (const [source, names] of [[billing, billingNames], [offers, offersNames]]) {
+  for (const [source, names] of [
+    [billing, billingNames],
+    [offers, offersNames],
+    ...(workgraph ? [[workgraph, workgraphNames]] : []),
+  ]) {
     for (const name of names) {
       if (basename(name) !== name) throw new Error("artifact filename must be a basename");
       const target = resolve(destination, name);
@@ -161,7 +183,7 @@ export function verifyRevenueProofArtifacts(billingDir, offersDir, artifactDir) 
   }
 
   const stagedNames = readdirSync(destination).sort();
-  const expectedNames = [...billingNames, ...offersNames].sort();
+  const expectedNames = [...billingNames, ...offersNames, ...workgraphNames].sort();
   if (stagedNames.length !== expectedNames.length || stagedNames.some((name, index) => name !== expectedNames[index])) {
     throw new Error("staged proof artifact set changed unexpectedly");
   }
@@ -169,10 +191,10 @@ export function verifyRevenueProofArtifacts(billingDir, offersDir, artifactDir) 
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
-  if (process.argv.length !== 5) {
-    console.error("usage: verify-revenue-proof-artifacts.mjs <billing-dir> <offers-dir> <artifact-dir>");
+  if (process.argv.length !== 5 && process.argv.length !== 6) {
+    console.error("usage: verify-revenue-proof-artifacts.mjs <billing-dir> <offers-dir> <artifact-dir> [workgraph-dir]");
     process.exit(2);
   }
-  const staged = verifyRevenueProofArtifacts(process.argv[2], process.argv[3], process.argv[4]);
+  const staged = verifyRevenueProofArtifacts(process.argv[2], process.argv[3], process.argv[4], process.argv[5]);
   console.log(`PASS revenue browser proof :: ${staged.length} allowlisted fixture screenshots`);
 }
