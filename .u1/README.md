@@ -42,8 +42,10 @@ alle Plattformen an exakt dieselbe private Source-SHA; Source und Rohlogs bleibe
 
 Das Manifest `fleet/manifests/scai-candidate-2026-09-07.1.json` pinnt zusätzlich u1-chat
 `80e8ca91…`, Atlas `af282ac0…`, subunit-auth `462a4452…` und Echo `3a72c606…`. Der vertrauliche,
-quellcodefreie Fleet-Source-Check auf diesen Pins wird separat ausgeführt und danach als Evidenz
-gebunden. Die bisherigen `.6`-bis-`.8`-Kandidaten sind zugunsten des neuen Source-Stands als
+quellcodefreie Fleet-Source-Check
+[`34234928814`](https://github.com/subunit-ai/scai-releases/actions/runs/34234928814) bestand auf
+diesen Pins den Input-, u1-chat-, Atlas-, subunit-auth- und Echo-Block vollständig. Die bisherigen
+`.6`-bis-`.8`-Kandidaten sind zugunsten des neuen Source-Stands als
 `superseded` markiert; ihre Evidenz bleibt unverändert historisch auditierbar.
 
 Die technische Distribution nutzt bewusst `legacy-v0.125`: macOS ist
