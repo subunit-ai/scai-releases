@@ -17,7 +17,7 @@ migration_password=$(openssl rand -hex 24); runtime_password=$(openssl rand -hex
 admin_password_encoded=$(bun -e 'process.stdout.write(encodeURIComponent(process.env.PGPASSWORD ?? ""))')
 admin_url="postgresql://${admin_user}:${admin_password_encoded}@${host}:${port}/postgres"
 psql_admin=(psql "$admin_url" -X -v ON_ERROR_STOP=1)
-databases=(test fresh upgrade workload cutover boundary atomic unknown drift)
+databases=(test fresh upgrade workload cutover boundary atomic unknown drift account_recovery_security_test verification_code_atomicity_test)
 for name in "$migrator" "$owner" "$runtime" "${databases[@]/#/${prefix}_}"; do
   collision=$("${psql_admin[@]}" -v name="$name" -At <<'SQL'
 SELECT EXISTS (SELECT 1 FROM pg_roles WHERE rolname=:'name') OR EXISTS (SELECT 1 FROM pg_database WHERE datname=:'name');
@@ -42,7 +42,7 @@ runtime_url="postgresql://${runtime}:${runtime_password}@${host}:${port}"
 export DATABASE_MIGRATION_ROLE=$migrator DATABASE_OWNER_ROLE=$owner DATABASE_RUNTIME_ROLE=$runtime
 run_migration() { DATABASE_MIGRATION_URL="${migration_url}/${prefix}_$1" env -u DATABASE_URL -u DATABASE_RUNTIME_URL bun "$source_dir/src/cli/migrate.ts"; }
 prepare() { DATABASE_MIGRATION_URL="${migration_url}/${prefix}_$1" env -u DATABASE_URL -u DATABASE_RUNTIME_URL bun "$source_dir/scripts/ci/prepare-migration-fixture.ts" "$2"; }
-for suffix in test fresh workload cutover boundary; do run_migration "$suffix"; done
+for suffix in test fresh workload cutover boundary account_recovery_security_test verification_code_atomicity_test; do run_migration "$suffix"; done
 prepare upgrade 35
 psql "${migration_url}/${prefix}_upgrade" -X -v ON_ERROR_STOP=1 -f "$source_dir/scripts/ci/seed-legacy-upgrade.sql"
 run_migration upgrade
@@ -70,6 +70,9 @@ AUTH_MOCO_AUTHORITY_TEST_ADMIN_URL=${admin_url%/postgres}/${prefix}_test
 AUTH_MOCO_AUTHORITY_FRESH_URL=${admin_url%/postgres}/${prefix}_fresh
 AUTH_MOCO_AUTHORITY_UPGRADE_URL=${admin_url%/postgres}/${prefix}_upgrade
 AUTH_CI_FRESH_RUNTIME_URL=${runtime_url}/${prefix}_fresh
+AUTH_CI_SECURITY_RUNTIME_URL=${runtime_url}/${prefix}_account_recovery_security_test
+AUTH_CI_SECURITY_MIGRATION_URL=${migration_url}/${prefix}_account_recovery_security_test
+AUTH_CI_VERIFICATION_RUNTIME_URL=${runtime_url}/${prefix}_verification_code_atomicity_test
 AUTH_MOCO_PURCHASE_V2_RUNTIME_URL=${runtime_url}/${prefix}_upgrade
 AUTH_WORKLOAD_TEST_DATABASE_URL=${runtime_url}/${prefix}_workload
 AUTH_CUTOVER_TEST_DATABASE_URL=${runtime_url}/${prefix}_cutover
