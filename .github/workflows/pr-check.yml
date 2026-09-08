@@ -65,6 +65,7 @@ jobs:
           DEPLOY_KEY: ${{ secrets.SOURCE_DEPLOY_KEY }}
         run: |
           set -euo pipefail
+          bash "$GITHUB_WORKSPACE/gate/scripts/validate-private-source-ref.sh" "$SRC_REF"
           if [ -z "${DEPLOY_KEY:-}" ]; then
             echo "::error::SOURCE_DEPLOY_KEY fehlt."
             exit 1
@@ -79,7 +80,7 @@ jobs:
           export GIT_SSH_COMMAND="ssh -i $key_file -o IdentitiesOnly=yes"
           git init src
           git -C src remote add origin git@github.com:subunit-ai/subunit-scai.git
-          git -C src fetch --depth 1 origin "$SRC_REF"
+          git -C src fetch --depth 1 -- origin "$SRC_REF"
           git -C src checkout --detach FETCH_HEAD
           ACTUAL_SHA=$(git -C src rev-parse HEAD)
           if printf '%s' "$SRC_REF" | grep -Eq '^[0-9a-f]{40}$' && [ "$ACTUAL_SHA" != "$SRC_REF" ]; then
@@ -190,6 +191,90 @@ jobs:
           else
             echo "aenderungsjournal=false" >> "$GITHUB_OUTPUT"
           fi
+          billing_revenue=false
+          offers_revenue=false
+          [ ! -f scripts/verify-billing-production.mjs ] || billing_revenue=true
+          [ ! -f scripts/verify-offers-v01.mjs ] || offers_revenue=true
+          if [ "$billing_revenue" = true ] && [ "$offers_revenue" = true ]; then
+            echo "revenue_browser=true" >> "$GITHUB_OUTPUT"
+          elif [ "$billing_revenue" = false ] && [ "$offers_revenue" = false ]; then
+            echo "revenue_browser=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "::error::Revenue-Browser-Proof ist unvollständig; Billing- und Offers-Harness müssen gemeinsam vorliegen."
+            exit 1
+          fi
+
+      - name: Revenue-Browser-Abhängigkeiten prüfen
+        id: revenue_proof_dependencies
+        if: steps.source_proofs.outputs.revenue_browser == 'true'
+        working-directory: src
+        shell: bash
+        run: |
+          bash "$GITHUB_WORKSPACE/gate/scripts/run-confidential.sh" revenue-proof-dependencies npx --no-install playwright --version
+          bash "$GITHUB_WORKSPACE/gate/scripts/run-confidential.sh" revenue-proof-esbuild npx --no-install esbuild --version
+
+      - name: Billing produktionsnah visuell und interaktiv beweisen
+        id: billing_revenue_proof
+        if: always() && steps.source_proofs.outputs.revenue_browser == 'true' && steps.revenue_proof_dependencies.outcome == 'success'
+        working-directory: src
+        shell: bash
+        env:
+          PROOF_RUN_ID: ci
+          SCAI_BILLING_PROOF_DIR: ${{ runner.temp }}/scai-revenue-source-shots/billing
+          SCAI_ENCRYPTED_DIAGNOSTIC_PUBLIC_KEY_BASE64: ${{ inputs.diagnostic_public_key_base64 }}
+          SCAI_ENCRYPTED_DIAGNOSTIC_PATH: ${{ inputs.diagnostic_public_key_base64 != '' && format('{0}/scai-revenue-billing-diagnostic.json', runner.temp) || '' }}
+        run: bash "$GITHUB_WORKSPACE/gate/scripts/run-confidential.sh" billing-production-proof node scripts/verify-billing-production.mjs
+
+      - name: Angebote v0.1 visuell und interaktiv beweisen
+        id: offers_revenue_proof
+        if: always() && steps.source_proofs.outputs.revenue_browser == 'true' && steps.revenue_proof_dependencies.outcome == 'success'
+        working-directory: src
+        shell: bash
+        env:
+          PROOF_RUN_ID: ci
+          SCAI_OFFERS_PROOF_DIR: ${{ runner.temp }}/scai-revenue-source-shots/offers
+          SCAI_ENCRYPTED_DIAGNOSTIC_PUBLIC_KEY_BASE64: ${{ inputs.diagnostic_public_key_base64 }}
+          SCAI_ENCRYPTED_DIAGNOSTIC_PATH: ${{ inputs.diagnostic_public_key_base64 != '' && format('{0}/scai-revenue-offers-diagnostic.json', runner.temp) || '' }}
+        run: bash "$GITHUB_WORKSPACE/gate/scripts/run-confidential.sh" offers-v01-proof node scripts/verify-offers-v01.mjs
+
+      - name: Revenue-Fixture-Screenshots geschlossen prüfen
+        id: revenue_artifacts
+        if: always() && steps.billing_revenue_proof.outcome == 'success' && steps.offers_revenue_proof.outcome == 'success'
+        working-directory: src
+        shell: bash
+        env:
+          BILLING_PROOF_DIR: ${{ runner.temp }}/scai-revenue-source-shots/billing
+          OFFERS_PROOF_DIR: ${{ runner.temp }}/scai-revenue-source-shots/offers
+          REVENUE_ARTIFACT_DIR: ${{ runner.temp }}/scai-revenue-browser-proof
+        run: bash "$GITHUB_WORKSPACE/gate/scripts/run-confidential.sh" revenue-proof-artifacts node "$GITHUB_WORKSPACE/gate/scripts/verify-revenue-proof-artifacts.mjs" "$BILLING_PROOF_DIR" "$OFFERS_PROOF_DIR" "$REVENUE_ARTIFACT_DIR"
+
+      - name: Revenue-Browser-Proof-Screenshots sichern
+        if: always() && steps.revenue_artifacts.outcome == 'success'
+        continue-on-error: true
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4, immutable
+        with:
+          name: scai-revenue-browser-proof-${{ github.run_id }}
+          path: ${{ runner.temp }}/scai-revenue-browser-proof/
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Verschlüsselte Billing-Proof-Fehlerdiagnostik bereitstellen
+        if: failure() && steps.billing_revenue_proof.outcome == 'failure' && inputs.diagnostic_public_key_base64 != ''
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4, immutable
+        with:
+          name: scai-revenue-billing-encrypted-diagnostic-${{ github.run_id }}
+          path: ${{ runner.temp }}/scai-revenue-billing-diagnostic.json
+          if-no-files-found: error
+          retention-days: 1
+
+      - name: Verschlüsselte Offers-Proof-Fehlerdiagnostik bereitstellen
+        if: failure() && steps.offers_revenue_proof.outcome == 'failure' && inputs.diagnostic_public_key_base64 != ''
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4, immutable
+        with:
+          name: scai-revenue-offers-encrypted-diagnostic-${{ github.run_id }}
+          path: ${{ runner.temp }}/scai-revenue-offers-diagnostic.json
+          if-no-files-found: error
+          retention-days: 1
 
       - name: Datenschutz-Diagnosepaket visuell und interaktiv beweisen
         id: support_diagnostics_proof
@@ -525,7 +610,7 @@ jobs:
           export GIT_SSH_COMMAND="ssh -i $key_file -o IdentitiesOnly=yes"
           git init trace-src
           git -C trace-src remote add origin git@github.com:subunit-ai/trace-tauri.git
-          git -C trace-src fetch --depth 1 origin "$SRC_REF"
+          git -C trace-src fetch --depth 1 -- origin "$SRC_REF"
           git -C trace-src checkout --detach FETCH_HEAD
           ACTUAL_SHA=$(git -C trace-src rev-parse HEAD)
           if [ "$ACTUAL_SHA" != "$SRC_REF" ]; then
@@ -621,6 +706,7 @@ jobs:
           DEPLOY_KEY: ${{ secrets.SOURCE_DEPLOY_KEY }}
         run: |
           set -euo pipefail
+          bash "$GITHUB_WORKSPACE/gate/scripts/validate-private-source-ref.sh" "$SRC_REF"
           if [ -z "${DEPLOY_KEY:-}" ]; then
             echo "::error::SOURCE_DEPLOY_KEY fehlt."
             exit 1
@@ -635,7 +721,7 @@ jobs:
           export GIT_SSH_COMMAND="ssh -i $key_file -o IdentitiesOnly=yes"
           git init src
           git -C src remote add origin git@github.com:subunit-ai/subunit-scai.git
-          git -C src fetch --depth 1 origin "$SRC_REF"
+          git -C src fetch --depth 1 -- origin "$SRC_REF"
           git -C src checkout --detach FETCH_HEAD
           ACTUAL_SHA=$(git -C src rev-parse HEAD)
           if printf '%s' "$SRC_REF" | grep -Eq '^[0-9a-f]{40}$' && [ "$ACTUAL_SHA" != "$SRC_REF" ]; then

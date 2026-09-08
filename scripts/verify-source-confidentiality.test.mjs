@@ -33,8 +33,35 @@ test("a mutable action can never run beside private source", () => {
 });
 
 test("a mutable branch clone cannot stand in for an exact source pin", () => {
-  const unsafe = { ...fixtures, "pr-check.yml": fixtures["pr-check.yml"].replace('git -C src fetch --depth 1 origin "$SRC_REF"', 'git clone --depth 1 --branch "$SRC_REF" git@github.com:subunit-ai/subunit-scai.git src') };
+  const unsafe = { ...fixtures, "pr-check.yml": fixtures["pr-check.yml"].replace('git -C src fetch --depth 1 -- origin "$SRC_REF"', 'git clone --depth 1 --branch "$SRC_REF" git@github.com:subunit-ai/subunit-scai.git src') };
   assert.match(validateSourceConfidentiality(unsafe, assetSelector).join("\n"), /mutable branch clone/);
+});
+
+test("private source fetches must terminate options before the validated ref", () => {
+  const unsafe = {
+    ...fixtures,
+    "pr-check.yml": fixtures["pr-check.yml"].replace(
+      'git -C src fetch --depth 1 -- origin "$SRC_REF"',
+      'git -C src fetch --depth 1 origin "$SRC_REF"',
+    ),
+  };
+  assert.match(
+    validateSourceConfidentiality(unsafe, assetSelector).join("\n"),
+    /source fetch must terminate options|must not accept ref-shaped options/,
+  );
+});
+
+test("source ref validation must run before deploy-key material is created", () => {
+  const validation = 'bash "$GITHUB_WORKSPACE/gate/scripts/validate-private-source-ref.sh" "$SRC_REF"';
+  const keyWrite = 'printf \'%s\\n\' "$DEPLOY_KEY" > "$key_file"';
+  const unsafeWorkflow = fixtures["pr-check.yml"]
+    .replace(validation, "true")
+    .replace(keyWrite, `${keyWrite}\n          ${validation}`);
+  const unsafe = { ...fixtures, "pr-check.yml": unsafeWorkflow };
+  assert.match(
+    validateSourceConfidentiality(unsafe, assetSelector).join("\n"),
+    /allowlist-validated before deploy-key material is created/,
+  );
 });
 
 test("a source-streaming Tauri action is rejected", () => {
@@ -148,6 +175,68 @@ test("Sentinel CRM diagnostics cannot upload plaintext or a source-tree path", (
     validateSourceConfidentiality(unsafe, assetSelector).join("\n"),
     /Sentinel CRM diagnostics may upload only a one-time-key encrypted envelope/,
   );
+});
+
+test("Revenue harnesses cannot be partially present or bypass confidential execution", () => {
+  const partialAllowed = {
+    ...fixtures,
+    "pr-check.yml": fixtures["pr-check.yml"].replace(
+      `            echo "::error::Revenue-Browser-Proof ist unvollständig; Billing- und Offers-Harness müssen gemeinsam vorliegen."
+            exit 1`,
+      '            echo "revenue_browser=false" >> "$GITHUB_OUTPUT"',
+    ),
+  };
+  assert.match(
+    validateSourceConfidentiality(partialAllowed, assetSelector).join("\n"),
+    /partial Revenue harness availability must fail closed/,
+  );
+
+  const publicHarness = {
+    ...fixtures,
+    "pr-check.yml": fixtures["pr-check.yml"].replace("billing-production-proof", "billing-public-proof"),
+  };
+  assert.match(
+    validateSourceConfidentiality(publicHarness, assetSelector).join("\n"),
+    /billing-production-proof must suppress private output/,
+  );
+});
+
+test("Revenue screenshots can upload only after closed sanitization", () => {
+  const rawUpload = {
+    ...fixtures,
+    "pr-check.yml": fixtures["pr-check.yml"].replace(
+      "path: ${{ runner.temp }}/scai-revenue-browser-proof/",
+      "path: ${{ runner.temp }}/scai-revenue-source-shots/",
+    ),
+  };
+  const errors = validateSourceConfidentiality(rawUpload, assetSelector).join("\n");
+  assert.match(errors, /raw Revenue source proof output must never be uploaded/);
+  assert.match(errors, /may upload only its sanitized fixture screenshot directory/);
+
+  const noSanitizer = {
+    ...fixtures,
+    "pr-check.yml": fixtures["pr-check.yml"].replace(
+      "steps.revenue_artifacts.outcome == 'success'",
+      "steps.offers_revenue_proof.outcome == 'success'",
+    ),
+  };
+  assert.match(
+    validateSourceConfidentiality(noSanitizer, assetSelector).join("\n"),
+    /may upload only its sanitized fixture screenshot directory/,
+  );
+});
+
+test("Revenue diagnostics cannot upload plaintext or a source-tree path", () => {
+  for (const [safePath, unsafePath, expected] of [
+    ["${{ runner.temp }}/scai-revenue-billing-diagnostic.json", "src/private-billing.log", /Billing Revenue diagnostics/],
+    ["${{ runner.temp }}/scai-revenue-offers-diagnostic.json", "src/private-offers.log", /Offers Revenue diagnostics/],
+  ]) {
+    const unsafe = {
+      ...fixtures,
+      "pr-check.yml": fixtures["pr-check.yml"].replace(`path: ${safePath}`, `path: ${unsafePath}`),
+    };
+    assert.match(validateSourceConfidentiality(unsafe, assetSelector).join("\n"), expected);
+  }
 });
 
 test("Chat-Dock diagnostics cannot upload plaintext or a source-tree path", () => {
