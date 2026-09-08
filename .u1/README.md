@@ -25,6 +25,29 @@ Regeln:
 
 ## Aktueller Fleet-Status (2026-09-08)
 
+### v0.151.0 — aktueller technischer Kandidat
+
+Source `36875df626621db89f30fb4bdafe4335c4446ede` ist als `v0.151.0` getaggt; Web läuft gesund
+auf demselben Commit. Der vollständige Build
+[`34245464156`](https://github.com/subunit-ai/scai-releases/actions/runs/34245464156) ist über
+macOS Apple Silicon/Intel, Windows ARM64/x64, Linux x64 und den abschließenden Signatur-, SBOM-,
+Runtime-, Provenance- und Source-Confidentiality-Job grün. Sein Draft enthält 26 allowlistete
+Assets und bleibt unveröffentlicht.
+
+Fleet-Lauf
+[`34245815275`](https://github.com/subunit-ai/scai-releases/actions/runs/34245815275) prüfte die
+exakten Main-SHAs von u1-chat, Atlas, subunit-auth und Echo über getrennte read-only Deploy-Keys
+erfolgreich. Das Manifest `fleet/manifests/scai-candidate-2026-09-08.1.json` bleibt
+fail-closed auf `status: candidate`: A1–A6 sind technisch belegt, A7/A8 und R0–R3 bleiben offen.
+
+Die Distribution nutzt weiterhin `legacy-v0.125`. Signing folgt nach dem Handelsregisterauszug;
+vollständige Marktfreigabe verlangt außerdem Legal/DPO/Judge, den gebundenen Fleet-Betriebsdrill,
+die separat freigegebene lokale Inferenz-Konfiguration und echte R0–R3-Kundenbelege.
+Öffentlich/Latest bleibt bis zum vollständigen PASS-Tor `v0.150.0`. Privater Quellcode wird in
+keinem Release-Asset veröffentlicht.
+
+### Vorgänger und historische Kandidaten
+
 Der historische `scai-candidate-2026-08-24.1` pinnt SCAI `0.126.0` und ist über
 [PR #29](https://github.com/subunit-ai/scai-releases/pull/29), Merge
 `291ea267b57585db5c4bee9c458617faf1d426a3`, als `superseded` markiert. Seine Evidenz bleibt
