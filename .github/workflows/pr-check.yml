@@ -201,8 +201,16 @@ jobs:
           SCAI_ENCRYPTED_DIAGNOSTIC_PATH: ${{ inputs.diagnostic_public_key_base64 != '' && format('{0}/scai-support-diagnostic.json', runner.temp) || '' }}
         run: bash "$GITHUB_WORKSPACE/gate/scripts/run-confidential.sh" support-diagnostics-proof node scripts/verify-support-diagnostics.mjs
 
+      - name: Diagnosepaket-Proof-Screenshots vorhanden
+        if: always() && steps.support_diagnostics_proof.outcome != 'skipped'
+        shell: bash
+        run: find "$HOME/.cache/u1-shots/scai-support-diagnostics/" -type f -name '*.png' -print -quit | grep -q .
+
+      # Proof und PNG-Praesenz bleiben harte Gates. Nur GitHubs externe
+      # Artefakt-Ablage ist best effort, weil FinalizeArtifact sporadisch 403 liefert.
       - name: Diagnosepaket-Proof-Screenshots sichern
         if: always() && steps.support_diagnostics_proof.outcome != 'skipped'
+        continue-on-error: true
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4, immutable
         with:
           name: scai-support-diagnostics-proof-${{ github.run_id }}
@@ -228,8 +236,14 @@ jobs:
           SCAI_ENCRYPTED_DIAGNOSTIC_PATH: ${{ inputs.diagnostic_public_key_base64 != '' && format('{0}/scai-pages-diagnostic.json', runner.temp) || '' }}
         run: bash "$GITHUB_WORKSPACE/gate/scripts/run-confidential.sh" pages-recovery-proof node scripts/verify-pages-foundation.mjs
 
+      - name: Pages-Proof-Screenshots vorhanden
+        if: always() && steps.pages_proof.outcome != 'skipped'
+        shell: bash
+        run: find "$HOME/.cache/u1-shots/scai-pages/" -type f -name '*.png' -print -quit | grep -q .
+
       - name: Pages-Proof-Screenshots sichern
         if: always() && steps.pages_proof.outcome != 'skipped'
+        continue-on-error: true
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4, immutable
         with:
           name: scai-pages-proof-${{ github.run_id }}
@@ -255,6 +269,7 @@ jobs:
 
       - name: Meet-Proof-Screenshots sichern
         if: always()
+        continue-on-error: true
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4, immutable
         with:
           name: scai-meet-proof-${{ github.run_id }}
@@ -277,6 +292,7 @@ jobs:
 
       - name: Aenderungsjournal-Proof-Screenshots sichern
         if: always() && steps.aenderungsjournal_proof.outcome != 'skipped'
+        continue-on-error: true
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4, immutable
         with:
           name: scai-aenderungsjournal-proof-${{ github.run_id }}
@@ -303,8 +319,14 @@ jobs:
         shell: bash
         run: bash "$GITHUB_WORKSPACE/gate/scripts/run-confidential.sh" chat-dock-visual-proof npm run proof:chat-dock
 
+      - name: Chat-Dock-Proof-Screenshots vorhanden
+        if: always() && steps.chat_dock_proof.outcome != 'skipped'
+        shell: bash
+        run: find "$HOME/.cache/u1-shots/scai-chat-dock/" -type f -name '*.png' -print -quit | grep -q .
+
       - name: Chat-Dock-Proof-Screenshots sichern
         if: always() && steps.chat_dock_proof.outcome != 'skipped'
+        continue-on-error: true
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4, immutable
         with:
           name: scai-chat-dock-proof-${{ github.run_id }}
@@ -331,8 +353,14 @@ jobs:
           SCAI_ENCRYPTED_DIAGNOSTIC_PATH: ${{ inputs.diagnostic_public_key_base64 != '' && format('{0}/scai-sentinel-crm-diagnostic.json', runner.temp) || '' }}
         run: bash "$GITHUB_WORKSPACE/gate/scripts/run-confidential.sh" sentinel-crm-proof npm run proof:sentinel-crm
 
+      - name: Sentinel-CRM-Proof-Screenshots vorhanden
+        if: always() && steps.sentinel_crm_proof.outcome != 'skipped'
+        shell: bash
+        run: find "$HOME/.cache/u1-shots/sentinel-crm-2026/" -type f -name '*.png' -print -quit | grep -q .
+
       - name: Sentinel-CRM-Proof-Screenshots sichern
         if: always() && steps.sentinel_crm_proof.outcome != 'skipped'
+        continue-on-error: true
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4, immutable
         with:
           name: scai-sentinel-crm-proof-${{ github.run_id }}
@@ -356,8 +384,14 @@ jobs:
         shell: bash
         run: bash "$GITHUB_WORKSPACE/gate/scripts/run-confidential.sh" sentinel-forecast-proof node scripts/verify-sentinel-forecast.mjs
 
+      - name: Sentinel-Forecast-Screenshots vorhanden
+        if: always() && steps.forecast_proof.outcome != 'skipped'
+        shell: bash
+        run: find "$HOME/.cache/u1-shots/sentinel-forecast/" -type f -name '*.png' -print -quit | grep -q .
+
       - name: Sentinel-Forecast-Screenshots sichern
         if: always() && steps.forecast_proof.outcome != 'skipped'
+        continue-on-error: true
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4, immutable
         with:
           name: scai-sentinel-forecast-proof-${{ github.run_id }}
@@ -372,8 +406,14 @@ jobs:
         shell: bash
         run: bash "$GITHUB_WORKSPACE/gate/scripts/run-confidential.sh" sentinel-routing-proof node scripts/verify-sentinel-routing.mjs
 
+      - name: Sentinel-Routing-Screenshots vorhanden
+        if: always() && steps.routing_proof.outcome != 'skipped'
+        shell: bash
+        run: find "$HOME/.cache/u1-shots/sentinel-routing/" -type f -name '*.png' -print -quit | grep -q .
+
       - name: Sentinel-Routing-Screenshots sichern
         if: always() && steps.routing_proof.outcome != 'skipped'
+        continue-on-error: true
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4, immutable
         with:
           name: scai-sentinel-routing-proof-${{ github.run_id }}
