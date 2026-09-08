@@ -245,11 +245,20 @@ test("Workgraph harness remains optional, but runs confidentially and sanitizes 
   const noWorkgraphSanitizer = {
     ...fixtures,
     "pr-check.yml": fixtures["pr-check.yml"].replace(
-      'workgraph_args+=("$HOME/.cache/u1-shots/scai-workgraph-blackbox")',
-      "true",
+      '--workgraph-only "$HOME/.cache/u1-shots/scai-workgraph-blackbox"',
+      '--workgraph-disabled "$HOME/.cache/u1-shots/scai-workgraph-blackbox"',
     ),
   };
-  assert.match(validateSourceConfidentiality(noWorkgraphSanitizer, assetSelector).join("\n"), /Workgraph screenshots must pass/);
+  assert.match(validateSourceConfidentiality(noWorkgraphSanitizer, assetSelector).join("\n"), /Revenue and Workgraph screenshots must pass/);
+
+  const uncheckedWorkgraphOnly = {
+    ...fixtures,
+    "pr-check.yml": fixtures["pr-check.yml"].replace(
+      "steps.source_proofs.outputs.revenue_browser != 'true' && steps.source_proofs.outputs.workgraph_blackbox == 'true' && steps.workgraph_blackbox_proof.outcome == 'success'",
+      "steps.source_proofs.outputs.workgraph_blackbox == 'true'",
+    ),
+  };
+  assert.match(validateSourceConfidentiality(uncheckedWorkgraphOnly, assetSelector).join("\n"), /artifact modes must require/);
 
   const rawUpload = {
     ...fixtures,

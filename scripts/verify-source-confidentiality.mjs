@@ -143,10 +143,6 @@ export function validateSourceConfidentiality(workflows, assetSelector) {
     "pr-check.yml: partial Revenue harness availability must fail closed",
   );
   require(
-    /if \[ "\$workgraph_blackbox" = true \] && \[ "\$billing_revenue" != true \]; then[\s\S]{0,180}?exit 1/.test(pr),
-    "pr-check.yml: Workgraph must not bypass the closed Revenue artifact path",
-  );
-  require(
     /name: Revenue-Browser-Abhängigkeiten prüfen[\s\S]{0,500}?if: steps\.source_proofs\.outputs\.revenue_browser == 'true' \|\| steps\.source_proofs\.outputs\.workgraph_blackbox == 'true'[\s\S]{0,500}?run-confidential\.sh" revenue-proof-dependencies npx --no-install playwright --version[\s\S]{0,180}?run-confidential\.sh" revenue-proof-esbuild npx --no-install esbuild --version/.test(pr),
     "pr-check.yml: Revenue browser dependencies must be installed and resolved without an implicit npx download",
   );
@@ -162,13 +158,20 @@ export function validateSourceConfidentiality(workflows, assetSelector) {
     /name: Workgraph Blackbox visuell und interaktiv beweisen[\s\S]{0,750}?if: always\(\) && steps\.source_proofs\.outputs\.workgraph_blackbox == 'true' && steps\.revenue_proof_dependencies\.outcome == 'success'[\s\S]{0,750}?run-confidential\.sh" workgraph-blackbox-proof node scripts\/verify-workgraph-blackbox\.mjs/.test(pr),
     "pr-check.yml: Workgraph proof must run confidentially whenever its source harness exists",
   );
+  const browserArtifactStep = pr.match(/- name: Revenue-Fixture-Screenshots geschlossen prüfen[\s\S]*?(?=\n      - name:)/)?.[0] ?? "";
   require(
-    /name: Revenue-Fixture-Screenshots geschlossen prüfen[\s\S]{0,900}?if: always\(\) && steps\.billing_revenue_proof\.outcome == 'success' && steps\.offers_revenue_proof\.outcome == 'success'[\s\S]{0,900}?REVENUE_ARTIFACT_DIR: \$\{\{ runner\.temp \}\}\/scai-revenue-browser-proof[\s\S]{0,900}?run-confidential\.sh" revenue-proof-artifacts node "\$GITHUB_WORKSPACE\/gate\/scripts\/verify-revenue-proof-artifacts\.mjs" "\$BILLING_PROOF_DIR" "\$OFFERS_PROOF_DIR" "\$REVENUE_ARTIFACT_DIR"/.test(pr),
-    "pr-check.yml: Revenue screenshots must pass the public closed artifact sanitizer",
+    browserArtifactStep.includes("steps.source_proofs.outputs.revenue_browser == 'true' && steps.billing_revenue_proof.outcome == 'success' && steps.offers_revenue_proof.outcome == 'success'")
+      && browserArtifactStep.includes("steps.source_proofs.outputs.workgraph_blackbox != 'true' || steps.workgraph_blackbox_proof.outcome == 'success'")
+      && browserArtifactStep.includes("steps.source_proofs.outputs.revenue_browser != 'true' && steps.source_proofs.outputs.workgraph_blackbox == 'true' && steps.workgraph_blackbox_proof.outcome == 'success'"),
+    "pr-check.yml: Revenue and Workgraph artifact modes must require their successful source proofs",
   );
   require(
-    /steps\.source_proofs\.outputs\.workgraph_blackbox != 'true' \|\| steps\.workgraph_blackbox_proof\.outcome == 'success'[\s\S]{0,1200}?workgraph_args\+=\("\$HOME\/\.cache\/u1-shots\/scai-workgraph-blackbox"\)[\s\S]{0,500}?"\$REVENUE_ARTIFACT_DIR" "\$\{workgraph_args\[@\]\}"/.test(pr),
-    "pr-check.yml: present Workgraph screenshots must pass the closed artifact sanitizer",
+    browserArtifactStep.includes("REVENUE_ARTIFACT_DIR: ${{ runner.temp }}/scai-revenue-browser-proof")
+      && (browserArtifactStep.match(/run-confidential\.sh" revenue-proof-artifacts/g) ?? []).length === 3
+      && browserArtifactStep.includes('"$BILLING_PROOF_DIR" "$OFFERS_PROOF_DIR" "$REVENUE_ARTIFACT_DIR" "$HOME/.cache/u1-shots/scai-workgraph-blackbox"')
+      && browserArtifactStep.includes('"$BILLING_PROOF_DIR" "$OFFERS_PROOF_DIR" "$REVENUE_ARTIFACT_DIR"')
+      && browserArtifactStep.includes('--workgraph-only "$HOME/.cache/u1-shots/scai-workgraph-blackbox" "$REVENUE_ARTIFACT_DIR"'),
+    "pr-check.yml: Revenue and Workgraph screenshots must pass the public closed artifact sanitizer",
   );
   require(
     /name: Revenue-Browser-Proof-Screenshots sichern[\s\S]{0,450}?if: always\(\) && steps\.revenue_artifacts\.outcome == 'success'[\s\S]{0,450}?path: \$\{\{ runner\.temp \}\}\/scai-revenue-browser-proof\//.test(pr),

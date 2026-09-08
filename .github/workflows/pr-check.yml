@@ -192,10 +192,8 @@ jobs:
             echo "aenderungsjournal=false" >> "$GITHUB_OUTPUT"
           fi
           if [ -f scripts/verify-workgraph-blackbox.mjs ]; then
-            workgraph_blackbox=true
             echo "workgraph_blackbox=true" >> "$GITHUB_OUTPUT"
           else
-            workgraph_blackbox=false
             echo "workgraph_blackbox=false" >> "$GITHUB_OUTPUT"
           fi
           billing_revenue=false
@@ -208,10 +206,6 @@ jobs:
             echo "revenue_browser=false" >> "$GITHUB_OUTPUT"
           else
             echo "::error::Revenue-Browser-Proof ist unvollständig; Billing- und Offers-Harness müssen gemeinsam vorliegen."
-            exit 1
-          fi
-          if [ "$workgraph_blackbox" = true ] && [ "$billing_revenue" != true ]; then
-            echo "::error::Workgraph-Proof benötigt den geschlossenen Revenue-Artefaktpfad."
             exit 1
           fi
 
@@ -260,7 +254,7 @@ jobs:
 
       - name: Revenue-Fixture-Screenshots geschlossen prüfen
         id: revenue_artifacts
-        if: always() && steps.billing_revenue_proof.outcome == 'success' && steps.offers_revenue_proof.outcome == 'success' && (steps.source_proofs.outputs.workgraph_blackbox != 'true' || steps.workgraph_blackbox_proof.outcome == 'success')
+        if: always() && ((steps.source_proofs.outputs.revenue_browser == 'true' && steps.billing_revenue_proof.outcome == 'success' && steps.offers_revenue_proof.outcome == 'success' && (steps.source_proofs.outputs.workgraph_blackbox != 'true' || steps.workgraph_blackbox_proof.outcome == 'success')) || (steps.source_proofs.outputs.revenue_browser != 'true' && steps.source_proofs.outputs.workgraph_blackbox == 'true' && steps.workgraph_blackbox_proof.outcome == 'success'))
         working-directory: src
         shell: bash
         env:
@@ -268,11 +262,15 @@ jobs:
           OFFERS_PROOF_DIR: ${{ runner.temp }}/scai-revenue-source-shots/offers
           REVENUE_ARTIFACT_DIR: ${{ runner.temp }}/scai-revenue-browser-proof
         run: |
-          workgraph_args=()
-          if [ "${{ steps.source_proofs.outputs.workgraph_blackbox }}" = true ]; then
-            workgraph_args+=("$HOME/.cache/u1-shots/scai-workgraph-blackbox")
+          if [ "${{ steps.source_proofs.outputs.revenue_browser }}" = true ]; then
+            if [ "${{ steps.source_proofs.outputs.workgraph_blackbox }}" = true ]; then
+              bash "$GITHUB_WORKSPACE/gate/scripts/run-confidential.sh" revenue-proof-artifacts node "$GITHUB_WORKSPACE/gate/scripts/verify-revenue-proof-artifacts.mjs" "$BILLING_PROOF_DIR" "$OFFERS_PROOF_DIR" "$REVENUE_ARTIFACT_DIR" "$HOME/.cache/u1-shots/scai-workgraph-blackbox"
+            else
+              bash "$GITHUB_WORKSPACE/gate/scripts/run-confidential.sh" revenue-proof-artifacts node "$GITHUB_WORKSPACE/gate/scripts/verify-revenue-proof-artifacts.mjs" "$BILLING_PROOF_DIR" "$OFFERS_PROOF_DIR" "$REVENUE_ARTIFACT_DIR"
+            fi
+          else
+            bash "$GITHUB_WORKSPACE/gate/scripts/run-confidential.sh" revenue-proof-artifacts node "$GITHUB_WORKSPACE/gate/scripts/verify-revenue-proof-artifacts.mjs" --workgraph-only "$HOME/.cache/u1-shots/scai-workgraph-blackbox" "$REVENUE_ARTIFACT_DIR"
           fi
-          bash "$GITHUB_WORKSPACE/gate/scripts/run-confidential.sh" revenue-proof-artifacts node "$GITHUB_WORKSPACE/gate/scripts/verify-revenue-proof-artifacts.mjs" "$BILLING_PROOF_DIR" "$OFFERS_PROOF_DIR" "$REVENUE_ARTIFACT_DIR" "${workgraph_args[@]}"
 
       - name: Revenue-Browser-Proof-Screenshots sichern
         if: always() && steps.revenue_artifacts.outcome == 'success'

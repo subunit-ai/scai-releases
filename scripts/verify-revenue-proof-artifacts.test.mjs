@@ -11,7 +11,10 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 import test from "node:test";
 
-import { verifyRevenueProofArtifacts } from "./verify-revenue-proof-artifacts.mjs";
+import {
+  verifyRevenueProofArtifacts,
+  verifyWorkgraphProofArtifacts,
+} from "./verify-revenue-proof-artifacts.mjs";
 
 const REQUIRED = {
   billing: [
@@ -98,6 +101,31 @@ test("stages the exact twenty Workgraph screenshots with the Revenue proof", () 
   const staged = verifyRevenueProofArtifacts(paths.billing, paths.offers, paths.artifact, paths.workgraph);
   assert.equal(staged.length, 28);
   assert.deepEqual(staged.filter((name) => REQUIRED.workgraph.some(([required]) => required === name)), REQUIRED.workgraph.map(([name]) => name).sort());
+});
+
+test("stages exactly twenty screenshots in Workgraph-only mode", () => {
+  const paths = fixture();
+  const staged = verifyWorkgraphProofArtifacts(paths.workgraph, paths.artifact);
+  assert.deepEqual(staged, REQUIRED.workgraph.map(([name]) => name).sort());
+  assert.equal(readdirSync(paths.artifact).length, 20);
+});
+
+test("Workgraph-only mode rejects missing and extra artifacts and protects its destination", () => {
+  const missing = fixture();
+  const first = REQUIRED.workgraph[0][0];
+  renameSync(join(missing.workgraph, first), join(missing.root, first));
+  assert.throws(() => verifyWorkgraphProofArtifacts(missing.workgraph, missing.artifact), /is missing/);
+
+  const extra = fixture();
+  writeFileSync(join(extra.workgraph, "raw-private.log"), "private output");
+  assert.throws(() => verifyWorkgraphProofArtifacts(extra.workgraph, extra.artifact), /non-allowlisted artifact/);
+
+  const existing = fixture();
+  mkdirSync(existing.artifact);
+  assert.throws(() => verifyWorkgraphProofArtifacts(existing.workgraph, existing.artifact), /must not already exist/);
+
+  const same = fixture();
+  assert.throws(() => verifyWorkgraphProofArtifacts(same.workgraph, same.workgraph), /must be distinct/);
 });
 
 test("stages the eight required fixture screenshots and two optional billing screenshots", () => {
