@@ -31,6 +31,10 @@ on:
         description: "Optionaler einmaliger RSA-3072+-Public-Key im PEM-Base64-Format für verschlüsselte private Fehlerdiagnostik"
         required: false
         default: ""
+      trace_bundle_public_key_base64:
+        description: "Optionaler einmaliger RSA-3072+-Public-Key für einen verschlüsselten, intern signierten Trace-macOS-Bundle"
+        required: false
+        default: ""
 
 permissions:
   contents: read
@@ -49,6 +53,18 @@ jobs:
         with:
           path: gate
           persist-credentials: false
+
+      - name: Trace-Artefakt-Inputvertrag prüfen
+        shell: bash
+        env:
+          TRACE_REF: ${{ inputs.trace_ref }}
+          TRACE_BUNDLE_KEY: ${{ inputs.trace_bundle_public_key_base64 }}
+        run: |
+          set -euo pipefail
+          if [ -n "$TRACE_BUNDLE_KEY" ] && [ -z "$TRACE_REF" ]; then
+            echo "::error::Ein Trace-Bundle-Empfängerschlüssel erfordert einen exakten trace_ref."
+            exit 1
+          fi
 
       # Bun wird vor dem privaten Checkout bereitgestellt. Die gepinnte Action sieht
       # damit keinen proprietären Source-Tree; alle späteren Testausgaben bleiben im
@@ -702,6 +718,128 @@ jobs:
           bash "$GITHUB_WORKSPACE/gate/scripts/run-confidential.sh" trace-native-clippy cargo clippy --locked --features host --all-targets -- -D warnings
           bash "$GITHUB_WORKSPACE/gate/scripts/run-confidential.sh" trace-native-test cargo test --locked --features host
           bash "$GITHUB_WORKSPACE/gate/scripts/run-confidential.sh" trace-native-build cargo build --release --locked --features host --bin trace-host
+
+      - name: Einmaligen Trace-Artefakt-Empfängerschlüssel prüfen
+        if: matrix.label == 'macos-arm64' && inputs.trace_bundle_public_key_base64 != ''
+        shell: bash
+        env:
+          RECIPIENT_PUBLIC_KEY_BASE64: ${{ inputs.trace_bundle_public_key_base64 }}
+        run: |
+          set -euo pipefail
+          : > "$RUNNER_TEMP/trace-key-preflight"
+          node "$GITHUB_WORKSPACE/gate/scripts/encrypt-confidential-log.mjs" \
+            "$RUNNER_TEMP/trace-key-preflight" \
+            "$RUNNER_TEMP/trace-key-preflight.envelope.json" \
+            "$RECIPIENT_PUBLIC_KEY_BASE64"
+          rm -f "$RUNNER_TEMP/trace-key-preflight" "$RUNNER_TEMP/trace-key-preflight.envelope.json"
+
+      # Wichtig: Dieses private Source-Script läuft VOR dem Import der Signing-Secrets. Danach
+      # werden ausschließlich fest im öffentlichen Gate definierte Apple-Werkzeuge ausgeführt.
+      - name: Trace-App ohne vertrauliche Codeidentität vorpaketieren
+        if: matrix.label == 'macos-arm64' && inputs.trace_bundle_public_key_base64 != ''
+        working-directory: trace-src
+        shell: bash
+        run: |
+          set -euo pipefail
+          bundle_root="$RUNNER_TEMP/trace-host-macos-arm64-internal"
+          version="$(sed -n 's/^version = "\([^"]*\)"/\1/p' Cargo.toml | head -1)"
+          mkdir "$bundle_root"
+          bash "$GITHUB_WORKSPACE/gate/scripts/run-confidential.sh" trace-macos-app-package \
+            bash scripts/build-macos-app.sh \
+              target/release/trace-host \
+              "$bundle_root/Trace Host.app" \
+              - \
+              "$version"
+          test -d "$bundle_root/Trace Host.app"
+          test ! -L "$bundle_root/Trace Host.app"
+          test -f "$bundle_root/Trace Host.app/Contents/Info.plist"
+          test ! -L "$bundle_root/Trace Host.app/Contents/Info.plist"
+          test -x "$bundle_root/Trace Host.app/Contents/MacOS/trace-host"
+          test ! -L "$bundle_root/Trace Host.app/Contents/MacOS/trace-host"
+          test -z "$(find "$bundle_root/Trace Host.app" -type l -print -quit)"
+          test "$(plutil -extract CFBundleIdentifier raw "$bundle_root/Trace Host.app/Contents/Info.plist")" = "ai.subunit.trace-host"
+          codesign --verify --deep --strict --verbose=2 "$bundle_root/Trace Host.app"
+          ln -s "Trace Host.app/Contents/MacOS/trace-host" "$bundle_root/trace-host"
+          cp README.md docs/PILOT-RUNBOOK.md "$bundle_root/"
+
+      - name: Interne macOS-Codeidentität für Trace importieren
+        if: matrix.label == 'macos-arm64' && inputs.trace_bundle_public_key_base64 != ''
+        shell: bash
+        env:
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+        run: |
+          set -euo pipefail
+          test -n "${APPLE_CERTIFICATE:-}"
+          test -n "${APPLE_SIGNING_IDENTITY:-}"
+          case "$APPLE_SIGNING_IDENTITY" in
+            "Apple Development:"*|"Developer ID Application:"*) ;;
+            *) echo "::error::Unerwartete Apple-Codeidentität für den internen Trace-Build."; exit 1 ;;
+          esac
+          certificate="$RUNNER_TEMP/trace-signing.p12"
+          keychain="$RUNNER_TEMP/trace-signing.keychain-db"
+          echo "$APPLE_CERTIFICATE" | base64 -d > "$certificate"
+          security create-keychain -p trace-ci "$keychain"
+          security set-keychain-settings -lut 21600 "$keychain"
+          security unlock-keychain -p trace-ci "$keychain"
+          security import "$certificate" -k "$keychain" \
+            -P "${APPLE_CERTIFICATE_PASSWORD:-}" -T /usr/bin/codesign >/dev/null
+          security list-keychains -d user -s "$keychain"
+          security set-key-partition-list -S apple-tool:,apple:,codesign: \
+            -s -k trace-ci "$keychain" >/dev/null
+          security find-identity -v -p codesigning "$keychain" | grep -Fq "$APPLE_SIGNING_IDENTITY"
+          echo "TRACE_INTERNAL_SIGNING_IDENTITY=$APPLE_SIGNING_IDENTITY" >> "$GITHUB_ENV"
+
+      - name: Signierten Trace-App-Bundle bauen und einmalig verschlüsseln
+        if: matrix.label == 'macos-arm64' && inputs.trace_bundle_public_key_base64 != ''
+        working-directory: trace-src
+        shell: bash
+        env:
+          RECIPIENT_PUBLIC_KEY_BASE64: ${{ inputs.trace_bundle_public_key_base64 }}
+          SOURCE_SHA: ${{ inputs.trace_ref }}
+        run: |
+          set -euo pipefail
+          bundle_root="$RUNNER_TEMP/trace-host-macos-arm64-internal"
+          dmg="$RUNNER_TEMP/trace-host-macos-arm64-internal.dmg"
+          envelope="$RUNNER_TEMP/trace-host-macos-arm64-internal.dmg.envelope.json"
+          version="$(sed -n 's/^version = "\([^"]*\)"/\1/p' Cargo.toml | head -1)"
+          codesign --force --options runtime --timestamp \
+            --sign "$TRACE_INTERNAL_SIGNING_IDENTITY" "$bundle_root/Trace Host.app"
+          signature="$(codesign -dv --verbose=4 "$bundle_root/Trace Host.app" 2>&1)"
+          test "$(sed -n 's/^Identifier=//p' <<<"$signature")" = "ai.subunit.trace-host"
+          test "$(sed -n 's/^TeamIdentifier=//p' <<<"$signature")" = "Y23NYAZM6M"
+          grep -Eq '^Authority=(Apple Development|Developer ID Application):' <<<"$signature"
+          codesign --verify --deep --strict --verbose=2 "$bundle_root/Trace Host.app"
+          jq -n \
+            --arg source_sha "$SOURCE_SHA" \
+            --arg version "$version" \
+            '{schema_version:"1.0", source_sha:$source_sha, version:$version, bundle_identifier:"ai.subunit.trace-host", team_identifier:"Y23NYAZM6M", distribution_policy:"internal-signed-not-notarized", customer_ready:false}' \
+            > "$bundle_root/BUILD-EVIDENCE.json"
+          hdiutil create -volname "Subunit Trace Host Internal" \
+            -srcfolder "$bundle_root" -ov -format UDZO "$dmg" >/dev/null
+          codesign --force --sign "$TRACE_INTERNAL_SIGNING_IDENTITY" "$dmg"
+          codesign --verify --strict --verbose=2 "$dmg"
+          node "$GITHUB_WORKSPACE/gate/scripts/encrypt-confidential-log.mjs" \
+            "$dmg" "$envelope" "$RECIPIENT_PUBLIC_KEY_BASE64"
+          rm -rf "$bundle_root" "$dmg"
+
+      - name: Verschlüsselten internen Trace-Mac-Bundle bereitstellen
+        if: matrix.label == 'macos-arm64' && inputs.trace_bundle_public_key_base64 != ''
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4, immutable
+        with:
+          name: trace-macos-arm64-internal-encrypted-${{ github.run_id }}
+          path: ${{ runner.temp }}/trace-host-macos-arm64-internal.dmg.envelope.json
+          if-no-files-found: error
+          retention-days: 1
+
+      - name: Ephemere Trace-Signingdaten entfernen
+        if: always() && matrix.label == 'macos-arm64' && inputs.trace_bundle_public_key_base64 != ''
+        shell: bash
+        run: |
+          security delete-keychain "$RUNNER_TEMP/trace-signing.keychain-db" >/dev/null 2>&1 || true
+          rm -f "$RUNNER_TEMP/trace-signing.p12" "$RUNNER_TEMP/trace-host-macos-arm64-internal.dmg"
+          rm -rf "$RUNNER_TEMP/trace-host-macos-arm64-internal"
 
       - name: Verschlüsselte Trace-Windows-Fehlerdiagnostik bereitstellen
         if: failure() && matrix.label == 'windows-x64' && inputs.diagnostic_public_key_base64 != ''
