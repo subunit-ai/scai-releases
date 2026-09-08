@@ -81,13 +81,13 @@ test("an internal Trace bundle can leave the public runner only as a keyed encry
   const plaintextUpload = {
     ...fixtures,
     "pr-check.yml": fixtures["pr-check.yml"].replace(
-      "path: ${{ runner.temp }}/trace-host-macos-arm64-internal.dmg.envelope.json",
-      "path: ${{ runner.temp }}/trace-host-macos-arm64-internal.dmg",
+      "path: ${{ runner.temp }}/trace-host-macos-arm64-internal.tar.gz.envelope.json",
+      "path: ${{ runner.temp }}/trace-host-macos-arm64-internal.tar.gz",
     ),
   };
   assert.match(
     validateSourceConfidentiality(plaintextUpload, assetSelector).join("\n"),
-    /encrypted envelope|plaintext Trace DMGs/,
+    /encrypted envelope|plaintext Trace delivery archives/,
   );
 
   const missingKeyGate = {

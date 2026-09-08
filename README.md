@@ -105,8 +105,13 @@ einen exakten `trace_ref` und einen einmaligen RSA-3072+-Empfängerschlüssel er
 DMG, Build-Logs und privater Source bleiben plaintext-frei. Lokal wird er so entschlüsselt:
 
 ```bash
-node scripts/decrypt-confidential-envelope.mjs envelope.json trace-host.dmg private-key.pem
+node scripts/decrypt-confidential-envelope.mjs envelope.json trace-host-delivery.tar.gz private-key.pem
+tar -xzf trace-host-delivery.tar.gz
 ```
+
+Das entschlüsselte Archiv enthält sowohl das intern signierte DMG als auch denselben geprüften
+App-Bundle separat. So lässt sich die Signatur auch in eingeschränkten Testumgebungen ohne
+Disk-Image-Mount kontrollieren; installiert wird weiterhin der App-Bundle bzw. das DMG.
 
 Dieser interne Bundle ist ausdrücklich **nicht kundentauglich**: Solange Developer ID,
 Notarisierung und Gatekeeper-Abnahme fehlen, dient er ausschließlich dem physischen TCC-/Capture-

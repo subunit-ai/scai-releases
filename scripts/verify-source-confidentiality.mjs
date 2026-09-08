@@ -98,12 +98,12 @@ export function validateSourceConfidentiality(workflows, assetSelector) {
     "pr-check.yml: internal Trace bundles require an explicit one-time recipient key",
   );
   require(
-    /name: Verschlüsselten internen Trace-Mac-Bundle bereitstellen[\s\S]{0,500}?if: matrix\.label == 'macos-arm64' && inputs\.trace_bundle_public_key_base64 != ''[\s\S]{0,500}?path: \$\{\{ runner\.temp \}\}\/trace-host-macos-arm64-internal\.dmg\.envelope\.json/.test(pr),
+    /name: Verschlüsselten internen Trace-Mac-Bundle bereitstellen[\s\S]{0,500}?if: matrix\.label == 'macos-arm64' && inputs\.trace_bundle_public_key_base64 != ''[\s\S]{0,500}?path: \$\{\{ runner\.temp \}\}\/trace-host-macos-arm64-internal\.tar\.gz\.envelope\.json/.test(pr),
     "pr-check.yml: internal Trace bundle uploads must contain only the one-time-key encrypted envelope",
   );
   require(
     pr.includes('node "$GITHUB_WORKSPACE/gate/scripts/encrypt-confidential-log.mjs"')
-      && pr.includes('rm -rf "$bundle_root" "$dmg"'),
+      && pr.includes('rm -rf "$bundle_root" "$dmg" "$delivery"'),
     "pr-check.yml: plaintext Trace bundles must be encrypted and removed before upload",
   );
   require(
@@ -129,6 +129,10 @@ export function validateSourceConfidentiality(workflows, assetSelector) {
   require(
     !/^\s+path: .*trace-host.*\.dmg\s*$/m.test(pr),
     "pr-check.yml: plaintext Trace DMGs must never be uploaded from the public workflow",
+  );
+  require(
+    !/^\s+path: .*trace-host.*\.tar\.gz\s*$/m.test(pr),
+    "pr-check.yml: plaintext Trace delivery archives must never be uploaded from the public workflow",
   );
   require(
     /if: failure\(\) &&[^\n]*inputs\.diagnostic_public_key_base64 != ''[\s\S]{0,350}?path: \$\{\{ runner\.temp \}\}\/scai-support-diagnostic\.json/.test(pr),
