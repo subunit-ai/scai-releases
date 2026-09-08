@@ -28,7 +28,7 @@ export function validateSourceConfidentiality(workflows, assetSelector) {
   for (const label of [
     "npm-ci", "frontend-unit-tests", "cli-drift", "release-meta", "plugin-bundles", "no-demo-data",
     "frontend-build", "support-diagnostics-proof", "meet-visual-proof", "chat-dock-visual-proof", "sentinel-crm-proof", "cargo-test", "native-cargo-check",
-    "revenue-proof-dependencies", "revenue-proof-esbuild", "billing-production-proof", "offers-v01-proof", "revenue-proof-artifacts",
+    "revenue-proof-dependencies", "revenue-proof-esbuild", "billing-production-proof", "offers-v01-proof", "workgraph-blackbox-proof", "revenue-proof-artifacts",
     "native-product-binary", "native-pkce-tests", "native-keyring-smoke",
     "trace-fmt", "trace-core-check", "trace-core-clippy", "trace-core-test",
     "trace-native-check", "trace-native-clippy", "trace-native-test", "trace-native-build",
@@ -55,6 +55,7 @@ export function validateSourceConfidentiality(workflows, assetSelector) {
   require(!/^\s+path:\s*src\/?\s*$/m.test(pr), "pr-check.yml: the private source tree must never be uploaded as an artifact");
   require(!/^\s+path:\s*trace-src\/?\s*$/m.test(pr), "pr-check.yml: the private Trace source tree must never be uploaded as an artifact");
   require(!/^\s+path:.*scai-revenue-source-shots/m.test(pr), "pr-check.yml: raw Revenue source proof output must never be uploaded as an artifact");
+  require(!/^\s+path:.*\.cache\/u1-shots\/scai-workgraph-blackbox/m.test(pr), "pr-check.yml: raw Workgraph source proof output must never be uploaded as an artifact");
   require(
     /name: Chat-Dock-Proof-Screenshots sichern[\s\S]{0,450}?path: ~\/\.cache\/u1-shots\/scai-chat-dock\//.test(pr),
     "pr-check.yml: Chat-Dock proof may upload only its sanitized screenshot directory",
@@ -116,6 +117,10 @@ export function validateSourceConfidentiality(workflows, assetSelector) {
     "pr-check.yml: Sentinel CRM proof must be detected before older source refs are gated",
   );
   require(
+    /if \[ -f scripts\/verify-workgraph-blackbox\.mjs \]; then[\s\S]{0,220}?workgraph_blackbox=true[\s\S]{0,220}?workgraph_blackbox=false/.test(pr),
+    "pr-check.yml: Workgraph proof must be optional for older source refs",
+  );
+  require(
     /name: Sentinel CRM 2026 visuell und interaktiv beweisen[\s\S]{0,180}?if: steps\.source_proofs\.outputs\.sentinel_crm == 'true'/.test(pr),
     "pr-check.yml: Sentinel CRM proof must stay strict when its source harness exists",
   );
@@ -138,7 +143,7 @@ export function validateSourceConfidentiality(workflows, assetSelector) {
     "pr-check.yml: partial Revenue harness availability must fail closed",
   );
   require(
-    /name: Revenue-Browser-Abhängigkeiten prüfen[\s\S]{0,500}?if: steps\.source_proofs\.outputs\.revenue_browser == 'true'[\s\S]{0,500}?run-confidential\.sh" revenue-proof-dependencies npx --no-install playwright --version[\s\S]{0,180}?run-confidential\.sh" revenue-proof-esbuild npx --no-install esbuild --version/.test(pr),
+    /name: Revenue-Browser-Abhängigkeiten prüfen[\s\S]{0,500}?if: steps\.source_proofs\.outputs\.revenue_browser == 'true' \|\| steps\.source_proofs\.outputs\.workgraph_blackbox == 'true'[\s\S]{0,500}?run-confidential\.sh" revenue-proof-dependencies npx --no-install playwright --version[\s\S]{0,180}?run-confidential\.sh" revenue-proof-esbuild npx --no-install esbuild --version/.test(pr),
     "pr-check.yml: Revenue browser dependencies must be installed and resolved without an implicit npx download",
   );
   require(
@@ -150,8 +155,23 @@ export function validateSourceConfidentiality(workflows, assetSelector) {
     "pr-check.yml: Offers Revenue proof must run confidentially into its isolated fixture directory",
   );
   require(
-    /name: Revenue-Fixture-Screenshots geschlossen prüfen[\s\S]{0,900}?if: always\(\) && steps\.billing_revenue_proof\.outcome == 'success' && steps\.offers_revenue_proof\.outcome == 'success'[\s\S]{0,900}?REVENUE_ARTIFACT_DIR: \$\{\{ runner\.temp \}\}\/scai-revenue-browser-proof[\s\S]{0,900}?run-confidential\.sh" revenue-proof-artifacts node "\$GITHUB_WORKSPACE\/gate\/scripts\/verify-revenue-proof-artifacts\.mjs" "\$BILLING_PROOF_DIR" "\$OFFERS_PROOF_DIR" "\$REVENUE_ARTIFACT_DIR"/.test(pr),
-    "pr-check.yml: Revenue screenshots must pass the public closed artifact sanitizer",
+    /name: Workgraph Blackbox visuell und interaktiv beweisen[\s\S]{0,750}?if: always\(\) && steps\.source_proofs\.outputs\.workgraph_blackbox == 'true' && steps\.revenue_proof_dependencies\.outcome == 'success'[\s\S]{0,750}?run-confidential\.sh" workgraph-blackbox-proof node scripts\/verify-workgraph-blackbox\.mjs/.test(pr),
+    "pr-check.yml: Workgraph proof must run confidentially whenever its source harness exists",
+  );
+  const browserArtifactStep = pr.match(/- name: Revenue-Fixture-Screenshots geschlossen prüfen[\s\S]*?(?=\n      - name:)/)?.[0] ?? "";
+  require(
+    browserArtifactStep.includes("steps.source_proofs.outputs.revenue_browser == 'true' && steps.billing_revenue_proof.outcome == 'success' && steps.offers_revenue_proof.outcome == 'success'")
+      && browserArtifactStep.includes("steps.source_proofs.outputs.workgraph_blackbox != 'true' || steps.workgraph_blackbox_proof.outcome == 'success'")
+      && browserArtifactStep.includes("steps.source_proofs.outputs.revenue_browser != 'true' && steps.source_proofs.outputs.workgraph_blackbox == 'true' && steps.workgraph_blackbox_proof.outcome == 'success'"),
+    "pr-check.yml: Revenue and Workgraph artifact modes must require their successful source proofs",
+  );
+  require(
+    browserArtifactStep.includes("REVENUE_ARTIFACT_DIR: ${{ runner.temp }}/scai-revenue-browser-proof")
+      && (browserArtifactStep.match(/run-confidential\.sh" revenue-proof-artifacts/g) ?? []).length === 3
+      && browserArtifactStep.includes('"$BILLING_PROOF_DIR" "$OFFERS_PROOF_DIR" "$REVENUE_ARTIFACT_DIR" "$HOME/.cache/u1-shots/scai-workgraph-blackbox"')
+      && browserArtifactStep.includes('"$BILLING_PROOF_DIR" "$OFFERS_PROOF_DIR" "$REVENUE_ARTIFACT_DIR"')
+      && browserArtifactStep.includes('--workgraph-only "$HOME/.cache/u1-shots/scai-workgraph-blackbox" "$REVENUE_ARTIFACT_DIR"'),
+    "pr-check.yml: Revenue and Workgraph screenshots must pass the public closed artifact sanitizer",
   );
   require(
     /name: Revenue-Browser-Proof-Screenshots sichern[\s\S]{0,450}?if: always\(\) && steps\.revenue_artifacts\.outcome == 'success'[\s\S]{0,450}?path: \$\{\{ runner\.temp \}\}\/scai-revenue-browser-proof\//.test(pr),
@@ -164,6 +184,10 @@ export function validateSourceConfidentiality(workflows, assetSelector) {
   require(
     /if: failure\(\) && steps\.offers_revenue_proof\.outcome == 'failure' && inputs\.diagnostic_public_key_base64 != ''[\s\S]{0,350}?path: \$\{\{ runner\.temp \}\}\/scai-revenue-offers-diagnostic\.json/.test(pr),
     "pr-check.yml: Offers Revenue diagnostics may upload only a one-time-key encrypted envelope",
+  );
+  require(
+    /if: failure\(\) && steps\.workgraph_blackbox_proof\.outcome == 'failure' && inputs\.diagnostic_public_key_base64 != ''[\s\S]{0,350}?path: \$\{\{ runner\.temp \}\}\/scai-workgraph-blackbox-diagnostic\.json/.test(pr),
+    "pr-check.yml: Workgraph diagnostics may upload only a one-time-key encrypted envelope",
   );
 
   const auth = workflows["auth-pr-check.yml"] ?? "";

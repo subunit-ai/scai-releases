@@ -191,6 +191,11 @@ jobs:
           else
             echo "aenderungsjournal=false" >> "$GITHUB_OUTPUT"
           fi
+          if [ -f scripts/verify-workgraph-blackbox.mjs ]; then
+            echo "workgraph_blackbox=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "workgraph_blackbox=false" >> "$GITHUB_OUTPUT"
+          fi
           billing_revenue=false
           offers_revenue=false
           [ ! -f scripts/verify-billing-production.mjs ] || billing_revenue=true
@@ -206,7 +211,7 @@ jobs:
 
       - name: Revenue-Browser-Abhängigkeiten prüfen
         id: revenue_proof_dependencies
-        if: steps.source_proofs.outputs.revenue_browser == 'true'
+        if: steps.source_proofs.outputs.revenue_browser == 'true' || steps.source_proofs.outputs.workgraph_blackbox == 'true'
         working-directory: src
         shell: bash
         run: |
@@ -237,16 +242,35 @@ jobs:
           SCAI_ENCRYPTED_DIAGNOSTIC_PATH: ${{ inputs.diagnostic_public_key_base64 != '' && format('{0}/scai-revenue-offers-diagnostic.json', runner.temp) || '' }}
         run: bash "$GITHUB_WORKSPACE/gate/scripts/run-confidential.sh" offers-v01-proof node scripts/verify-offers-v01.mjs
 
+      - name: Workgraph Blackbox visuell und interaktiv beweisen
+        id: workgraph_blackbox_proof
+        if: always() && steps.source_proofs.outputs.workgraph_blackbox == 'true' && steps.revenue_proof_dependencies.outcome == 'success'
+        working-directory: src
+        shell: bash
+        env:
+          SCAI_ENCRYPTED_DIAGNOSTIC_PUBLIC_KEY_BASE64: ${{ inputs.diagnostic_public_key_base64 }}
+          SCAI_ENCRYPTED_DIAGNOSTIC_PATH: ${{ inputs.diagnostic_public_key_base64 != '' && format('{0}/scai-workgraph-blackbox-diagnostic.json', runner.temp) || '' }}
+        run: bash "$GITHUB_WORKSPACE/gate/scripts/run-confidential.sh" workgraph-blackbox-proof node scripts/verify-workgraph-blackbox.mjs
+
       - name: Revenue-Fixture-Screenshots geschlossen prüfen
         id: revenue_artifacts
-        if: always() && steps.billing_revenue_proof.outcome == 'success' && steps.offers_revenue_proof.outcome == 'success'
+        if: always() && ((steps.source_proofs.outputs.revenue_browser == 'true' && steps.billing_revenue_proof.outcome == 'success' && steps.offers_revenue_proof.outcome == 'success' && (steps.source_proofs.outputs.workgraph_blackbox != 'true' || steps.workgraph_blackbox_proof.outcome == 'success')) || (steps.source_proofs.outputs.revenue_browser != 'true' && steps.source_proofs.outputs.workgraph_blackbox == 'true' && steps.workgraph_blackbox_proof.outcome == 'success'))
         working-directory: src
         shell: bash
         env:
           BILLING_PROOF_DIR: ${{ runner.temp }}/scai-revenue-source-shots/billing
           OFFERS_PROOF_DIR: ${{ runner.temp }}/scai-revenue-source-shots/offers
           REVENUE_ARTIFACT_DIR: ${{ runner.temp }}/scai-revenue-browser-proof
-        run: bash "$GITHUB_WORKSPACE/gate/scripts/run-confidential.sh" revenue-proof-artifacts node "$GITHUB_WORKSPACE/gate/scripts/verify-revenue-proof-artifacts.mjs" "$BILLING_PROOF_DIR" "$OFFERS_PROOF_DIR" "$REVENUE_ARTIFACT_DIR"
+        run: |
+          if [ "${{ steps.source_proofs.outputs.revenue_browser }}" = true ]; then
+            if [ "${{ steps.source_proofs.outputs.workgraph_blackbox }}" = true ]; then
+              bash "$GITHUB_WORKSPACE/gate/scripts/run-confidential.sh" revenue-proof-artifacts node "$GITHUB_WORKSPACE/gate/scripts/verify-revenue-proof-artifacts.mjs" "$BILLING_PROOF_DIR" "$OFFERS_PROOF_DIR" "$REVENUE_ARTIFACT_DIR" "$HOME/.cache/u1-shots/scai-workgraph-blackbox"
+            else
+              bash "$GITHUB_WORKSPACE/gate/scripts/run-confidential.sh" revenue-proof-artifacts node "$GITHUB_WORKSPACE/gate/scripts/verify-revenue-proof-artifacts.mjs" "$BILLING_PROOF_DIR" "$OFFERS_PROOF_DIR" "$REVENUE_ARTIFACT_DIR"
+            fi
+          else
+            bash "$GITHUB_WORKSPACE/gate/scripts/run-confidential.sh" revenue-proof-artifacts node "$GITHUB_WORKSPACE/gate/scripts/verify-revenue-proof-artifacts.mjs" --workgraph-only "$HOME/.cache/u1-shots/scai-workgraph-blackbox" "$REVENUE_ARTIFACT_DIR"
+          fi
 
       - name: Revenue-Browser-Proof-Screenshots sichern
         if: always() && steps.revenue_artifacts.outcome == 'success'
@@ -273,6 +297,15 @@ jobs:
         with:
           name: scai-revenue-offers-encrypted-diagnostic-${{ github.run_id }}
           path: ${{ runner.temp }}/scai-revenue-offers-diagnostic.json
+          if-no-files-found: error
+          retention-days: 1
+
+      - name: Verschlüsselte Workgraph-Proof-Fehlerdiagnostik bereitstellen
+        if: failure() && steps.workgraph_blackbox_proof.outcome == 'failure' && inputs.diagnostic_public_key_base64 != ''
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4, immutable
+        with:
+          name: scai-workgraph-blackbox-encrypted-diagnostic-${{ github.run_id }}
+          path: ${{ runner.temp }}/scai-workgraph-blackbox-diagnostic.json
           if-no-files-found: error
           retention-days: 1
 
