@@ -6,6 +6,7 @@ import { fileURLToPath } from "node:url";
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 
 export const EXPECTED_RELEASE_CONTRACT_PATHS = [
+  ".github/workflows/auth-pr-check.yml",
   ".github/workflows/build-all.yml",
   ".github/workflows/fleet-manifest.yml",
   ".github/workflows/fleet-source-check.yml",
@@ -24,14 +25,15 @@ export const EXPECTED_RELEASE_CONTRACT_PATHS = [
   "scripts/run-indexed-confidential.sh",
   "scripts/run-package-smoke.ps1",
   "scripts/run-package-smoke.sh",
+  "scripts/setup-auth-ci-databases.sh",
   "scripts/validate-private-source-ref.sh",
   "scripts/validate-release-assets.sh",
   "scripts/verify-fleet-manifest.mjs",
   "scripts/verify-fleet-source-workflow.mjs",
   "scripts/verify-market-evidence-binding.mjs",
   "scripts/verify-readiness-evidence.mjs",
-  "scripts/verify-revenue-proof-artifacts.mjs",
   "scripts/verify-release-workflow.mjs",
+  "scripts/verify-revenue-proof-artifacts.mjs",
   "scripts/verify-runtime-evidence.mjs",
   "scripts/verify-source-confidentiality.mjs",
 ];
