@@ -25,20 +25,28 @@ Regeln:
 
 ## Aktueller Fleet-Status (2026-09-08)
 
-### v0.151.0 — aktueller technischer Kandidat
+### v0.152.0 — aktueller technischer Kandidat
 
-Source `36875df626621db89f30fb4bdafe4335c4446ede` ist als `v0.151.0` getaggt; Web läuft gesund
-auf demselben Commit. Der vollständige Build
-[`34245464156`](https://github.com/subunit-ai/scai-releases/actions/runs/34245464156) ist über
+Source `64cd6e6cc91859776ce69149b961e3f4cde162b3` ist als `v0.152.0` getaggt; `main`,
+`deploy/web-approved` und Web-Live stehen gesund und sauber auf demselben Commit. Der vollständige
+Build [`34258225993`](https://github.com/subunit-ai/scai-releases/actions/runs/34258225993) ist über
 macOS Apple Silicon/Intel, Windows ARM64/x64, Linux x64 und den abschließenden Signatur-, SBOM-,
-Runtime-, Provenance- und Source-Confidentiality-Job grün. Sein Draft enthält 26 allowlistete
+Runtime- und Provenance-Job grün. Der Source-Confidentiality-Vertrag und die geschlossene
+Upload-Allowlist sind ebenfalls grün. Sein Draft enthält 26 allowlistete
 Assets und bleibt unveröffentlicht.
 
 Fleet-Lauf
-[`34245815275`](https://github.com/subunit-ai/scai-releases/actions/runs/34245815275) prüfte die
+[`34259034057`](https://github.com/subunit-ai/scai-releases/actions/runs/34259034057) prüfte die
 exakten Main-SHAs von u1-chat, Atlas, subunit-auth und Echo über getrennte read-only Deploy-Keys
-erfolgreich. Das Manifest `fleet/manifests/scai-candidate-2026-09-08.1.json` bleibt
+erfolgreich. Das Manifest `fleet/manifests/scai-candidate-2026-09-08.2.json` bleibt
 fail-closed auf `status: candidate`: A1–A6 sind technisch belegt, A7/A8 und R0–R3 bleiben offen.
+Der vorherige `.1`-Kandidat ist zugunsten dieses neueren Source-Pins als `superseded` markiert
+und bleibt historisch auditierbar.
+
+SCAI PR #516 ergänzt revisionsgebundene Lexware-Feldhoheit, stale-conflict Reload,
+ausdrückliche menschliche Konfliktentscheidung, Idempotenz und unveränderliche Receipts. Das
+belegt den lokalen UI-/HTTP-/DB-Sicherheitsvertrag, nicht einen echten bidirektionalen
+Lexware-Provider-Roundtrip.
 
 Die Distribution nutzt weiterhin `legacy-v0.125`. Signing folgt nach dem Handelsregisterauszug;
 vollständige Marktfreigabe verlangt außerdem Legal/DPO/Judge, den gebundenen Fleet-Betriebsdrill,
