@@ -802,7 +802,8 @@ jobs:
           set -euo pipefail
           bundle_root="$RUNNER_TEMP/trace-host-macos-arm64-internal"
           dmg="$RUNNER_TEMP/trace-host-macos-arm64-internal.dmg"
-          envelope="$RUNNER_TEMP/trace-host-macos-arm64-internal.dmg.envelope.json"
+          delivery="$RUNNER_TEMP/trace-host-macos-arm64-internal.tar.gz"
+          envelope="$RUNNER_TEMP/trace-host-macos-arm64-internal.tar.gz.envelope.json"
           version="$(sed -n 's/^version = "\([^"]*\)"/\1/p' Cargo.toml | head -1)"
           codesign --force --options runtime --timestamp \
             --sign "$TRACE_INTERNAL_SIGNING_IDENTITY" "$bundle_root/Trace Host.app"
@@ -820,16 +821,18 @@ jobs:
             -srcfolder "$bundle_root" -ov -format UDZO "$dmg" >/dev/null
           codesign --force --sign "$TRACE_INTERNAL_SIGNING_IDENTITY" "$dmg"
           codesign --verify --strict --verbose=2 "$dmg"
+          tar -czf "$delivery" -C "$RUNNER_TEMP" \
+            "$(basename "$bundle_root")" "$(basename "$dmg")"
           node "$GITHUB_WORKSPACE/gate/scripts/encrypt-confidential-log.mjs" \
-            "$dmg" "$envelope" "$RECIPIENT_PUBLIC_KEY_BASE64"
-          rm -rf "$bundle_root" "$dmg"
+            "$delivery" "$envelope" "$RECIPIENT_PUBLIC_KEY_BASE64"
+          rm -rf "$bundle_root" "$dmg" "$delivery"
 
       - name: Verschlüsselten internen Trace-Mac-Bundle bereitstellen
         if: matrix.label == 'macos-arm64' && inputs.trace_bundle_public_key_base64 != ''
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4, immutable
         with:
           name: trace-macos-arm64-internal-encrypted-${{ github.run_id }}
-          path: ${{ runner.temp }}/trace-host-macos-arm64-internal.dmg.envelope.json
+          path: ${{ runner.temp }}/trace-host-macos-arm64-internal.tar.gz.envelope.json
           if-no-files-found: error
           retention-days: 1
 
@@ -838,7 +841,9 @@ jobs:
         shell: bash
         run: |
           security delete-keychain "$RUNNER_TEMP/trace-signing.keychain-db" >/dev/null 2>&1 || true
-          rm -f "$RUNNER_TEMP/trace-signing.p12" "$RUNNER_TEMP/trace-host-macos-arm64-internal.dmg"
+          rm -f "$RUNNER_TEMP/trace-signing.p12" \
+            "$RUNNER_TEMP/trace-host-macos-arm64-internal.dmg" \
+            "$RUNNER_TEMP/trace-host-macos-arm64-internal.tar.gz"
           rm -rf "$RUNNER_TEMP/trace-host-macos-arm64-internal"
 
       - name: Verschlüsselte Trace-Windows-Fehlerdiagnostik bereitstellen
