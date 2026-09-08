@@ -41,7 +41,16 @@ export function validateSourceConfidentiality(workflows, assetSelector) {
       && pr.indexOf("uses: oven-sh/setup-bun@") < pr.indexOf("name: Quellcode auschecken (privates Repo, read-only Deploy-Key)"),
     "pr-check.yml: Bun setup must complete before private source checkout",
   );
-  require((pr.match(/git -C src fetch --depth 1 origin "\$SRC_REF"/g) ?? []).length === 2, "pr-check.yml: both jobs must fetch the requested immutable source ref");
+  const sourceCheckoutBlocks = [...pr.matchAll(/- name: Quellcode auschecken \(privates Repo, read-only Deploy-Key\)[\s\S]*?(?=\n      - (?:name:|uses:))/g)].map((match) => match[0]);
+  require(sourceCheckoutBlocks.length === 2, "pr-check.yml: both private source checkout steps must remain explicit");
+  for (const block of sourceCheckoutBlocks) {
+    const validation = block.indexOf('bash "$GITHUB_WORKSPACE/gate/scripts/validate-private-source-ref.sh" "$SRC_REF"');
+    const keyMaterial = block.indexOf('key_file="$HOME/.ssh/scai_src"');
+    require(validation >= 0 && keyMaterial > validation, "pr-check.yml: source refs must be allowlist-validated before deploy-key material is created");
+    require(block.includes('git -C src fetch --depth 1 -- origin "$SRC_REF"'), "pr-check.yml: source fetch must terminate options before the validated ref");
+  }
+  require(!pr.includes('git -C src fetch --depth 1 origin "$SRC_REF"'), "pr-check.yml: source fetch must not accept ref-shaped options");
+  require(pr.includes('git -C trace-src fetch --depth 1 -- origin "$SRC_REF"'), "pr-check.yml: Trace fetch must terminate options before its validated SHA");
   require((pr.match(/echo "::error::Checkout-Drift: erwartet \$SRC_REF/g) ?? []).length === 2, "pr-check.yml: both jobs must reject exact-SHA checkout drift");
   require(!/^\s+path:\s*src\/?\s*$/m.test(pr), "pr-check.yml: the private source tree must never be uploaded as an artifact");
   require(!/^\s+path:\s*trace-src\/?\s*$/m.test(pr), "pr-check.yml: the private Trace source tree must never be uploaded as an artifact");

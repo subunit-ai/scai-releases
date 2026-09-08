@@ -33,8 +33,35 @@ test("a mutable action can never run beside private source", () => {
 });
 
 test("a mutable branch clone cannot stand in for an exact source pin", () => {
-  const unsafe = { ...fixtures, "pr-check.yml": fixtures["pr-check.yml"].replace('git -C src fetch --depth 1 origin "$SRC_REF"', 'git clone --depth 1 --branch "$SRC_REF" git@github.com:subunit-ai/subunit-scai.git src') };
+  const unsafe = { ...fixtures, "pr-check.yml": fixtures["pr-check.yml"].replace('git -C src fetch --depth 1 -- origin "$SRC_REF"', 'git clone --depth 1 --branch "$SRC_REF" git@github.com:subunit-ai/subunit-scai.git src') };
   assert.match(validateSourceConfidentiality(unsafe, assetSelector).join("\n"), /mutable branch clone/);
+});
+
+test("private source fetches must terminate options before the validated ref", () => {
+  const unsafe = {
+    ...fixtures,
+    "pr-check.yml": fixtures["pr-check.yml"].replace(
+      'git -C src fetch --depth 1 -- origin "$SRC_REF"',
+      'git -C src fetch --depth 1 origin "$SRC_REF"',
+    ),
+  };
+  assert.match(
+    validateSourceConfidentiality(unsafe, assetSelector).join("\n"),
+    /source fetch must terminate options|must not accept ref-shaped options/,
+  );
+});
+
+test("source ref validation must run before deploy-key material is created", () => {
+  const validation = 'bash "$GITHUB_WORKSPACE/gate/scripts/validate-private-source-ref.sh" "$SRC_REF"';
+  const keyWrite = 'printf \'%s\\n\' "$DEPLOY_KEY" > "$key_file"';
+  const unsafeWorkflow = fixtures["pr-check.yml"]
+    .replace(validation, "true")
+    .replace(keyWrite, `${keyWrite}\n          ${validation}`);
+  const unsafe = { ...fixtures, "pr-check.yml": unsafeWorkflow };
+  assert.match(
+    validateSourceConfidentiality(unsafe, assetSelector).join("\n"),
+    /allowlist-validated before deploy-key material is created/,
+  );
 });
 
 test("a source-streaming Tauri action is rejected", () => {

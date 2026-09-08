@@ -65,6 +65,7 @@ jobs:
           DEPLOY_KEY: ${{ secrets.SOURCE_DEPLOY_KEY }}
         run: |
           set -euo pipefail
+          bash "$GITHUB_WORKSPACE/gate/scripts/validate-private-source-ref.sh" "$SRC_REF"
           if [ -z "${DEPLOY_KEY:-}" ]; then
             echo "::error::SOURCE_DEPLOY_KEY fehlt."
             exit 1
@@ -79,7 +80,7 @@ jobs:
           export GIT_SSH_COMMAND="ssh -i $key_file -o IdentitiesOnly=yes"
           git init src
           git -C src remote add origin git@github.com:subunit-ai/subunit-scai.git
-          git -C src fetch --depth 1 origin "$SRC_REF"
+          git -C src fetch --depth 1 -- origin "$SRC_REF"
           git -C src checkout --detach FETCH_HEAD
           ACTUAL_SHA=$(git -C src rev-parse HEAD)
           if printf '%s' "$SRC_REF" | grep -Eq '^[0-9a-f]{40}$' && [ "$ACTUAL_SHA" != "$SRC_REF" ]; then
@@ -609,7 +610,7 @@ jobs:
           export GIT_SSH_COMMAND="ssh -i $key_file -o IdentitiesOnly=yes"
           git init trace-src
           git -C trace-src remote add origin git@github.com:subunit-ai/trace-tauri.git
-          git -C trace-src fetch --depth 1 origin "$SRC_REF"
+          git -C trace-src fetch --depth 1 -- origin "$SRC_REF"
           git -C trace-src checkout --detach FETCH_HEAD
           ACTUAL_SHA=$(git -C trace-src rev-parse HEAD)
           if [ "$ACTUAL_SHA" != "$SRC_REF" ]; then
@@ -705,6 +706,7 @@ jobs:
           DEPLOY_KEY: ${{ secrets.SOURCE_DEPLOY_KEY }}
         run: |
           set -euo pipefail
+          bash "$GITHUB_WORKSPACE/gate/scripts/validate-private-source-ref.sh" "$SRC_REF"
           if [ -z "${DEPLOY_KEY:-}" ]; then
             echo "::error::SOURCE_DEPLOY_KEY fehlt."
             exit 1
@@ -719,7 +721,7 @@ jobs:
           export GIT_SSH_COMMAND="ssh -i $key_file -o IdentitiesOnly=yes"
           git init src
           git -C src remote add origin git@github.com:subunit-ai/subunit-scai.git
-          git -C src fetch --depth 1 origin "$SRC_REF"
+          git -C src fetch --depth 1 -- origin "$SRC_REF"
           git -C src checkout --detach FETCH_HEAD
           ACTUAL_SHA=$(git -C src rev-parse HEAD)
           if printf '%s' "$SRC_REF" | grep -Eq '^[0-9a-f]{40}$' && [ "$ACTUAL_SHA" != "$SRC_REF" ]; then

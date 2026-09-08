@@ -24,6 +24,7 @@ export const EXPECTED_RELEASE_CONTRACT_PATHS = [
   "scripts/run-indexed-confidential.sh",
   "scripts/run-package-smoke.ps1",
   "scripts/run-package-smoke.sh",
+  "scripts/validate-private-source-ref.sh",
   "scripts/validate-release-assets.sh",
   "scripts/verify-fleet-manifest.mjs",
   "scripts/verify-fleet-source-workflow.mjs",
