@@ -222,6 +222,18 @@ jobs:
           else
             echo "workforce_capacity=false" >> "$GITHUB_OUTPUT"
           fi
+          subunit_call_host=false
+          subunit_call_proof=false
+          [ ! -f src/call/CallSessionHost.tsx ] || subunit_call_host=true
+          [ ! -f scripts/verify-subunit-call.mjs ] || subunit_call_proof=true
+          if [ "$subunit_call_host" = true ] && [ "$subunit_call_proof" = true ]; then
+            echo "subunit_call=true" >> "$GITHUB_OUTPUT"
+          elif [ "$subunit_call_host" = false ] && [ "$subunit_call_proof" = false ]; then
+            echo "subunit_call=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "::error::Subunit-Call-Proof ist unvollständig; Call-Host und Proof-Harness müssen gemeinsam vorliegen."
+            exit 1
+          fi
           workspace_tabs=false
           workspace_app_plugins=false
           [ ! -f scripts/verify-workspace-tabs.mjs ] || workspace_tabs=true
@@ -246,6 +258,25 @@ jobs:
             echo "::error::Revenue-Browser-Proof ist unvollständig; Billing- und Offers-Harness müssen gemeinsam vorliegen."
             exit 1
           fi
+
+      - name: Subunit Call im Browser einschließlich Aufnahme und Native-Quit-Schutz beweisen
+        id: subunit_call_proof
+        if: always() && steps.source_proofs.outputs.subunit_call == 'true'
+        working-directory: src
+        shell: bash
+        env:
+          SCAI_ENCRYPTED_DIAGNOSTIC_PUBLIC_KEY_BASE64: ${{ inputs.diagnostic_public_key_base64 }}
+          SCAI_ENCRYPTED_DIAGNOSTIC_PATH: ${{ inputs.diagnostic_public_key_base64 != '' && format('{0}/scai-subunit-call-diagnostic.json', runner.temp) || '' }}
+        run: bash "$GITHUB_WORKSPACE/gate/scripts/run-confidential.sh" subunit-call-proof node scripts/verify-subunit-call.mjs
+
+      - name: Verschlüsselte Subunit-Call-Fehlerdiagnostik bereitstellen
+        if: failure() && steps.subunit_call_proof.outcome == 'failure' && inputs.diagnostic_public_key_base64 != ''
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4, immutable
+        with:
+          name: scai-subunit-call-encrypted-diagnostic-${{ github.run_id }}
+          path: ${{ runner.temp }}/scai-subunit-call-diagnostic.json
+          if-no-files-found: error
+          retention-days: 1
 
       - name: Revenue-Browser-Abhängigkeiten prüfen
         id: revenue_proof_dependencies

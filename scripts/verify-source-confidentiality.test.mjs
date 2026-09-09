@@ -305,10 +305,11 @@ test("Workspace browser harnesses are an atomic confidential gate", () => {
   );
 });
 
-test("Workspace diagnostics require the supplied key and the two exact encrypted envelopes", () => {
+test("Workspace and Call diagnostics require the supplied key and the three exact encrypted envelopes", () => {
   for (const [stepId, diagnosticName, expected] of [
     ["workspace_tabs_proof", "scai-workspace-tabs-diagnostic.json", /Workspace tab diagnostics/],
     ["workspace_app_plugins_proof", "scai-workspace-app-plugins-diagnostic.json", /Workspace app-plugin diagnostics/],
+    ["subunit_call_proof", "scai-subunit-call-diagnostic.json", /Subunit Call diagnostics/],
   ]) {
     const missingKeyGuard = {
       ...fixtures,
@@ -343,7 +344,74 @@ test("Workspace diagnostics require the supplied key and the two exact encrypted
     };
     assert.match(
       validateSourceConfidentiality(broadUpload, assetSelector).join("\n"),
-      /raw Workspace proof output must not be uploaded|Workspace .* diagnostics/,
+      /raw Workspace proof output|Workspace .* diagnostics|Subunit Call diagnostics/,
+    );
+  }
+});
+
+test("Subunit Call proof remains ref-bound, confidential, and runnable after an earlier failure", () => {
+  const scriptOnlyDetection = {
+    ...fixtures,
+    "pr-check.yml": fixtures["pr-check.yml"].replace(
+      "[ ! -f src/call/CallSessionHost.tsx ] || subunit_call_host=true",
+      "subunit_call_host=true",
+    ),
+  };
+  assert.match(
+    validateSourceConfidentiality(scriptOnlyDetection, assetSelector).join("\n"),
+    /Subunit Call proof detection must retain/,
+  );
+
+  const partialAllowed = {
+    ...fixtures,
+    "pr-check.yml": fixtures["pr-check.yml"].replace(
+      `            echo "::error::Subunit-Call-Proof ist unvollständig; Call-Host und Proof-Harness müssen gemeinsam vorliegen."
+            exit 1`,
+      '            echo "subunit_call=false" >> "$GITHUB_OUTPUT"',
+    ),
+  };
+  assert.match(
+    validateSourceConfidentiality(partialAllowed, assetSelector).join("\n"),
+    /partial Subunit Call capability availability must fail closed/,
+  );
+
+  const publicProof = {
+    ...fixtures,
+    "pr-check.yml": fixtures["pr-check.yml"].replace("subunit-call-proof", "subunit-call-public"),
+  };
+  assert.match(
+    validateSourceConfidentiality(publicProof, assetSelector).join("\n"),
+    /subunit-call-proof must suppress private output|Subunit Call proof must run confidentially/,
+  );
+
+  const priorFailureSkipsProof = {
+    ...fixtures,
+    "pr-check.yml": fixtures["pr-check.yml"].replace(
+      "if: always() && steps.source_proofs.outputs.subunit_call == 'true'",
+      "if: steps.source_proofs.outputs.subunit_call == 'true'",
+    ),
+  };
+  assert.match(
+    validateSourceConfidentiality(priorFailureSkipsProof, assetSelector).join("\n"),
+    /Subunit Call proof must run confidentially/,
+  );
+
+  for (const rawPath of [
+    "~/.cache/u1-shots/subunit-call/",
+    "~/.cache/u1-shots/subunit-call/report.json",
+    '"/home/runner/.cache/u1-shots/subunit-call"',
+    "'/home/runner/.cache/u1-shots/subunit-call/**/*.png'",
+    "${{ runner.temp }}/subunit-call-report.json",
+    "${{ runner.temp }}/call-audio-caller-final.webm",
+    "${{ runner.temp }}/call-active-caller-390-light.png",
+  ]) {
+    const rawCallArtifact = {
+      ...fixtures,
+      "pr-check.yml": `${fixtures["pr-check.yml"]}\n      - uses: actions/upload-artifact@${"a".repeat(40)}\n        with:\n          path: ${rawPath}\n`,
+    };
+    assert.match(
+      validateSourceConfidentiality(rawCallArtifact, assetSelector).join("\n"),
+      /raw Subunit Call screenshots, recordings, reports, and the real proof output directory/,
     );
   }
 });
