@@ -113,6 +113,30 @@ test("an internal Trace bundle can leave the public runner only as a keyed encry
     validateSourceConfidentiality(sourceAfterSecrets, assetSelector).join("\n"),
     /no private Trace packaging script may execute after signing secrets/,
   );
+
+  const setupAfterSecrets = {
+    ...fixtures,
+    "pr-check.yml": fixtures["pr-check.yml"].replace(
+      "name: Signierten Trace-App-Bundle bauen und einmalig verschlüsseln",
+      "name: Signierten Trace-App-Bundle bauen und einmalig verschlüsseln\n        run-private-after-import: bash scripts/build-macos-setup-app.sh",
+    ),
+  };
+  assert.match(
+    validateSourceConfidentiality(setupAfterSecrets, assetSelector).join("\n"),
+    /no private Trace setup packaging script may execute after signing secrets/,
+  );
+
+  const missingSetupIdentity = {
+    ...fixtures,
+    "pr-check.yml": fixtures["pr-check.yml"].replace(
+      'setup_bundle_identifier:"ai.subunit.trace-setup"',
+      'setup_bundle_identifier:"unknown"',
+    ),
+  };
+  assert.match(
+    validateSourceConfidentiality(missingSetupIdentity, assetSelector).join("\n"),
+    /setup app must be identity-bound/,
+  );
 });
 
 test("Bun setup cannot run after the private source checkout", () => {

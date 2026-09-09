@@ -32,7 +32,7 @@ export function validateSourceConfidentiality(workflows, assetSelector) {
     "native-product-binary", "native-pkce-tests", "native-keyring-smoke",
     "trace-fmt", "trace-core-check", "trace-core-clippy", "trace-core-test",
     "trace-native-check", "trace-native-clippy", "trace-native-test", "trace-native-build",
-    "trace-macos-app-package",
+    "trace-macos-app-package", "trace-macos-setup-package",
   ]) {
     require(pr.includes(`run-confidential.sh\" ${label}`), `pr-check.yml: ${label} must suppress private output`);
   }
@@ -122,9 +122,20 @@ export function validateSourceConfidentiality(workflows, assetSelector) {
     "pr-check.yml: no private Trace packaging script may execute after signing secrets are imported",
   );
   require(
+    traceSigningImport < 0 || !pr.slice(traceSigningImport).includes("bash scripts/build-macos-setup-app.sh"),
+    "pr-check.yml: no private Trace setup packaging script may execute after signing secrets are imported",
+  );
+  require(
     pr.includes('test ! -L "$bundle_root/Trace Host.app"')
-      && pr.includes('test -z "$(find "$bundle_root/Trace Host.app" -type l -print -quit)"'),
-    "pr-check.yml: the prepackaged Trace app must reject symlinks before signing",
+      && pr.includes('test -z "$(find "$bundle_root/Trace Host.app" -type l -print -quit)"')
+      && pr.includes('test ! -L "$bundle_root/Trace einrichten.app"')
+      && pr.includes('test -z "$(find "$bundle_root/Trace einrichten.app" -type l -print -quit)"'),
+    "pr-check.yml: both prepackaged Trace apps must reject symlinks before signing",
+  );
+  require(
+    pr.includes('setup_bundle_identifier:"ai.subunit.trace-setup"')
+      && pr.includes('test "$(sed -n \'s/^Identifier=//p\' <<<"$setup_signature")" = "ai.subunit.trace-setup"'),
+    "pr-check.yml: the internal setup app must be identity-bound in evidence and signing checks",
   );
   require(
     !/^\s+path: .*trace-host.*\.dmg\s*$/m.test(pr),

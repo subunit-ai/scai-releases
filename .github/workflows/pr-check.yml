@@ -750,6 +750,11 @@ jobs:
               "$bundle_root/Trace Host.app" \
               - \
               "$version"
+          bash "$GITHUB_WORKSPACE/gate/scripts/run-confidential.sh" trace-macos-setup-package \
+            bash scripts/build-macos-setup-app.sh \
+              "$bundle_root/Trace einrichten.app" \
+              - \
+              "$version"
           test -d "$bundle_root/Trace Host.app"
           test ! -L "$bundle_root/Trace Host.app"
           test -f "$bundle_root/Trace Host.app/Contents/Info.plist"
@@ -759,6 +764,15 @@ jobs:
           test -z "$(find "$bundle_root/Trace Host.app" -type l -print -quit)"
           test "$(plutil -extract CFBundleIdentifier raw "$bundle_root/Trace Host.app/Contents/Info.plist")" = "ai.subunit.trace-host"
           codesign --verify --deep --strict --verbose=2 "$bundle_root/Trace Host.app"
+          test -d "$bundle_root/Trace einrichten.app"
+          test ! -L "$bundle_root/Trace einrichten.app"
+          test -f "$bundle_root/Trace einrichten.app/Contents/Info.plist"
+          test ! -L "$bundle_root/Trace einrichten.app/Contents/Info.plist"
+          test -x "$bundle_root/Trace einrichten.app/Contents/MacOS/trace-setup"
+          test ! -L "$bundle_root/Trace einrichten.app/Contents/MacOS/trace-setup"
+          test -z "$(find "$bundle_root/Trace einrichten.app" -type l -print -quit)"
+          test "$(plutil -extract CFBundleIdentifier raw "$bundle_root/Trace einrichten.app/Contents/Info.plist")" = "ai.subunit.trace-setup"
+          codesign --verify --deep --strict --verbose=2 "$bundle_root/Trace einrichten.app"
           ln -s "Trace Host.app/Contents/MacOS/trace-host" "$bundle_root/trace-host"
           cp README.md docs/PILOT-RUNBOOK.md "$bundle_root/"
 
@@ -807,15 +821,22 @@ jobs:
           version="$(sed -n 's/^version = "\([^"]*\)"/\1/p' Cargo.toml | head -1)"
           codesign --force --options runtime --timestamp \
             --sign "$TRACE_INTERNAL_SIGNING_IDENTITY" "$bundle_root/Trace Host.app"
+          codesign --force --options runtime --timestamp \
+            --sign "$TRACE_INTERNAL_SIGNING_IDENTITY" "$bundle_root/Trace einrichten.app"
           signature="$(codesign -dv --verbose=4 "$bundle_root/Trace Host.app" 2>&1)"
           test "$(sed -n 's/^Identifier=//p' <<<"$signature")" = "ai.subunit.trace-host"
           test "$(sed -n 's/^TeamIdentifier=//p' <<<"$signature")" = "Y23NYAZM6M"
           grep -Eq '^Authority=(Apple Development|Developer ID Application):' <<<"$signature"
           codesign --verify --deep --strict --verbose=2 "$bundle_root/Trace Host.app"
+          setup_signature="$(codesign -dv --verbose=4 "$bundle_root/Trace einrichten.app" 2>&1)"
+          test "$(sed -n 's/^Identifier=//p' <<<"$setup_signature")" = "ai.subunit.trace-setup"
+          test "$(sed -n 's/^TeamIdentifier=//p' <<<"$setup_signature")" = "Y23NYAZM6M"
+          grep -Eq '^Authority=(Apple Development|Developer ID Application):' <<<"$setup_signature"
+          codesign --verify --deep --strict --verbose=2 "$bundle_root/Trace einrichten.app"
           jq -n \
             --arg source_sha "$SOURCE_SHA" \
             --arg version "$version" \
-            '{schema_version:"1.0", source_sha:$source_sha, version:$version, bundle_identifier:"ai.subunit.trace-host", team_identifier:"Y23NYAZM6M", distribution_policy:"internal-signed-not-notarized", customer_ready:false}' \
+            '{schema_version:"1.0", source_sha:$source_sha, version:$version, bundle_identifier:"ai.subunit.trace-host", setup_bundle_identifier:"ai.subunit.trace-setup", team_identifier:"Y23NYAZM6M", distribution_policy:"internal-signed-not-notarized", customer_ready:false}' \
             > "$bundle_root/BUILD-EVIDENCE.json"
           hdiutil create -volname "Subunit Trace Host Internal" \
             -srcfolder "$bundle_root" -ov -format UDZO "$dmg" >/dev/null
