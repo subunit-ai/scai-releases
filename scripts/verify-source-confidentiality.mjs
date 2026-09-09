@@ -29,6 +29,7 @@ export function validateSourceConfidentiality(workflows, assetSelector) {
     "npm-ci", "frontend-unit-tests", "cli-drift", "release-meta", "plugin-bundles", "no-demo-data",
     "frontend-build", "support-diagnostics-proof", "meet-visual-proof", "chat-dock-visual-proof", "sentinel-crm-proof", "cargo-test", "native-cargo-check",
     "revenue-proof-dependencies", "revenue-proof-esbuild", "billing-production-proof", "offers-v01-proof", "workgraph-blackbox-proof", "revenue-proof-artifacts",
+    "workspace-tabs-proof", "workspace-app-plugins-proof",
     "native-product-binary", "native-pkce-tests", "native-keyring-smoke",
     "trace-fmt", "trace-core-check", "trace-core-clippy", "trace-core-test",
     "trace-native-check", "trace-native-clippy", "trace-native-test", "trace-native-build",
@@ -177,6 +178,20 @@ export function validateSourceConfidentiality(workflows, assetSelector) {
     /if \[ -f scripts\/verify-moco-parity\.mjs \]; then[\s\S]{0,220}?moco_parity=true[\s\S]{0,220}?moco_parity=false/.test(pr),
     "pr-check.yml: MOCO parity proof must be optional for older source refs",
   );
+  for (const contract of [
+    "workspace_tabs=false",
+    "workspace_app_plugins=false",
+    "[ ! -f scripts/verify-workspace-tabs.mjs ] || workspace_tabs=true",
+    "[ ! -f scripts/verify-workspace-app-plugins.mjs ] || workspace_app_plugins=true",
+    "echo \"workspace_browser=true\" >> \"$GITHUB_OUTPUT\"",
+    "echo \"workspace_browser=false\" >> \"$GITHUB_OUTPUT\"",
+  ]) {
+    require(pr.includes(contract), `pr-check.yml: Workspace proof detection must retain: ${contract}`);
+  }
+  require(
+    /if \[ "\$workspace_tabs" = true \] && \[ "\$workspace_app_plugins" = true \]; then[\s\S]{0,180}?elif \[ "\$workspace_tabs" = false \] && \[ "\$workspace_app_plugins" = false \]; then[\s\S]{0,300}?else[\s\S]{0,240}?exit 1/.test(pr),
+    "pr-check.yml: partial Workspace harness availability must fail closed",
+  );
   require(
     /name: Sentinel CRM 2026 visuell und interaktiv beweisen[\s\S]{0,180}?if: steps\.source_proofs\.outputs\.sentinel_crm == 'true'/.test(pr),
     "pr-check.yml: Sentinel CRM proof must stay strict when its source harness exists",
@@ -218,6 +233,22 @@ export function validateSourceConfidentiality(workflows, assetSelector) {
   require(
     /name: MOCO-Paritaetsprotokoll visuell und interaktiv beweisen[\s\S]{0,500}?if: steps\.source_proofs\.outputs\.moco_parity == 'true'[\s\S]{0,500}?MOCO_PARITY_PROOF_OUT: \$\{\{ runner\.temp \}\}\/scai-moco-parity-proof[\s\S]{0,500}?run-confidential\.sh" moco-parity-proof node scripts\/verify-moco-parity\.mjs/.test(pr),
     "pr-check.yml: MOCO parity browser proof must run confidentially when its source harness exists",
+  );
+  require(
+    /name: Arbeitsbereich mit Tabs und geteilten Flächen im Web beweisen[\s\S]{0,500}?if: steps\.source_proofs\.outputs\.workspace_browser == 'true'[\s\S]{0,500}?SCAI_WORKSPACE_PROOF_OUT: \$\{\{ runner\.temp \}\}\/scai-workspace-tabs[\s\S]{0,500}?run-confidential\.sh" workspace-tabs-proof node scripts\/verify-workspace-tabs\.mjs/.test(pr),
+    "pr-check.yml: Workspace tab proof must run confidentially when both source harnesses exist",
+  );
+  require(
+    /name: Arbeitsbereich mit App-Modus-Plugins beweisen[\s\S]{0,400}?if: steps\.source_proofs\.outputs\.workspace_browser == 'true'[\s\S]{0,400}?run-confidential\.sh" workspace-app-plugins-proof node scripts\/verify-workspace-app-plugins\.mjs/.test(pr),
+    "pr-check.yml: Workspace app-plugin proof must run confidentially when both source harnesses exist",
+  );
+  require(
+    /name: Arbeitsbereich-Proof-Screenshots geschlossen prüfen[\s\S]{0,900}?desktop-dark-split\.png[\s\S]{0,300}?mobile-light-areas\.png[\s\S]{0,300}?mobile-dark\.png[\s\S]{0,300}?dashboard-two-instances\.png[\s\S]{0,300}?halo-two-instances\.png[\s\S]{0,300}?native-menu-bridge\.png/.test(pr),
+    "pr-check.yml: Workspace proof must verify the representative Web and App-mode screenshots",
+  );
+  require(
+    !/^\s+path:.*scai-workspace-(?:tabs|app-plugins)/m.test(pr),
+    "pr-check.yml: raw Workspace proof output must not be uploaded from the public workflow",
   );
   const browserArtifactStep = pr.match(/- name: Revenue-Fixture-Screenshots geschlossen prüfen[\s\S]*?(?=\n      - name:)/)?.[0] ?? "";
   require(

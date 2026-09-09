@@ -217,6 +217,18 @@ jobs:
           else
             echo "moco_parity=false" >> "$GITHUB_OUTPUT"
           fi
+          workspace_tabs=false
+          workspace_app_plugins=false
+          [ ! -f scripts/verify-workspace-tabs.mjs ] || workspace_tabs=true
+          [ ! -f scripts/verify-workspace-app-plugins.mjs ] || workspace_app_plugins=true
+          if [ "$workspace_tabs" = true ] && [ "$workspace_app_plugins" = true ]; then
+            echo "workspace_browser=true" >> "$GITHUB_OUTPUT"
+          elif [ "$workspace_tabs" = false ] && [ "$workspace_app_plugins" = false ]; then
+            echo "workspace_browser=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "::error::Arbeitsbereich-Browser-Proof ist unvollständig; Web- und App-Modus-Harness müssen gemeinsam vorliegen."
+            exit 1
+          fi
           billing_revenue=false
           offers_revenue=false
           [ ! -f scripts/verify-billing-production.mjs ] || billing_revenue=true
@@ -567,6 +579,35 @@ jobs:
           path: ~/.cache/u1-shots/sentinel-routing/
           if-no-files-found: error
           retention-days: 14
+
+      - name: Arbeitsbereich mit Tabs und geteilten Flächen im Web beweisen
+        id: workspace_tabs_proof
+        if: steps.source_proofs.outputs.workspace_browser == 'true'
+        working-directory: src
+        shell: bash
+        env:
+          SCAI_WORKSPACE_PROOF_OUT: ${{ runner.temp }}/scai-workspace-tabs
+        run: bash "$GITHUB_WORKSPACE/gate/scripts/run-confidential.sh" workspace-tabs-proof node scripts/verify-workspace-tabs.mjs
+
+      - name: Arbeitsbereich mit App-Modus-Plugins beweisen
+        id: workspace_app_plugins_proof
+        if: steps.source_proofs.outputs.workspace_browser == 'true'
+        working-directory: src
+        shell: bash
+        run: bash "$GITHUB_WORKSPACE/gate/scripts/run-confidential.sh" workspace-app-plugins-proof node scripts/verify-workspace-app-plugins.mjs
+
+      - name: Arbeitsbereich-Proof-Screenshots geschlossen prüfen
+        if: always() && steps.workspace_tabs_proof.outcome != 'skipped' && steps.workspace_app_plugins_proof.outcome != 'skipped'
+        shell: bash
+        env:
+          WORKSPACE_TABS_PROOF_DIR: ${{ runner.temp }}/scai-workspace-tabs
+        run: |
+          test -s "$WORKSPACE_TABS_PROOF_DIR/desktop-dark-split.png"
+          test -s "$WORKSPACE_TABS_PROOF_DIR/mobile-light-areas.png"
+          test -s "$WORKSPACE_TABS_PROOF_DIR/mobile-dark.png"
+          test -s "$HOME/.cache/u1-shots/scai-workspace-app-plugins/dashboard-two-instances.png"
+          test -s "$HOME/.cache/u1-shots/scai-workspace-app-plugins/halo-two-instances.png"
+          test -s "$HOME/.cache/u1-shots/scai-workspace-app-plugins/native-menu-bridge.png"
 
       # Rust-Kompilat + Unit-Tests. Tauri v2 linkt webkit2gtk/gtk auch für
       # `cargo test` → Systembibliotheken nötig.

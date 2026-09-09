@@ -263,6 +263,48 @@ test("Revenue harnesses cannot be partially present or bypass confidential execu
   );
 });
 
+test("Workspace browser harnesses are an atomic confidential gate", () => {
+  const partialAllowed = {
+    ...fixtures,
+    "pr-check.yml": fixtures["pr-check.yml"].replace(
+      `            echo "::error::Arbeitsbereich-Browser-Proof ist unvollständig; Web- und App-Modus-Harness müssen gemeinsam vorliegen."
+            exit 1`,
+      '            echo "workspace_browser=false" >> "$GITHUB_OUTPUT"',
+    ),
+  };
+  assert.match(
+    validateSourceConfidentiality(partialAllowed, assetSelector).join("\n"),
+    /partial Workspace harness availability must fail closed/,
+  );
+
+  const publicTabs = {
+    ...fixtures,
+    "pr-check.yml": fixtures["pr-check.yml"].replace("workspace-tabs-proof", "workspace-tabs-public"),
+  };
+  assert.match(
+    validateSourceConfidentiality(publicTabs, assetSelector).join("\n"),
+    /workspace-tabs-proof must suppress private output|Workspace tab proof must run confidentially/,
+  );
+
+  const publicAppPlugins = {
+    ...fixtures,
+    "pr-check.yml": fixtures["pr-check.yml"].replace("workspace-app-plugins-proof", "workspace-app-plugins-public"),
+  };
+  assert.match(
+    validateSourceConfidentiality(publicAppPlugins, assetSelector).join("\n"),
+    /workspace-app-plugins-proof must suppress private output|Workspace app-plugin proof must run confidentially/,
+  );
+
+  const rawUpload = {
+    ...fixtures,
+    "pr-check.yml": `${fixtures["pr-check.yml"]}\n      - uses: actions/upload-artifact@${"a".repeat(40)}\n        with:\n          path: \${{ runner.temp }}/scai-workspace-tabs/\n`,
+  };
+  assert.match(
+    validateSourceConfidentiality(rawUpload, assetSelector).join("\n"),
+    /raw Workspace proof output must not be uploaded/,
+  );
+});
+
 test("Revenue screenshots can upload only after closed sanitization", () => {
   const rawUpload = {
     ...fixtures,
