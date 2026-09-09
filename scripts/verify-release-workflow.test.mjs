@@ -15,6 +15,17 @@ test("current release workflow is fail-closed", () => {
   assert.deepEqual(validateReleaseWorkflow(fixture), []);
 });
 
+test("build and publish share one non-cancelling release mutation lock", () => {
+  const unlockedBuild = fixture.replace("group: scai-release-mutation", "group: build-only");
+  assert.match(validateReleaseWorkflow(unlockedBuild).join("\n"), /shared non-cancelling concurrency lock/);
+
+  const cancellingBuild = fixture.replace("cancel-in-progress: false", "cancel-in-progress: true");
+  assert.match(validateReleaseWorkflow(cancellingBuild).join("\n"), /shared non-cancelling concurrency lock/);
+
+  const unlockedPublish = publishFixture.replace("group: scai-release-mutation", "group: publish-only");
+  assert.match(validatePublishWorkflow(unlockedPublish, contractPaths).join("\n"), /share the non-cancelling release mutation lock/);
+});
+
 test("a public pre-build release is rejected", () => {
   const unsafe = fixture.replace("--draft \\", "--not-a-draft \\");
   assert.match(validateReleaseWorkflow(unsafe).join("\n"), /release must be created as a draft/);
@@ -94,8 +105,16 @@ test("Windows ARM CXX flags cannot be converted into a fake Git installation pat
 });
 
 test("a broad release upload cannot replace the explicit asset allowlist", () => {
-  const unsafe = fixture.replace('gh release upload "$TAG" "${ASSETS[@]}"', 'gh release upload "$TAG" "$BUNDLE_ROOT"');
+  const unsafe = fixture.replace('upload-draft-assets.sh" "${ASSETS[@]}"', 'upload-draft-assets.sh" "$BUNDLE_ROOT"');
   assert.match(validateReleaseWorkflow(unsafe).join("\n"), /explicit release asset allowlist/);
+});
+
+test("no asset upload can bypass the bound-draft guard", () => {
+  const unsafe = fixture.replace(
+    'bash "$GITHUB_WORKSPACE/gate/scripts/upload-draft-assets.sh" "$EVIDENCE"',
+    'gh release upload "$TAG" "$EVIDENCE" -R "$REPO" --clobber',
+  );
+  assert.match(validateReleaseWorkflow(unsafe).join("\n"), /every release asset upload|must not bypass/);
 });
 
 test("updater signatures cannot be treated as native platform signing", () => {

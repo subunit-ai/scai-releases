@@ -58,6 +58,13 @@ permissions:
   id-token: write # kurzlebige Sigstore-Identität für GitHub Artifact Attestations
   attestations: write
 
+# Ein gemeinsamer Lock mit publish-approved.yml schützt den Release-Datensatz über
+# den gesamten Build. Bewusst repo-weit statt nur pro Release-ID: Die Version wird
+# erst aus dem privaten Source-SHA gelesen, bevor Jobs laufen können.
+concurrency:
+  group: scai-release-mutation
+  cancel-in-progress: false
+
 jobs:
   # RELEASE EINMAL ANLEGEN — vor der Matrix, gegen das Anlege-Rennen.
   #
@@ -561,6 +568,9 @@ jobs:
           REPO: ${{ github.repository }}
           TAG: ${{ needs.release.outputs.tag }}
           TARGET: ${{ matrix.target }}
+          SOURCE_SHA: ${{ needs.release.outputs.source_sha }}
+          RELEASE_ID: ${{ inputs.release_id }}
+          DISTRIBUTION_POLICY: ${{ inputs.distribution_policy }}
           BUNDLES: ${{ matrix.bundles }}
           ENABLE_MEET: ${{ matrix.meet_features != '' }}
           WINDOWS_SIGNING: ${{ matrix.signing_args != '' && inputs.distribution_policy == 'market-ready' }}
@@ -644,7 +654,7 @@ jobs:
           rm -f "$ASSET_LIST"
           test "${#ASSETS[@]}" -gt 0
 
-          gh release upload "$TAG" "${ASSETS[@]}" -R "$REPO" --clobber
+          bash "$GITHUB_WORKSPACE/gate/scripts/upload-draft-assets.sh" "${ASSETS[@]}"
           echo "PASS $TARGET: ${#ASSETS[@]} allowlistete Draft-Assets hochgeladen; keine Build-Ausgabe veröffentlicht."
 
       - name: Installer- und Updater-Payload installieren und starten (macOS/Linux)
@@ -686,13 +696,15 @@ jobs:
           TAG: ${{ needs.release.outputs.tag }}
           TARGET: ${{ matrix.target }}
           SOURCE_SHA: ${{ needs.release.outputs.source_sha }}
+          RELEASE_ID: ${{ inputs.release_id }}
+          DISTRIBUTION_POLICY: ${{ inputs.distribution_policy }}
         run: |
           set -euo pipefail
           VERSION=$(node -p "require('./src/src-tauri/tauri.conf.json').version")
           EVIDENCE="$RUNNER_TEMP/runtime-evidence-$TARGET.json"
           node "$GITHUB_WORKSPACE/gate/scripts/verify-runtime-evidence.mjs" \
             "$EVIDENCE" "$TARGET" "$VERSION" "$SOURCE_SHA"
-          gh release upload "$TAG" "$EVIDENCE" -R "$REPO" --clobber
+          bash "$GITHUB_WORKSPACE/gate/scripts/upload-draft-assets.sh" "$EVIDENCE"
 
       # BEWEIS STATT BEHAUPTUNG. Der Keychain-Schritt oben kann grün sein und die App
       # trotzdem ad-hoc signiert rauskommen (falsche Identity, Tauri ignoriert die env,
@@ -867,11 +879,14 @@ jobs:
           REPO: ${{ github.repository }}
           TAG: ${{ needs.release.outputs.tag }}
           TARGET: ${{ matrix.target }}
+          SOURCE_SHA: ${{ needs.release.outputs.source_sha }}
+          RELEASE_ID: ${{ inputs.release_id }}
+          DISTRIBUTION_POLICY: ${{ inputs.distribution_policy }}
         run: |
           set -euo pipefail
           EVIDENCE="$RUNNER_TEMP/signing-evidence-$TARGET.json"
           test -s "$EVIDENCE"
-          gh release upload "$TAG" "$EVIDENCE" -R "$REPO" --clobber
+          bash "$GITHUB_WORKSPACE/gate/scripts/upload-draft-assets.sh" "$EVIDENCE"
 
       - name: Private Trace-Credentials entfernen
         if: always()
@@ -994,6 +1009,7 @@ jobs:
           REPO: ${{ github.repository }}
           TAG: ${{ needs.release.outputs.tag }}
           SOURCE_SHA: ${{ needs.release.outputs.source_sha }}
+          RELEASE_ID: ${{ inputs.release_id }}
           DISTRIBUTION_POLICY: ${{ inputs.distribution_policy }}
         run: |
           set -euo pipefail
@@ -1108,7 +1124,7 @@ jobs:
           find . -maxdepth 1 -type f ! -name SHA256SUMS -print0 \
             | sort -z | xargs -0 sha256sum | sed 's#  \./#  #' > SHA256SUMS
           test -s SHA256SUMS
-          gh release upload "$TAG" latest.json scai.cdx.json SHA256SUMS -R "$REPO" --clobber
+          bash "$GITHUB_WORKSPACE/scripts/upload-draft-assets.sh" latest.json scai.cdx.json SHA256SUMS
           echo "ASSET_DIR=$ASSET_DIR" >> "$GITHUB_ENV"
 
       - name: SLSA-Provenance für alle Release-Assets attestieren

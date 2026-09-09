@@ -24,7 +24,9 @@ permissions:
   contents: write
 
 concurrency:
-  group: publish-${{ inputs.release_id }}
+  # Derselbe Lock wie build-all.yml: kein Publisher kann einen Draft sichtbar
+  # machen, während ein Build-Job noch Assets mit bewusstem Draft-Clobber ersetzt.
+  group: scai-release-mutation
   cancel-in-progress: false
 
 jobs:

@@ -160,7 +160,7 @@ test("Bun setup cannot run after the private source checkout", () => {
 });
 
 test("a broad upload cannot replace the release artifact allowlist", () => {
-  const unsafe = { ...fixtures, "build-all.yml": fixtures["build-all.yml"].replace('gh release upload "$TAG" "${ASSETS[@]}"', 'gh release upload "$TAG" "$BUNDLE_ROOT"') };
+  const unsafe = { ...fixtures, "build-all.yml": fixtures["build-all.yml"].replace('upload-draft-assets.sh" "${ASSETS[@]}"', 'upload-draft-assets.sh" "$BUNDLE_ROOT"') };
   assert.match(validateSourceConfidentiality(unsafe, assetSelector).join("\n"), /validated asset array/);
 });
 

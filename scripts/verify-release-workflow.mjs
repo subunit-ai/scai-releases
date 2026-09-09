@@ -26,6 +26,7 @@ export const EXPECTED_RELEASE_CONTRACT_PATHS = [
   "scripts/run-package-smoke.ps1",
   "scripts/run-package-smoke.sh",
   "scripts/setup-auth-ci-databases.sh",
+  "scripts/upload-draft-assets.sh",
   "scripts/validate-private-source-ref.sh",
   "scripts/validate-release-assets.sh",
   "scripts/verify-fleet-manifest.mjs",
@@ -47,6 +48,7 @@ export function validateReleaseWorkflow(workflow) {
   require(has(/release_id:\s*\n(?:\s+.*\n){0,4}?\s+required:\s*true/m), "release_id input must be required");
   require(has(/distribution_policy:\s*\n[\s\S]{0,240}?- market-ready\s*\n\s*- legacy-v0\.125\s*\n\s*default:\s*market-ready/m), "distribution policy must default to market-ready and explicitly enumerate legacy-v0.125");
   require(has(/compatibility_acknowledgement:\s*\n[\s\S]{0,180}?default:\s*""/m), "legacy compatibility acknowledgement input must be explicit and empty by default");
+  require(has(/concurrency:\s*\n\s*group:\s*scai-release-mutation\s*\n\s*cancel-in-progress:\s*false/m), "release mutations must use the shared non-cancelling concurrency lock");
   require(has(/publish_update:\s*\n[\s\S]{0,180}?type:\s*boolean[\s\S]{0,80}?default:\s*false/m), "automatic updater publication must be explicit and default off");
   require(has(/run-name:\s*SCAI \$\{\{ inputs\.ref \}\} · \$\{\{ inputs\.source_sha \}\}/), "release runs must expose their immutable source identity");
   const secretPreflightIndex = workflow.indexOf("name: Release-Secret-Preflight");
@@ -106,7 +108,7 @@ export function validateReleaseWorkflow(workflow) {
   require(has(/run-confidential\.sh" "package-runtime-\$TARGET"[\s\S]{0,240}?run-package-smoke\.sh/), "macOS/Linux package runtime smoke must stay confidential");
   require(has(/run-confidential\.sh" "package-runtime-\$TARGET"[\s\S]{0,240}?run-package-smoke\.ps1/), "Windows package runtime smoke must stay confidential");
   require(has(/verify-runtime-evidence\.mjs"[\s\\]*"\$EVIDENCE" "\$TARGET" "\$VERSION" "\$SOURCE_SHA"/), "every platform runtime evidence must be validated before upload");
-  require(has(/runtime-evidence-\$TARGET\.json[\s\S]{0,240}?gh release upload "\$TAG" "\$EVIDENCE"/), "only the validated runtime evidence file may be uploaded");
+  require(has(/runtime-evidence-\$TARGET\.json[\s\S]{0,240}?upload-draft-assets\.sh" "\$EVIDENCE"/), "only the validated runtime evidence file may be uploaded");
   require(has(/for target in aarch64-apple-darwin x86_64-apple-darwin aarch64-pc-windows-msvc x86_64-pc-windows-msvc x86_64-unknown-linux-gnu; do[\s\S]{0,320}?verify-runtime-evidence\.mjs/), "final manifest must revalidate runtime evidence for all five targets");
   for (const label of ["runtime", "typescript", "vite"]) {
     require(has(new RegExp(`run-confidential\\.sh" "windows-${label}-\\$TARGET"`)), `Windows ${label} prepackage output must pass through the confidential runner`);
@@ -115,7 +117,9 @@ export function validateReleaseWorkflow(workflow) {
   require(has(/run-indexed-confidential\.sh"[\s\S]{0,100}?"windows-plugin-envelope-\$TARGET" 14 npm run check:plugin-envelope/), "Windows plugin envelope failures must use the fixed-size indexed confidential runner");
   require(has(/CXXFLAGS_aarch64_pc_windows_msvc=\/EHsc[\s\S]{0,260}?MSYS2_ENV_CONV_EXCL=CXXFLAGS_aarch64_pc_windows_msvc/), "Windows ARM C++ exception flags must be excluded from MSYS path conversion");
   require(has(/RUNNER_OS:-}" = "Windows"[\s\S]{0,2400}?BUILD_ARGS\+=\(--config '\{"build":\{"beforeBuildCommand":null\}\}'\)/), "Windows prepackage proof must disable only the already executed Tauri frontend hook");
-  require(has(/gh release upload "\$TAG" "\$\{ASSETS\[@\]\}"/), "only the explicit release asset allowlist may be uploaded");
+  require(has(/upload-draft-assets\.sh" "\$\{ASSETS\[@\]\}"/), "only the explicit release asset allowlist may be uploaded");
+  require((workflow.match(/upload-draft-assets\.sh/g) ?? []).length === 4, "every release asset upload must pass through the bound-draft guard");
+  require(!has(/gh release upload/), "workflow must not bypass the bound-draft upload guard");
   require(has(/IS_DRAFT=.*isDraft[\s\S]{0,500}?Source-SHA:/), "existing release reuse must verify draft state and source SHA");
   require(has(/needs:\s*\[release, build\][\s\S]{0,180}?needs\.build\.result == 'success'/), "evidence job must depend on successful release and build jobs");
   require(has(/Fleet-Release-ID: \$RELEASE_ID/), "draft must be bound to the Fleet release ID");
@@ -188,6 +192,7 @@ export function validatePublishWorkflow(workflow, contractPaths) {
   for (const input of ["release_id", "tag", "manifest_sha256"]) {
     require(has(new RegExp(`${input}:\\s*\\n(?:\\s+.*\\n){0,4}?\\s+required:\\s*true`, "m")), `${input} input must be required`);
   }
+  require(has(/concurrency:\s*\n(?:\s*#.*\n)*\s*group:\s*scai-release-mutation\s*\n\s*cancel-in-progress:\s*false/m), "publication must share the non-cancelling release mutation lock");
   require(has(/test "\$GITHUB_REF" = "refs\/heads\/\$DEFAULT_BRANCH"/), "publication must run from the default branch");
   require(has(/node scripts\/verify-fleet-manifest\.mjs "\$MANIFEST"/), "publication must validate the Fleet manifest");
   require(has(/jq -r \.status "\$MANIFEST"[\s\S]{0,80}?= "pass"/), "publication must require manifest PASS");
