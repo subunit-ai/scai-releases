@@ -587,6 +587,8 @@ jobs:
         shell: bash
         env:
           SCAI_WORKSPACE_PROOF_OUT: ${{ runner.temp }}/scai-workspace-tabs
+          SCAI_ENCRYPTED_DIAGNOSTIC_PUBLIC_KEY_BASE64: ${{ inputs.diagnostic_public_key_base64 }}
+          SCAI_ENCRYPTED_DIAGNOSTIC_PATH: ${{ inputs.diagnostic_public_key_base64 != '' && format('{0}/scai-workspace-tabs-diagnostic.json', runner.temp) || '' }}
         run: bash "$GITHUB_WORKSPACE/gate/scripts/run-confidential.sh" workspace-tabs-proof node scripts/verify-workspace-tabs.mjs
 
       - name: Arbeitsbereich mit App-Modus-Plugins beweisen
@@ -594,7 +596,28 @@ jobs:
         if: steps.source_proofs.outputs.workspace_browser == 'true'
         working-directory: src
         shell: bash
+        env:
+          SCAI_ENCRYPTED_DIAGNOSTIC_PUBLIC_KEY_BASE64: ${{ inputs.diagnostic_public_key_base64 }}
+          SCAI_ENCRYPTED_DIAGNOSTIC_PATH: ${{ inputs.diagnostic_public_key_base64 != '' && format('{0}/scai-workspace-app-plugins-diagnostic.json', runner.temp) || '' }}
         run: bash "$GITHUB_WORKSPACE/gate/scripts/run-confidential.sh" workspace-app-plugins-proof node scripts/verify-workspace-app-plugins.mjs
+
+      - name: Verschlüsselte Arbeitsbereich-Tabs-Fehlerdiagnostik bereitstellen
+        if: failure() && steps.workspace_tabs_proof.outcome == 'failure' && inputs.diagnostic_public_key_base64 != ''
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4, immutable
+        with:
+          name: scai-workspace-tabs-encrypted-diagnostic-${{ github.run_id }}
+          path: ${{ runner.temp }}/scai-workspace-tabs-diagnostic.json
+          if-no-files-found: error
+          retention-days: 1
+
+      - name: Verschlüsselte Arbeitsbereich-App-Plugins-Fehlerdiagnostik bereitstellen
+        if: failure() && steps.workspace_app_plugins_proof.outcome == 'failure' && inputs.diagnostic_public_key_base64 != ''
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4, immutable
+        with:
+          name: scai-workspace-app-plugins-encrypted-diagnostic-${{ github.run_id }}
+          path: ${{ runner.temp }}/scai-workspace-app-plugins-diagnostic.json
+          if-no-files-found: error
+          retention-days: 1
 
       - name: Arbeitsbereich-Proof-Screenshots geschlossen prüfen
         if: always() && steps.workspace_tabs_proof.outcome != 'skipped' && steps.workspace_app_plugins_proof.outcome != 'skipped'

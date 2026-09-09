@@ -235,20 +235,32 @@ export function validateSourceConfidentiality(workflows, assetSelector) {
     "pr-check.yml: MOCO parity browser proof must run confidentially when its source harness exists",
   );
   require(
-    /name: Arbeitsbereich mit Tabs und geteilten Flächen im Web beweisen[\s\S]{0,500}?if: steps\.source_proofs\.outputs\.workspace_browser == 'true'[\s\S]{0,500}?SCAI_WORKSPACE_PROOF_OUT: \$\{\{ runner\.temp \}\}\/scai-workspace-tabs[\s\S]{0,500}?run-confidential\.sh" workspace-tabs-proof node scripts\/verify-workspace-tabs\.mjs/.test(pr),
+    /name: Arbeitsbereich mit Tabs und geteilten Flächen im Web beweisen[\s\S]{0,700}?if: steps\.source_proofs\.outputs\.workspace_browser == 'true'[\s\S]{0,700}?SCAI_WORKSPACE_PROOF_OUT: \$\{\{ runner\.temp \}\}\/scai-workspace-tabs[\s\S]{0,700}?SCAI_ENCRYPTED_DIAGNOSTIC_PUBLIC_KEY_BASE64: \$\{\{ inputs\.diagnostic_public_key_base64 \}\}[\s\S]{0,700}?SCAI_ENCRYPTED_DIAGNOSTIC_PATH: \$\{\{ inputs\.diagnostic_public_key_base64 != '' && format\('\{0\}\/scai-workspace-tabs-diagnostic\.json', runner\.temp\) \|\| '' \}\}[\s\S]{0,700}?run-confidential\.sh" workspace-tabs-proof node scripts\/verify-workspace-tabs\.mjs/.test(pr),
     "pr-check.yml: Workspace tab proof must run confidentially when both source harnesses exist",
   );
   require(
-    /name: Arbeitsbereich mit App-Modus-Plugins beweisen[\s\S]{0,400}?if: steps\.source_proofs\.outputs\.workspace_browser == 'true'[\s\S]{0,400}?run-confidential\.sh" workspace-app-plugins-proof node scripts\/verify-workspace-app-plugins\.mjs/.test(pr),
+    /name: Arbeitsbereich mit App-Modus-Plugins beweisen[\s\S]{0,700}?if: steps\.source_proofs\.outputs\.workspace_browser == 'true'[\s\S]{0,700}?SCAI_ENCRYPTED_DIAGNOSTIC_PUBLIC_KEY_BASE64: \$\{\{ inputs\.diagnostic_public_key_base64 \}\}[\s\S]{0,700}?SCAI_ENCRYPTED_DIAGNOSTIC_PATH: \$\{\{ inputs\.diagnostic_public_key_base64 != '' && format\('\{0\}\/scai-workspace-app-plugins-diagnostic\.json', runner\.temp\) \|\| '' \}\}[\s\S]{0,700}?run-confidential\.sh" workspace-app-plugins-proof node scripts\/verify-workspace-app-plugins\.mjs/.test(pr),
     "pr-check.yml: Workspace app-plugin proof must run confidentially when both source harnesses exist",
+  );
+  require(
+    /name: Verschlüsselte Arbeitsbereich-Tabs-Fehlerdiagnostik bereitstellen[\s\S]{0,500}?if: failure\(\) && steps\.workspace_tabs_proof\.outcome == 'failure' && inputs\.diagnostic_public_key_base64 != ''[\s\S]{0,500}?path: \$\{\{ runner\.temp \}\}\/scai-workspace-tabs-diagnostic\.json[\s\S]{0,200}?retention-days: 1/.test(pr),
+    "pr-check.yml: Workspace tab diagnostics may upload only a one-time-key encrypted envelope",
+  );
+  require(
+    /name: Verschlüsselte Arbeitsbereich-App-Plugins-Fehlerdiagnostik bereitstellen[\s\S]{0,500}?if: failure\(\) && steps\.workspace_app_plugins_proof\.outcome == 'failure' && inputs\.diagnostic_public_key_base64 != ''[\s\S]{0,500}?path: \$\{\{ runner\.temp \}\}\/scai-workspace-app-plugins-diagnostic\.json[\s\S]{0,200}?retention-days: 1/.test(pr),
+    "pr-check.yml: Workspace app-plugin diagnostics may upload only a one-time-key encrypted envelope",
   );
   require(
     /name: Arbeitsbereich-Proof-Screenshots geschlossen prüfen[\s\S]{0,900}?desktop-dark-split\.png[\s\S]{0,300}?mobile-light-areas\.png[\s\S]{0,300}?mobile-dark\.png[\s\S]{0,300}?dashboard-two-instances\.png[\s\S]{0,300}?halo-two-instances\.png[\s\S]{0,300}?native-menu-bridge\.png/.test(pr),
     "pr-check.yml: Workspace proof must verify the representative Web and App-mode screenshots",
   );
+  const workspaceUploadPaths = [...pr.matchAll(/^\s+path:\s*(.*scai-workspace-(?:tabs|app-plugins).*?)\s*$/gm)]
+    .map((match) => match[1]);
   require(
-    !/^\s+path:.*scai-workspace-(?:tabs|app-plugins)/m.test(pr),
-    "pr-check.yml: raw Workspace proof output must not be uploaded from the public workflow",
+    workspaceUploadPaths.length === 2
+      && workspaceUploadPaths.includes("${{ runner.temp }}/scai-workspace-tabs-diagnostic.json")
+      && workspaceUploadPaths.includes("${{ runner.temp }}/scai-workspace-app-plugins-diagnostic.json"),
+    "pr-check.yml: raw Workspace proof output must not be uploaded; only the two encrypted diagnostic envelopes are allowed",
   );
   const browserArtifactStep = pr.match(/- name: Revenue-Fixture-Screenshots geschlossen prüfen[\s\S]*?(?=\n      - name:)/)?.[0] ?? "";
   require(
