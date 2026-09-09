@@ -29,7 +29,7 @@ export function validateSourceConfidentiality(workflows, assetSelector) {
     "npm-ci", "frontend-unit-tests", "cli-drift", "release-meta", "plugin-bundles", "no-demo-data",
     "frontend-build", "support-diagnostics-proof", "meet-visual-proof", "chat-dock-visual-proof", "sentinel-crm-proof", "cargo-test", "native-cargo-check",
     "revenue-proof-dependencies", "revenue-proof-esbuild", "billing-production-proof", "offers-v01-proof", "workgraph-blackbox-proof", "revenue-proof-artifacts",
-    "workspace-tabs-proof", "workspace-app-plugins-proof", "subunit-call-proof",
+    "workspace-tabs-proof", "workspace-app-plugins-proof", "subunit-call-proof", "workforce-inbox-proof",
     "native-product-binary", "native-pkce-tests", "native-keyring-smoke",
     "trace-fmt", "trace-core-check", "trace-core-clippy", "trace-core-test",
     "trace-native-check", "trace-native-clippy", "trace-native-test", "trace-native-build",
@@ -178,6 +178,10 @@ export function validateSourceConfidentiality(workflows, assetSelector) {
     /if \[ -f scripts\/verify-moco-parity\.mjs \]; then[\s\S]{0,220}?moco_parity=true[\s\S]{0,220}?moco_parity=false/.test(pr),
     "pr-check.yml: MOCO parity proof must be optional for older source refs",
   );
+  require(
+    /if \[ -f scripts\/verify-workforce-inbox\.mjs \]; then[\s\S]{0,220}?workforce_inbox=true[\s\S]{0,220}?workforce_inbox=false/.test(pr),
+    "pr-check.yml: Workforce Inbox proof must be optional for older source refs",
+  );
   for (const contract of [
     "subunit_call_host=false",
     "subunit_call_proof=false",
@@ -247,6 +251,10 @@ export function validateSourceConfidentiality(workflows, assetSelector) {
   require(
     /name: MOCO-Paritaetsprotokoll visuell und interaktiv beweisen[\s\S]{0,500}?if: steps\.source_proofs\.outputs\.moco_parity == 'true'[\s\S]{0,500}?MOCO_PARITY_PROOF_OUT: \$\{\{ runner\.temp \}\}\/scai-moco-parity-proof[\s\S]{0,500}?run-confidential\.sh" moco-parity-proof node scripts\/verify-moco-parity\.mjs/.test(pr),
     "pr-check.yml: MOCO parity browser proof must run confidentially when its source harness exists",
+  );
+  require(
+    /name: Persönliche Workforce-Inbox und Übergaben visuell beweisen[\s\S]{0,700}?if: always\(\) && steps\.source_proofs\.outputs\.workforce_inbox == 'true'[\s\S]{0,700}?SCAI_WORKFORCE_INBOX_PROOF_DIR: \$\{\{ runner\.temp \}\}\/scai-workforce-inbox-proof[\s\S]{0,700}?run-confidential\.sh" workforce-inbox-proof node scripts\/verify-workforce-inbox\.mjs/.test(pr),
+    "pr-check.yml: Workforce Inbox proof must run confidentially into its isolated fixture directory",
   );
   require(
     /name: Arbeitsbereich mit Tabs und geteilten Flächen im Web beweisen[\s\S]{0,700}?if: steps\.source_proofs\.outputs\.workspace_browser == 'true'[\s\S]{0,700}?SCAI_WORKSPACE_PROOF_OUT: \$\{\{ runner\.temp \}\}\/scai-workspace-tabs[\s\S]{0,700}?SCAI_ENCRYPTED_DIAGNOSTIC_PUBLIC_KEY_BASE64: \$\{\{ inputs\.diagnostic_public_key_base64 \}\}[\s\S]{0,700}?SCAI_ENCRYPTED_DIAGNOSTIC_PATH: \$\{\{ inputs\.diagnostic_public_key_base64 != '' && format\('\{0\}\/scai-workspace-tabs-diagnostic\.json', runner\.temp\) \|\| '' \}\}[\s\S]{0,700}?run-confidential\.sh" workspace-tabs-proof node scripts\/verify-workspace-tabs\.mjs/.test(pr),

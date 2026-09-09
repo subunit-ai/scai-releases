@@ -485,6 +485,41 @@ test("Workgraph harness remains optional, but runs confidentially and sanitizes 
   assert.match(validateSourceConfidentiality(rawUpload, assetSelector).join("\n"), /raw Workgraph source proof output/);
 });
 
+test("Workforce Inbox proof remains optional, isolated, and confidential", () => {
+  const undetected = {
+    ...fixtures,
+    "pr-check.yml": fixtures["pr-check.yml"].replace(
+      "if [ -f scripts/verify-workforce-inbox.mjs ]; then",
+      "if false; then",
+    ),
+  };
+  assert.match(validateSourceConfidentiality(undetected, assetSelector).join("\n"), /Workforce Inbox proof must be optional/);
+
+  const publicHarness = {
+    ...fixtures,
+    "pr-check.yml": fixtures["pr-check.yml"].replace(
+      'run-confidential.sh" workforce-inbox-proof',
+      'run-publicly.sh" workforce-inbox-proof',
+    ),
+  };
+  assert.match(
+    validateSourceConfidentiality(publicHarness, assetSelector).join("\n"),
+    /workforce-inbox-proof must suppress private output|Workforce Inbox proof must run confidentially/,
+  );
+
+  const sourceOutput = {
+    ...fixtures,
+    "pr-check.yml": fixtures["pr-check.yml"].replace(
+      "SCAI_WORKFORCE_INBOX_PROOF_DIR: ${{ runner.temp }}/scai-workforce-inbox-proof",
+      "SCAI_WORKFORCE_INBOX_PROOF_DIR: src/private-workforce-inbox-output",
+    ),
+  };
+  assert.match(
+    validateSourceConfidentiality(sourceOutput, assetSelector).join("\n"),
+    /Workforce Inbox proof must run confidentially into its isolated fixture directory/,
+  );
+});
+
 test("Revenue diagnostics cannot upload plaintext or a source-tree path", () => {
   for (const [safePath, unsafePath, expected] of [
     ["${{ runner.temp }}/scai-revenue-billing-diagnostic.json", "src/private-billing.log", /Billing Revenue diagnostics/],
