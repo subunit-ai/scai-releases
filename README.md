@@ -61,6 +61,7 @@ startet. Es macht weder `subunit-scai` noch ein anderes Quell-Repo öffentlich.
 Die Vertraulichkeitsgrenze ist fail-closed:
 
 - ausschließlich manuell ausgelöste `workflow_dispatch`-Runs, niemals Fork-/PR-Trigger,
+- eindeutig nach dem exakten privaten Source-SHA benannte PR-Checks, damit parallele Läufe nicht verwechselt werden,
 - je privatem Repo ein eigener read-only Deploy-Key,
 - sämtliche Actions auf unveränderliche 40-Zeichen-Commits gepinnt,
 - Compiler-, Test- und Build-Ausgaben werden nur in einer flüchtigen Runner-Datei

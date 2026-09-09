@@ -15,6 +15,7 @@
 # ship.sh wartet auf die Conclusion dieses Runs und merged nur bei grün.
 
 name: PR Check (Quell-Repo)
+run-name: SCAI PR · ${{ inputs.ref }}
 
 on:
   workflow_dispatch:

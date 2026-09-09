@@ -24,6 +24,11 @@ test("an automatic public trigger is rejected", () => {
   assert.match(validateSourceConfidentiality(unsafe, assetSelector).join("\n"), /must not have an automatic or fork trigger/);
 });
 
+test("a PR check without its exact source identity in the run name is rejected", () => {
+  const unsafe = { ...fixtures, "pr-check.yml": fixtures["pr-check.yml"].replace("run-name: SCAI PR · ${{ inputs.ref }}\n", "") };
+  assert.match(validateSourceConfidentiality(unsafe, assetSelector).join("\n"), /exact private source ref/);
+});
+
 test("a mutable action can never run beside private source", () => {
   const unsafe = { ...fixtures, "windows-arm-smoke.yml": fixtures["windows-arm-smoke.yml"].replace(/actions\/setup-node@[0-9a-f]{40}/, "actions/setup-node@v4") };
   assert.match(validateSourceConfidentiality(unsafe, assetSelector).join("\n"), /action reference must be immutable/);
