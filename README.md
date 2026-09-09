@@ -36,11 +36,17 @@ Plattformsignaturen, SBOM-Digests/Provenance,
 Governance-Freigaben und Betriebsdrills maschinell vollständig belegt sind.
 
 `build-all.yml` erzeugt für eine vollständige `release_id` und einen exakten
-`source_sha` ausschließlich einen technischen Draft. Vor Source-Checkout und
+`source_sha` zunächst einen technischen Draft. Vor Source-Checkout und
 Draft-Erzeugung prüft es fail-closed, dass sämtliche Quell-, Updater-, Apple-
 und Windows-Signing-Secrets gesetzt sind, ohne deren Werte auszugeben. Es
-veröffentlicht nie.
-Erst `publish-approved.yml` darf den gebundenen Draft veröffentlichen; dafür
+veröffentlicht standardmäßig nicht. Der explizite `publish_update=true`-Pfad ist
+der technische SCAI-Updater-Zug: Nach vollständiger Plattformmatrix, Runtime-
+Smokes, Signaturen, SBOM, Provenance und erneutem Asset-Digest-Check veröffentlicht
+er nur, wenn privates Source-`main`, Source-Tag und eingebetteter `source_sha`
+weiterhin exakt übereinstimmen. Ein langsamer alter Build kann deshalb niemals
+einen neueren Updater überschreiben.
+
+`publish-approved.yml` bleibt das strengere Fleet-Promotionstor; dafür
 verlangt es ein gemergtes Fleet-Manifest mit `status: pass`, dessen vorab
 bestätigten SHA-256, einen unveränderten Release-Vertrag und erneut geprüfte
 Asset-Digests.
