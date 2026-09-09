@@ -299,7 +299,7 @@ jobs:
         run: bash "$GITHUB_WORKSPACE/gate/scripts/run-confidential.sh" moco-parity-proof node scripts/verify-moco-parity.mjs
 
       - name: Workforce-Kapazität und Abwesenheit visuell beweisen
-        if: steps.source_proofs.outputs.workforce_capacity == 'true'
+        if: always() && steps.source_proofs.outputs.workforce_capacity == 'true'
         working-directory: src
         shell: bash
         env:
