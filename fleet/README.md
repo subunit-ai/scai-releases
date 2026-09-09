@@ -44,10 +44,14 @@ fail-closed. Er veröffentlicht, taggt, merged oder deployt nichts.
    realer Verifikation eingetragen.
 6. Erst wenn der Validator vollständig grün ist, wird das Manifest auf `pass`
    gesetzt, gemergt und sein SHA-256 separat bestätigt.
-7. Nur `publish-approved.yml` darf den gebundenen Draft danach veröffentlichen.
-   Es prüft erneut Manifest-PASS, Manifest-Digest, Release-Contract-Drift,
-   Release-ID, Source-SHA und sämtliche Asset-Digests. `build-all.yml`
-   veröffentlicht niemals selbst.
+7. Die technische Updater-Linie darf `build-all.yml` nur bei explizitem
+   `publish_update=true` nach vollständiger Plattformmatrix, Runtime-, Signatur-,
+   SBOM-, Provenance- und Digestprüfung veröffentlichen. Zusätzlich müssen der
+   aktuelle Source-main, der Source-Tag und `latest.json.source_sha` exakt den
+   gebauten SHA tragen; ältere parallele Builds bleiben Draft.
+8. Die getrennte Fleet-Promotion läuft ausschließlich über `publish-approved.yml`.
+   Sie prüft zusätzlich Manifest-PASS, Manifest-Digest, Release-Contract-Drift,
+   Release-ID, Source-SHA und sämtliche Asset-Digests.
 
 `release-contract.paths` ist die geschlossene, selbst mitgepinnte Inventarliste
 der sicherheitskritischen Workflows, Output-Sinks, Asset-/Manifest-Validatoren

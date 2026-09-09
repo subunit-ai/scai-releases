@@ -47,6 +47,8 @@ export function validateReleaseWorkflow(workflow) {
   require(has(/release_id:\s*\n(?:\s+.*\n){0,4}?\s+required:\s*true/m), "release_id input must be required");
   require(has(/distribution_policy:\s*\n[\s\S]{0,240}?- market-ready\s*\n\s*- legacy-v0\.125\s*\n\s*default:\s*market-ready/m), "distribution policy must default to market-ready and explicitly enumerate legacy-v0.125");
   require(has(/compatibility_acknowledgement:\s*\n[\s\S]{0,180}?default:\s*""/m), "legacy compatibility acknowledgement input must be explicit and empty by default");
+  require(has(/publish_update:\s*\n[\s\S]{0,180}?type:\s*boolean[\s\S]{0,80}?default:\s*false/m), "automatic updater publication must be explicit and default off");
+  require(has(/run-name:\s*SCAI \$\{\{ inputs\.ref \}\} · \$\{\{ inputs\.source_sha \}\}/), "release runs must expose their immutable source identity");
   const secretPreflightIndex = workflow.indexOf("name: Release-Secret-Preflight");
   const sourceCheckoutIndex = workflow.indexOf("name: Version aus dem Quell-Repo lesen");
   require(secretPreflightIndex >= 0 && sourceCheckoutIndex > secretPreflightIndex, "all release secrets must be checked before source checkout or draft creation");
@@ -118,7 +120,11 @@ export function validateReleaseWorkflow(workflow) {
   require(has(/needs:\s*\[release, build\][\s\S]{0,180}?needs\.build\.result == 'success'/), "evidence job must depend on successful release and build jobs");
   require(has(/Fleet-Release-ID: \$RELEASE_ID/), "draft must be bound to the Fleet release ID");
   require(has(/Distribution-Policy: \$DISTRIBUTION_POLICY/), "draft must be bound to the distribution policy");
-  require(!has(/gh release edit[^\n]*--draft=false/), "build workflow must never publish a draft");
+  require(has(/if \[ "\$PUBLISH_UPDATE" != "true" \]; then[\s\S]{0,220}?exit 0/), "updater publication must require the explicit publish_update input");
+  require(has(/REMOTE_MAIN=.*git ls-remote[\s\S]{0,520}?test "\$REMOTE_MAIN" = "\$SOURCE_SHA"/), "updater publication must require source main to equal the built SHA");
+  require(has(/REMOTE_TAG=.*git ls-remote[\s\S]{0,520}?test "\$REMOTE_TAG" = "\$SOURCE_SHA"/), "updater publication must require the source tag to equal the built SHA");
+  require(has(/\.version == \$version and \.source_sha == \$source_sha and \(\.platforms \| length\) == 11/), "updater publication must bind latest.json to version, source SHA and all targets");
+  require(has(/sha256sum -c SHA256SUMS[\s\S]{0,420}?gh release edit "\$TAG"[^\n]*--draft=false --prerelease=false --latest/), "updater publication must happen only after asset digest verification");
 
   require(has(/Developer ID Application:/), "macOS must require Developer ID Application signing");
   require(has(/xcrun stapler validate/), "macOS notarization staple must be verified");
@@ -156,6 +162,11 @@ export function validateReleaseWorkflow(workflow) {
   const attestIndex = workflow.lastIndexOf("gh attestation verify");
   const draftGuardIndex = workflow.lastIndexOf('test "$(jq -r .isDraft');
   require(attestIndex >= 0 && draftGuardIndex > attestIndex, "draft state must be rechecked after independent attestation verification");
+  const sourceMainIndex = workflow.lastIndexOf('test "$REMOTE_MAIN" = "$SOURCE_SHA"');
+  const sourceTagIndex = workflow.lastIndexOf('test "$REMOTE_TAG" = "$SOURCE_SHA"');
+  const updateDigestIndex = workflow.lastIndexOf("sha256sum -c SHA256SUMS");
+  const updatePublishIndex = workflow.lastIndexOf('gh release edit "$TAG" -R "$REPO" --draft=false');
+  require(sourceMainIndex > attestIndex && sourceTagIndex > sourceMainIndex && updateDigestIndex > sourceTagIndex && updatePublishIndex > updateDigestIndex, "automatic updater publication must follow attestations, exact source lineage and digest verification");
   return errors;
 }
 

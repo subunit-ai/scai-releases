@@ -103,12 +103,30 @@ test("updater signatures cannot be treated as native platform signing", () => {
   assert.match(validateReleaseWorkflow(unsafe).join("\n"), /Windows Authenticode signature must be verified/);
 });
 
-test("the build workflow cannot publish its draft", () => {
+test("automatic updater publication cannot run without explicit opt-in", () => {
   const unsafe = fixture.replace(
-    "echo \"Technisches Draft-Evidence für $DISTRIBUTION_POLICY vollständig; dieser Workflow veröffentlicht nie.\"",
-    "gh release edit \"$TAG\" -R \"$REPO\" --draft=false",
+    'if [ "$PUBLISH_UPDATE" != "true" ]; then',
+    'if false; then',
   );
-  assert.match(validateReleaseWorkflow(unsafe).join("\n"), /build workflow must never publish a draft/);
+  assert.match(validateReleaseWorkflow(unsafe).join("\n"), /explicit publish_update input/);
+});
+
+test("automatic updater publication cannot race past a newer source main", () => {
+  const unsafe = fixture.replace('test "$REMOTE_MAIN" = "$SOURCE_SHA"', "echo unchecked-main");
+  assert.match(validateReleaseWorkflow(unsafe).join("\n"), /source main to equal the built SHA/);
+});
+
+test("automatic updater publication requires the exact source tag", () => {
+  const unsafe = fixture.replace('test "$REMOTE_TAG" = "$SOURCE_SHA"', "echo unchecked-tag");
+  assert.match(validateReleaseWorkflow(unsafe).join("\n"), /source tag to equal the built SHA/);
+});
+
+test("automatic updater publication verifies all asset digests first", () => {
+  const unsafe = fixture.replace(
+    'gh release edit "$TAG" -R "$REPO" --draft=false --prerelease=false --latest',
+    'echo publish-without-gate',
+  );
+  assert.match(validateReleaseWorkflow(unsafe).join("\n"), /after asset digest verification/);
 });
 
 test("legacy compatibility cannot run without the exact risk acknowledgement", () => {

@@ -10,12 +10,15 @@
 # Forks können den Workflow damit nicht mit unseren Secrets ausführen — nur wer
 # Schreibrechte auf dieses Repo hat, kann ihn starten.
 #
-# Ergebnis: EIN DRAFT mit Installern für jede Plattform (dmg/app, nsis-Setup,
-# deb/AppImage) + ein vollständiges `latest.json`, das den Tauri-Updater für
-# ALLE Plattformen bedient. Veröffentlichung ist ausschließlich Aufgabe von
-# `publish-approved.yml`, nachdem das Fleet-Manifest vollständig PASS ist.
+# Ergebnis: EIN SHA-gebundener Stand mit Installern für jede Plattform (dmg/app,
+# nsis-Setup, deb/AppImage) + ein vollständiges `latest.json`, das den Tauri-
+# Updater für ALLE Plattformen bedient. Standard bleibt ein Draft. Der explizite
+# `publish_update`-Pfad darf ihn nach sämtlichen technischen Gates nur dann als
+# Latest veröffentlichen, wenn Source-main und Source-Tag noch exakt auf diesem
+# SHA stehen. Die getrennte Fleet-Promotion bleibt `publish-approved.yml`.
 
 name: Build & Release (alle Plattformen)
+run-name: SCAI ${{ inputs.ref }} · ${{ inputs.source_sha }}
 
 on:
   workflow_dispatch:
@@ -32,6 +35,10 @@ on:
         required: true
       prerelease:
         description: "Draft bei späterer Veröffentlichung als Vorab-Version vormerken"
+        type: boolean
+        default: false
+      publish_update:
+        description: "Nach allen technischen Gates als Latest-Updater veröffentlichen"
         type: boolean
         default: false
       distribution_policy:
@@ -1002,9 +1009,9 @@ jobs:
           cd "$ASSET_DIR"
           cp "$RUNNER_TEMP/scai.cdx.json" scai.cdx.json
           [ -f latest.json ] && cp latest.json existing.json || true
-          python3 - "$TAG" "$REPO" <<'PY'
+          python3 - "$TAG" "$REPO" "$SOURCE_SHA" <<'PY'
           import json, os, sys, datetime
-          tag, repo = sys.argv[1], sys.argv[2]
+          tag, repo, source_sha = sys.argv[1], sys.argv[2], sys.argv[3]
           base = f"https://github.com/{repo}/releases/download/{tag}"
           # Suffix → Plattform-Keys (exakt die 11 Keys der bisherigen Releases).
           def keys_for(asset):
@@ -1030,7 +1037,7 @@ jobs:
               existing = json.load(open("existing.json", encoding="utf-8-sig"))
               notes = existing.get("notes", notes); pub = existing.get("pub_date", pub)
           except Exception: pass
-          manifest = {"version": tag.lstrip("v"), "notes": notes, "pub_date": pub, "platforms": platforms}
+          manifest = {"version": tag.lstrip("v"), "source_sha": source_sha, "notes": notes, "pub_date": pub, "platforms": platforms}
           required = {
               "darwin-aarch64", "darwin-aarch64-app",
               "darwin-x86_64", "darwin-x86_64-app",
@@ -1135,7 +1142,7 @@ jobs:
               --predicate-type https://cyclonedx.org/bom >/dev/null
           done < SHA256SUMS
 
-      - name: Draft nach technischen Gates bewusst unveröffentlicht lassen
+      - name: Technischen Stand verifizieren und optional als Updater veröffentlichen
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           REPO: ${{ github.repository }}
@@ -1143,6 +1150,8 @@ jobs:
           SOURCE_SHA: ${{ needs.release.outputs.source_sha }}
           RELEASE_ID: ${{ inputs.release_id }}
           DISTRIBUTION_POLICY: ${{ inputs.distribution_policy }}
+          PUBLISH_UPDATE: ${{ inputs.publish_update }}
+          SOURCE_DEPLOY_KEY: ${{ secrets.SOURCE_DEPLOY_KEY }}
         run: |
           set -euo pipefail
           RELEASE=$(gh release view "$TAG" -R "$REPO" --json isDraft,body,assets)
@@ -1152,7 +1161,39 @@ jobs:
           printf '%s' "$BODY" | grep -Fq "Fleet-Release-ID: $RELEASE_ID"
           printf '%s' "$BODY" | grep -Fq "Distribution-Policy: $DISTRIBUTION_POLICY"
           jq '{draft:.isDraft, assets:(.assets|length)}' <<<"$RELEASE"
-          echo "Technisches Draft-Evidence für $DISTRIBUTION_POLICY vollständig; dieser Workflow veröffentlicht nie."
+
+          if [ "$PUBLISH_UPDATE" != "true" ]; then
+            echo "Technisches Draft-Evidence für $DISTRIBUTION_POLICY vollständig; Veröffentlichung nicht angefordert."
+            exit 0
+          fi
+
+          # Monotonie: Ein langsamer älterer Matrix-Lauf darf niemals nach einem
+          # neueren Merge als Latest gewinnen. Nur der aktuelle Source-main-SHA
+          # und sein gleichnamiger Tag dürfen den Updaterkanal fortschreiben.
+          key_file="$HOME/.ssh/scai_publish_src"
+          cleanup() { rm -f "$key_file"; }
+          trap cleanup EXIT
+          mkdir -p "$HOME/.ssh"
+          printf '%s\n' "$SOURCE_DEPLOY_KEY" > "$key_file"
+          chmod 600 "$key_file"
+          export GIT_SSH_COMMAND="ssh -i $key_file -o IdentitiesOnly=yes"
+          SOURCE_REPO=git@github.com:subunit-ai/subunit-scai.git
+          REMOTE_MAIN=$(git ls-remote "$SOURCE_REPO" refs/heads/main | awk '{print $1}')
+          REMOTE_TAG=$(git ls-remote "$SOURCE_REPO" "refs/tags/$TAG^{}" | awk '{print $1}')
+          if [ -z "$REMOTE_TAG" ]; then
+            REMOTE_TAG=$(git ls-remote "$SOURCE_REPO" "refs/tags/$TAG" | awk '{print $1}')
+          fi
+          test "$REMOTE_MAIN" = "$SOURCE_SHA"
+          test "$REMOTE_TAG" = "$SOURCE_SHA"
+
+          cd "$ASSET_DIR"
+          sha256sum -c SHA256SUMS
+          jq -e --arg version "${TAG#v}" --arg source_sha "$SOURCE_SHA" \
+            '.version == $version and .source_sha == $source_sha and (.platforms | length) == 11' \
+            latest.json >/dev/null
+          gh release edit "$TAG" -R "$REPO" --draft=false --prerelease=false --latest
+          test "$(gh release view "$TAG" -R "$REPO" --json isDraft --jq .isDraft)" = "false"
+          echo "Updater veröffentlicht: $TAG · Source $SOURCE_SHA · 11 Ziele."
 
       - name: Private Trace-Credentials entfernen
         if: always()
