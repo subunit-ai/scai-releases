@@ -27,9 +27,23 @@ Regeln:
 3. Release-Workflows nur mit verifizierten vollständigen Quell-SHAs auslösen.
 4. Den Stand nach Änderungen im Handoff `subunit-scai.md` dokumentieren.
 
-## Aktueller Fleet-Status (2026-09-08)
+## Aktueller Fleet-Status (2026-09-09)
 
-### v0.152.0 — aktueller technischer Kandidat
+### v0.154.0 — aktueller öffentlicher technischer Release
+
+`v0.154.0` ist veröffentlicht und zugleich GitHubs `latest`-Release. Er bindet den privaten
+SCAI-Source `6e67233ffe0f7aae54b36468e336adac29946430` an Fleet-Release
+`scai-candidate-2026-09-09.2`, enthält 26 allowlistete Assets und bleibt bewusst auf
+`legacy-v0.125`: macOS ist Apple-Development-signiert, aber nicht notarisiert; Windows besitzt
+noch kein Authenticode. Die öffentliche Schiene enthält weiterhin ausschließlich Workflow-,
+Evidenz- und Binärartefakte, niemals den privaten Quellcode.
+
+Der PR-Check erkennt neue private Browser-Harnesses ref-gebunden. Ab dem Arbeitsbereich-Ref
+`2a456dc458b2a64bc5be404d1ab17849bf2b5888` gehören Web-Mehrtab-/Split-Flächen und die beiden
+App-Modus-Plugins als gemeinsames, fail-closed Proof-Paar zum Confidential-Gate; ihre Befehle
+laufen nur über `run-confidential.sh`, Rohartefakte werden nicht öffentlich hochgeladen.
+
+### v0.152.0 — vorheriger technischer Kandidat
 
 Source `64cd6e6cc91859776ce69149b961e3f4cde162b3` ist als `v0.152.0` getaggt; `main`,
 `deploy/web-approved` und Web-Live stehen gesund und sauber auf demselben Commit. Der vollständige
