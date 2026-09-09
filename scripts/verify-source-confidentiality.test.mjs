@@ -305,6 +305,49 @@ test("Workspace browser harnesses are an atomic confidential gate", () => {
   );
 });
 
+test("Workspace diagnostics require the supplied key and the two exact encrypted envelopes", () => {
+  for (const [stepId, diagnosticName, expected] of [
+    ["workspace_tabs_proof", "scai-workspace-tabs-diagnostic.json", /Workspace tab diagnostics/],
+    ["workspace_app_plugins_proof", "scai-workspace-app-plugins-diagnostic.json", /Workspace app-plugin diagnostics/],
+  ]) {
+    const missingKeyGuard = {
+      ...fixtures,
+      "pr-check.yml": fixtures["pr-check.yml"].replace(
+        `if: failure() && steps.${stepId}.outcome == 'failure' && inputs.diagnostic_public_key_base64 != ''`,
+        `if: failure() && steps.${stepId}.outcome == 'failure'`,
+      ),
+    };
+    assert.match(
+      validateSourceConfidentiality(missingKeyGuard, assetSelector).join("\n"),
+      expected,
+    );
+
+    const plaintextUpload = {
+      ...fixtures,
+      "pr-check.yml": fixtures["pr-check.yml"].replace(
+        `path: \${{ runner.temp }}/${diagnosticName}`,
+        `path: src/private-${diagnosticName.replace("-diagnostic.json", ".log")}`,
+      ),
+    };
+    assert.match(
+      validateSourceConfidentiality(plaintextUpload, assetSelector).join("\n"),
+      expected,
+    );
+
+    const broadUpload = {
+      ...fixtures,
+      "pr-check.yml": fixtures["pr-check.yml"].replace(
+        `path: \${{ runner.temp }}/${diagnosticName}`,
+        `path: \${{ runner.temp }}/${diagnosticName.replace("-diagnostic.json", "/")}`,
+      ),
+    };
+    assert.match(
+      validateSourceConfidentiality(broadUpload, assetSelector).join("\n"),
+      /raw Workspace proof output must not be uploaded|Workspace .* diagnostics/,
+    );
+  }
+});
+
 test("Revenue screenshots can upload only after closed sanitization", () => {
   const rawUpload = {
     ...fixtures,

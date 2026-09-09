@@ -41,7 +41,9 @@ Evidenz- und Binärartefakte, niemals den privaten Quellcode.
 Der PR-Check erkennt neue private Browser-Harnesses ref-gebunden. Ab dem Arbeitsbereich-Ref
 `2a456dc458b2a64bc5be404d1ab17849bf2b5888` gehören Web-Mehrtab-/Split-Flächen und die beiden
 App-Modus-Plugins als gemeinsames, fail-closed Proof-Paar zum Confidential-Gate; ihre Befehle
-laufen nur über `run-confidential.sh`, Rohartefakte werden nicht öffentlich hochgeladen.
+laufen nur über `run-confidential.sh`. Bei einem Fehler werden Diagnosen ausschließlich mit einem
+explizit gelieferten Einmalschlüssel als verschlüsselte JSON-Hüllen für einen Tag bereitgestellt;
+Rohlogs und Workspace-Screenshots werden nicht öffentlich hochgeladen.
 
 ### v0.152.0 — vorheriger technischer Kandidat
 
