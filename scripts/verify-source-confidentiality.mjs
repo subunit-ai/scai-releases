@@ -25,6 +25,7 @@ export function validateSourceConfidentiality(workflows, assetSelector) {
   }
 
   const pr = workflows["pr-check.yml"] ?? "";
+  require(pr.includes("run-name: SCAI PR · ${{ inputs.ref }}"), "pr-check.yml: runs must expose their exact private source ref");
   for (const label of [
     "npm-ci", "frontend-unit-tests", "cli-drift", "release-meta", "plugin-bundles", "no-demo-data",
     "frontend-build", "support-diagnostics-proof", "meet-visual-proof", "chat-dock-visual-proof", "sentinel-crm-proof", "cargo-test", "native-cargo-check",
