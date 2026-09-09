@@ -212,6 +212,11 @@ jobs:
           else
             echo "workgraph_blackbox=false" >> "$GITHUB_OUTPUT"
           fi
+          if [ -f scripts/verify-moco-parity.mjs ]; then
+            echo "moco_parity=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "moco_parity=false" >> "$GITHUB_OUTPUT"
+          fi
           billing_revenue=false
           offers_revenue=false
           [ ! -f scripts/verify-billing-production.mjs ] || billing_revenue=true
@@ -267,6 +272,14 @@ jobs:
           SCAI_ENCRYPTED_DIAGNOSTIC_PUBLIC_KEY_BASE64: ${{ inputs.diagnostic_public_key_base64 }}
           SCAI_ENCRYPTED_DIAGNOSTIC_PATH: ${{ inputs.diagnostic_public_key_base64 != '' && format('{0}/scai-workgraph-blackbox-diagnostic.json', runner.temp) || '' }}
         run: bash "$GITHUB_WORKSPACE/gate/scripts/run-confidential.sh" workgraph-blackbox-proof node scripts/verify-workgraph-blackbox.mjs
+
+      - name: MOCO-Paritaetsprotokoll visuell und interaktiv beweisen
+        if: steps.source_proofs.outputs.moco_parity == 'true'
+        working-directory: src
+        shell: bash
+        env:
+          MOCO_PARITY_PROOF_OUT: ${{ runner.temp }}/scai-moco-parity-proof
+        run: bash "$GITHUB_WORKSPACE/gate/scripts/run-confidential.sh" moco-parity-proof node scripts/verify-moco-parity.mjs
 
       - name: Revenue-Fixture-Screenshots geschlossen prüfen
         id: revenue_artifacts
