@@ -222,6 +222,11 @@ jobs:
           else
             echo "workforce_capacity=false" >> "$GITHUB_OUTPUT"
           fi
+          if [ -f scripts/verify-workforce-inbox.mjs ]; then
+            echo "workforce_inbox=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "workforce_inbox=false" >> "$GITHUB_OUTPUT"
+          fi
           subunit_call_host=false
           subunit_call_proof=false
           [ ! -f src/call/CallSessionHost.tsx ] || subunit_call_host=true
@@ -336,6 +341,14 @@ jobs:
         env:
           SCAI_WORKFORCE_CAPACITY_PROOF_DIR: ${{ runner.temp }}/scai-workforce-capacity-proof
         run: bash "$GITHUB_WORKSPACE/gate/scripts/run-confidential.sh" workforce-capacity-proof node scripts/verify-workforce-capacity-overlays.mjs
+
+      - name: Persönliche Workforce-Inbox und Übergaben visuell beweisen
+        if: always() && steps.source_proofs.outputs.workforce_inbox == 'true'
+        working-directory: src
+        shell: bash
+        env:
+          SCAI_WORKFORCE_INBOX_PROOF_DIR: ${{ runner.temp }}/scai-workforce-inbox-proof
+        run: bash "$GITHUB_WORKSPACE/gate/scripts/run-confidential.sh" workforce-inbox-proof node scripts/verify-workforce-inbox.mjs
 
       - name: Revenue-Fixture-Screenshots geschlossen prüfen
         id: revenue_artifacts
