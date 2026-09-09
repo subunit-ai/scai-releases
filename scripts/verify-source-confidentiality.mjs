@@ -29,7 +29,7 @@ export function validateSourceConfidentiality(workflows, assetSelector) {
     "npm-ci", "frontend-unit-tests", "cli-drift", "release-meta", "plugin-bundles", "no-demo-data",
     "frontend-build", "support-diagnostics-proof", "meet-visual-proof", "chat-dock-visual-proof", "sentinel-crm-proof", "cargo-test", "native-cargo-check",
     "revenue-proof-dependencies", "revenue-proof-esbuild", "billing-production-proof", "offers-v01-proof", "workgraph-blackbox-proof", "revenue-proof-artifacts",
-    "workspace-tabs-proof", "workspace-app-plugins-proof",
+    "workspace-tabs-proof", "workspace-app-plugins-proof", "subunit-call-proof",
     "native-product-binary", "native-pkce-tests", "native-keyring-smoke",
     "trace-fmt", "trace-core-check", "trace-core-clippy", "trace-core-test",
     "trace-native-check", "trace-native-clippy", "trace-native-test", "trace-native-build",
@@ -179,6 +179,20 @@ export function validateSourceConfidentiality(workflows, assetSelector) {
     "pr-check.yml: MOCO parity proof must be optional for older source refs",
   );
   for (const contract of [
+    "subunit_call_host=false",
+    "subunit_call_proof=false",
+    "[ ! -f src/call/CallSessionHost.tsx ] || subunit_call_host=true",
+    "[ ! -f scripts/verify-subunit-call.mjs ] || subunit_call_proof=true",
+    "echo \"subunit_call=true\" >> \"$GITHUB_OUTPUT\"",
+    "echo \"subunit_call=false\" >> \"$GITHUB_OUTPUT\"",
+  ]) {
+    require(pr.includes(contract), `pr-check.yml: Subunit Call proof detection must retain: ${contract}`);
+  }
+  require(
+    /if \[ "\$subunit_call_host" = true \] && \[ "\$subunit_call_proof" = true \]; then[\s\S]{0,180}?elif \[ "\$subunit_call_host" = false \] && \[ "\$subunit_call_proof" = false \]; then[\s\S]{0,300}?else[\s\S]{0,240}?exit 1/.test(pr),
+    "pr-check.yml: partial Subunit Call capability availability must fail closed",
+  );
+  for (const contract of [
     "workspace_tabs=false",
     "workspace_app_plugins=false",
     "[ ! -f scripts/verify-workspace-tabs.mjs ] || workspace_tabs=true",
@@ -251,16 +265,29 @@ export function validateSourceConfidentiality(workflows, assetSelector) {
     "pr-check.yml: Workspace app-plugin diagnostics may upload only a one-time-key encrypted envelope",
   );
   require(
+    /name: Subunit Call im Browser einschließlich Aufnahme und Native-Quit-Schutz beweisen[\s\S]{0,700}?if: always\(\) && steps\.source_proofs\.outputs\.subunit_call == 'true'[\s\S]{0,700}?SCAI_ENCRYPTED_DIAGNOSTIC_PUBLIC_KEY_BASE64: \$\{\{ inputs\.diagnostic_public_key_base64 \}\}[\s\S]{0,700}?SCAI_ENCRYPTED_DIAGNOSTIC_PATH: \$\{\{ inputs\.diagnostic_public_key_base64 != '' && format\('\{0\}\/scai-subunit-call-diagnostic\.json', runner\.temp\) \|\| '' \}\}[\s\S]{0,700}?run-confidential\.sh" subunit-call-proof node scripts\/verify-subunit-call\.mjs/.test(pr),
+    "pr-check.yml: Subunit Call proof must run confidentially whenever its source harness exists",
+  );
+  require(
+    /name: Verschlüsselte Subunit-Call-Fehlerdiagnostik bereitstellen[\s\S]{0,500}?if: failure\(\) && steps\.subunit_call_proof\.outcome == 'failure' && inputs\.diagnostic_public_key_base64 != ''[\s\S]{0,500}?path: \$\{\{ runner\.temp \}\}\/scai-subunit-call-diagnostic\.json[\s\S]{0,200}?retention-days: 1/.test(pr),
+    "pr-check.yml: Subunit Call diagnostics may upload only a one-time-key encrypted envelope",
+  );
+  require(
     /name: Arbeitsbereich-Proof-Screenshots geschlossen prüfen[\s\S]{0,900}?desktop-dark-split\.png[\s\S]{0,300}?mobile-light-areas\.png[\s\S]{0,300}?mobile-dark\.png[\s\S]{0,300}?dashboard-two-instances\.png[\s\S]{0,300}?halo-two-instances\.png[\s\S]{0,300}?native-menu-bridge\.png/.test(pr),
     "pr-check.yml: Workspace proof must verify the representative Web and App-mode screenshots",
   );
-  const workspaceUploadPaths = [...pr.matchAll(/^\s+path:\s*(.*scai-workspace-(?:tabs|app-plugins).*?)\s*$/gm)]
+  const workspaceAndCallUploadPaths = [...pr.matchAll(/^\s+path:\s*(.*(?:scai-workspace-(?:tabs|app-plugins)|scai-subunit-call).*?)\s*$/gm)]
     .map((match) => match[1]);
   require(
-    workspaceUploadPaths.length === 2
-      && workspaceUploadPaths.includes("${{ runner.temp }}/scai-workspace-tabs-diagnostic.json")
-      && workspaceUploadPaths.includes("${{ runner.temp }}/scai-workspace-app-plugins-diagnostic.json"),
-    "pr-check.yml: raw Workspace proof output must not be uploaded; only the two encrypted diagnostic envelopes are allowed",
+    workspaceAndCallUploadPaths.length === 3
+      && workspaceAndCallUploadPaths.includes("${{ runner.temp }}/scai-workspace-tabs-diagnostic.json")
+      && workspaceAndCallUploadPaths.includes("${{ runner.temp }}/scai-workspace-app-plugins-diagnostic.json")
+      && workspaceAndCallUploadPaths.includes("${{ runner.temp }}/scai-subunit-call-diagnostic.json"),
+    "pr-check.yml: raw Workspace proof output must not be uploaded; raw Call output must not be uploaded; only the three encrypted diagnostic envelopes are allowed",
+  );
+  require(
+    !/^\s+path:\s*["']?(?:[^"'\r\n]*\.cache\/u1-shots\/subunit-call(?:\/[^"'\r\n]*)?|[^"'\r\n]*subunit-call-report\.json|[^"'\r\n]*call-[^/"'\s]*\.(?:webm|png))["']?\s*$/m.test(pr),
+    "pr-check.yml: raw Subunit Call screenshots, recordings, reports, and the real proof output directory must never be uploaded",
   );
   const browserArtifactStep = pr.match(/- name: Revenue-Fixture-Screenshots geschlossen prüfen[\s\S]*?(?=\n      - name:)/)?.[0] ?? "";
   require(

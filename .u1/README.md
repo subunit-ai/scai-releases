@@ -45,6 +45,10 @@ laufen nur über `run-confidential.sh`. Bei einem Fehler werden Diagnosen aussch
 explizit gelieferten Einmalschlüssel als verschlüsselte JSON-Hüllen für einen Tag bereitgestellt;
 Rohlogs und Workspace-Screenshots werden nicht öffentlich hochgeladen.
 
+Der ref-gebundene Subunit-Call-Proof prüft im regulären PR-Check den Browser-WebRTC-, Aufnahme-
+und Native-Quit-Vertrag. Auch dieser Proof läuft vertraulich; öffentlich darf ausschließlich seine
+mit einem expliziten Einmalschlüssel verschlüsselte Fehlerhülle mit eintägiger Retention erscheinen.
+
 ### v0.152.0 — vorheriger technischer Kandidat
 
 Source `64cd6e6cc91859776ce69149b961e3f4cde162b3` ist als `v0.152.0` getaggt; `main`,
