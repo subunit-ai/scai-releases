@@ -73,7 +73,7 @@ test("Windows native broker diagnostics cannot leak names or accept unchecked in
   const publicRunner = fixture.replace("run-indexed-confidential.sh", "run-publicly.sh");
   assert.match(validateReleaseWorkflow(publicRunner).join("\n"), /fixed-size indexed confidential runner/);
 
-  const variableSize = fixture.replace('"windows-native-broker-$TARGET" 30 npm run check:native-broker', '"windows-native-broker-$TARGET" "$UNTRUSTED_COUNT" npm run check:native-broker');
+  const variableSize = fixture.replace('"windows-native-broker-$TARGET" 33 npm run check:native-broker', '"windows-native-broker-$TARGET" "$UNTRUSTED_COUNT" npm run check:native-broker');
   assert.match(validateReleaseWorkflow(variableSize).join("\n"), /fixed-size indexed confidential runner/);
 });
 
