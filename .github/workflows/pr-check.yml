@@ -217,6 +217,11 @@ jobs:
           else
             echo "moco_parity=false" >> "$GITHUB_OUTPUT"
           fi
+          if [ -f scripts/verify-workforce-capacity-overlays.mjs ]; then
+            echo "workforce_capacity=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "workforce_capacity=false" >> "$GITHUB_OUTPUT"
+          fi
           workspace_tabs=false
           workspace_app_plugins=false
           [ ! -f scripts/verify-workspace-tabs.mjs ] || workspace_tabs=true
@@ -292,6 +297,14 @@ jobs:
         env:
           MOCO_PARITY_PROOF_OUT: ${{ runner.temp }}/scai-moco-parity-proof
         run: bash "$GITHUB_WORKSPACE/gate/scripts/run-confidential.sh" moco-parity-proof node scripts/verify-moco-parity.mjs
+
+      - name: Workforce-Kapazität und Abwesenheit visuell beweisen
+        if: steps.source_proofs.outputs.workforce_capacity == 'true'
+        working-directory: src
+        shell: bash
+        env:
+          SCAI_WORKFORCE_CAPACITY_PROOF_DIR: ${{ runner.temp }}/scai-workforce-capacity-proof
+        run: bash "$GITHUB_WORKSPACE/gate/scripts/run-confidential.sh" workforce-capacity-proof node scripts/verify-workforce-capacity-overlays.mjs
 
       - name: Revenue-Fixture-Screenshots geschlossen prüfen
         id: revenue_artifacts
