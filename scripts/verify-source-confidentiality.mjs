@@ -174,6 +174,10 @@ export function validateSourceConfidentiality(workflows, assetSelector) {
     "pr-check.yml: Workgraph proof must be optional for older source refs",
   );
   require(
+    /if \[ -f scripts\/verify-moco-parity\.mjs \]; then[\s\S]{0,220}?moco_parity=true[\s\S]{0,220}?moco_parity=false/.test(pr),
+    "pr-check.yml: MOCO parity proof must be optional for older source refs",
+  );
+  require(
     /name: Sentinel CRM 2026 visuell und interaktiv beweisen[\s\S]{0,180}?if: steps\.source_proofs\.outputs\.sentinel_crm == 'true'/.test(pr),
     "pr-check.yml: Sentinel CRM proof must stay strict when its source harness exists",
   );
@@ -210,6 +214,10 @@ export function validateSourceConfidentiality(workflows, assetSelector) {
   require(
     /name: Workgraph Blackbox visuell und interaktiv beweisen[\s\S]{0,750}?if: always\(\) && steps\.source_proofs\.outputs\.workgraph_blackbox == 'true' && steps\.revenue_proof_dependencies\.outcome == 'success'[\s\S]{0,750}?run-confidential\.sh" workgraph-blackbox-proof node scripts\/verify-workgraph-blackbox\.mjs/.test(pr),
     "pr-check.yml: Workgraph proof must run confidentially whenever its source harness exists",
+  );
+  require(
+    /name: MOCO-Paritaetsprotokoll visuell und interaktiv beweisen[\s\S]{0,500}?if: steps\.source_proofs\.outputs\.moco_parity == 'true'[\s\S]{0,500}?MOCO_PARITY_PROOF_OUT: \$\{\{ runner\.temp \}\}\/scai-moco-parity-proof[\s\S]{0,500}?run-confidential\.sh" moco-parity-proof node scripts\/verify-moco-parity\.mjs/.test(pr),
+    "pr-check.yml: MOCO parity browser proof must run confidentially when its source harness exists",
   );
   const browserArtifactStep = pr.match(/- name: Revenue-Fixture-Screenshots geschlossen prüfen[\s\S]*?(?=\n      - name:)/)?.[0] ?? "";
   require(
