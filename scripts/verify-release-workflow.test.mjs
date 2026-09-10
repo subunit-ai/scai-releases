@@ -148,6 +148,14 @@ test("automatic updater publication verifies all asset digests first", () => {
   assert.match(validateReleaseWorkflow(unsafe).join("\n"), /after asset digest verification/);
 });
 
+test("automatic updater publication cannot bypass the SemVer downgrade gate", () => {
+  const unsafe = fixture.replace(
+    'node "$GITHUB_WORKSPACE/scripts/assert-semver-monotonic.mjs" "$LATEST_TAG" "$TAG"',
+    "echo semver-gate-removed",
+  );
+  assert.match(validateReleaseWorkflow(unsafe).join("\n"), /SemVer downgrade gate/);
+});
+
 test("legacy compatibility cannot run without the exact risk acknowledgement", () => {
   const unsafe = fixture.replace(
     'COMPATIBILITY_ACKNOWLEDGEMENT" != "I_ACCEPT_GATEKEEPER_AND_SMARTSCREEN"',
@@ -176,6 +184,25 @@ test("current publication workflow is fail-closed", () => {
 test("publication without Fleet PASS is rejected", () => {
   const unsafe = publishFixture.replace('test "$(jq -r .status "$MANIFEST")" = "pass"', "echo unchecked-status");
   assert.match(validatePublishWorkflow(unsafe, contractPaths).join("\n"), /publication must require manifest PASS/);
+});
+
+test("publication rejects removing either SemVer downgrade gate", () => {
+  const command = 'node scripts/assert-semver-monotonic.mjs "$LATEST_TAG" "$TAG"';
+  const missingEarlyGate = publishFixture.replace(command, "echo early-semver-gate-removed");
+  assert.match(validatePublishWorkflow(missingEarlyGate, contractPaths).join("\n"), /SemVer/);
+
+  const lastIndex = publishFixture.lastIndexOf(command);
+  const missingFinalGate = `${publishFixture.slice(0, lastIndex)}echo final-semver-gate-removed${publishFixture.slice(lastIndex + command.length)}`;
+  assert.match(validatePublishWorkflow(missingFinalGate, contractPaths).join("\n"), /SemVer/);
+});
+
+test("publication runs SemVer gates before download and after digest verification", () => {
+  const command = 'node scripts/assert-semver-monotonic.mjs "$LATEST_TAG" "$TAG"';
+  const firstIndex = publishFixture.indexOf(command);
+  const misplaced = publishFixture.replace(command, "echo early-semver-gate-moved")
+    .replace("sha256sum -c SHA256SUMS", `sha256sum -c SHA256SUMS\n          ${command}`);
+  assert.equal(firstIndex >= 0, true);
+  assert.match(validatePublishWorkflow(misplaced, contractPaths).join("\n"), /before asset download/);
 });
 
 test("publication without the approved manifest digest is rejected", () => {

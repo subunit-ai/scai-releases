@@ -1207,6 +1207,8 @@ jobs:
           jq -e --arg version "${TAG#v}" --arg source_sha "$SOURCE_SHA" \
             '.version == $version and .source_sha == $source_sha and (.platforms | length) == 11' \
             latest.json >/dev/null
+          LATEST_TAG=$(gh release view -R "$REPO" --json tagName --jq .tagName)
+          node "$GITHUB_WORKSPACE/scripts/assert-semver-monotonic.mjs" "$LATEST_TAG" "$TAG"
           gh release edit "$TAG" -R "$REPO" --draft=false --prerelease=false --latest
           test "$(gh release view "$TAG" -R "$REPO" --json isDraft --jq .isDraft)" = "false"
           echo "Updater veröffentlicht: $TAG · Source $SOURCE_SHA · 11 Ziele."

@@ -10,6 +10,7 @@ fleet/evidence/market-template.json
 fleet/evidence/operations-template.json
 fleet/manifest.schema.json
 fleet/release-contract.paths
+scripts/assert-semver-monotonic.mjs
 scripts/checkout-private-source.sh
 scripts/encrypt-confidential-log.mjs
 scripts/merge-cyclonedx.mjs
