@@ -26,6 +26,13 @@ test("build and publish share one non-cancelling release mutation lock", () => {
   assert.match(validatePublishWorkflow(unlockedPublish, contractPaths).join("\n"), /share the non-cancelling release mutation lock/);
 });
 
+test("build and publish reject prefix-only draft identity checks", () => {
+  const unsafeBuild = fixture.replace('grep -Fxq "Source-SHA:', 'grep -Fq "Source-SHA:');
+  assert.match(validateReleaseWorkflow(unsafeBuild).join("\n"), /match complete binding lines/);
+  const unsafePublish = publishFixture.replace('grep -Fxq "Source-SHA:', 'grep -Fq "Source-SHA:');
+  assert.match(validatePublishWorkflow(unsafePublish, contractPaths).join("\n"), /match complete binding lines/);
+});
+
 test("a public pre-build release is rejected", () => {
   const unsafe = fixture.replace("--draft \\", "--not-a-draft \\");
   assert.match(validateReleaseWorkflow(unsafe).join("\n"), /release must be created as a draft/);

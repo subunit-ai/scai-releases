@@ -45,6 +45,8 @@ export function validateReleaseWorkflow(workflow) {
   const require = (condition, message) => { if (!condition) errors.push(message); };
   const has = (pattern) => pattern.test(workflow);
 
+  require(!has(/grep -Fq "(?:Source-SHA|Fleet-Release-ID|Distribution-Policy):/), "draft identity checks must match complete binding lines");
+
   require(has(/source_sha:\s*\n(?:\s+.*\n){0,4}?\s+required:\s*true/m), "source_sha input must be required");
   require(has(/release_id:\s*\n(?:\s+.*\n){0,4}?\s+required:\s*true/m), "release_id input must be required");
   require(has(/distribution_policy:\s*\n[\s\S]{0,240}?- market-ready\s*\n\s*- legacy-v0\.125\s*\n\s*default:\s*market-ready/m), "distribution policy must default to market-ready and explicitly enumerate legacy-v0.125");
@@ -187,6 +189,8 @@ export function validatePublishWorkflow(workflow, contractPaths) {
   const errors = [];
   const require = (condition, message) => { if (!condition) errors.push(message); };
   const has = (pattern) => pattern.test(workflow);
+
+  require(!has(/grep -Fq "(?:Source-SHA|Fleet-Release-ID|Distribution-Policy):/), "publication identity checks must match complete binding lines");
 
   const actualContractPaths = contractPaths
     .split("\n")

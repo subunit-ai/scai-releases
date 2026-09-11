@@ -42,7 +42,7 @@ for binding in \
   "Source-SHA: $SOURCE_SHA" \
   "Fleet-Release-ID: $RELEASE_ID" \
   "Distribution-Policy: $DISTRIBUTION_POLICY"; do
-  if ! printf '%s' "$BODY" | grep -Fq "$binding"; then
+  if ! printf '%s' "$BODY" | grep -Fxq "$binding"; then
     echo "::error::Draft $TAG besitzt nicht die erwartete Bindung: $binding"
     exit 1
   fi
