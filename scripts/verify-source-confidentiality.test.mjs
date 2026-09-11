@@ -25,8 +25,19 @@ test("an automatic public trigger is rejected", () => {
 });
 
 test("a PR check without its exact source identity in the run name is rejected", () => {
-  const unsafe = { ...fixtures, "pr-check.yml": fixtures["pr-check.yml"].replace("run-name: SCAI PR · ${{ inputs.ref }}\n", "") };
+  const unsafe = { ...fixtures, "pr-check.yml": fixtures["pr-check.yml"].replace(/^run-name:.*\n/m, "") };
   assert.match(validateSourceConfidentiality(unsafe, assetSelector).join("\n"), /exact private source ref/);
+});
+
+test("correlation cannot become mandatory, disappear or cancel a concurrent request", () => {
+  for (const [before, after, diagnostic] of [
+    ['required: false\n        default: ""', 'required: true\n        default: ""', /must remain optional/],
+    ['bash "$GITHUB_WORKSPACE/gate/scripts/validate-pr-check-request.sh" "$SRC_REF" "$REQUEST_ID"', 'true', /correlation must be validated/],
+    ["format('pr-check-{0}-{1}-{2}', inputs.ref, inputs.trace_ref, inputs.request_id)", "format('pr-check-{0}-{1}', inputs.ref, inputs.trace_ref)", /distinct requests/],
+  ]) {
+    const unsafe = { ...fixtures, "pr-check.yml": fixtures["pr-check.yml"].replace(before, after) };
+    assert.match(validateSourceConfidentiality(unsafe, assetSelector).join("\n"), diagnostic);
+  }
 });
 
 test("a mutable action can never run beside private source", () => {

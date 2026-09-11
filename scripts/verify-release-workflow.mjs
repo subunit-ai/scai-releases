@@ -27,6 +27,7 @@ export const EXPECTED_RELEASE_CONTRACT_PATHS = [
   "scripts/run-package-smoke.sh",
   "scripts/setup-auth-ci-databases.sh",
   "scripts/validate-private-source-ref.sh",
+  "scripts/validate-pr-check-request.sh",
   "scripts/validate-release-assets.sh",
   "scripts/verify-fleet-manifest.mjs",
   "scripts/verify-fleet-source-workflow.mjs",

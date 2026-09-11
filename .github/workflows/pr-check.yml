@@ -15,7 +15,7 @@
 # ship.sh wartet auf die Conclusion dieses Runs und merged nur bei grün.
 
 name: PR Check (Quell-Repo)
-run-name: SCAI PR · ${{ inputs.ref }}
+run-name: ${{ inputs.request_id != '' && format('SCAI PR · {0} · {1}', inputs.ref, inputs.request_id) || format('SCAI PR · {0}', inputs.ref) }}
 
 on:
   workflow_dispatch:
@@ -24,6 +24,10 @@ on:
         description: "Branch/SHA im privaten Quell-Repo (z.B. session/halo-p1-agent)"
         required: true
         default: "main"
+      request_id:
+        description: "Optionaler UUIDv4 je Dispatch; erfordert ref als vollständigen 40-Source-SHA"
+        required: false
+        default: ""
       trace_ref:
         description: "Optionaler exakter 40-Zeichen-SHA aus trace-tauri für den Standalone-Matrixcheck"
         required: false
@@ -41,7 +45,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: pr-check-${{ inputs.ref }}-${{ inputs.trace_ref }}
+  group: ${{ inputs.request_id != '' && format('pr-check-{0}-{1}-{2}', inputs.ref, inputs.trace_ref, inputs.request_id) || format('pr-check-{0}-{1}', inputs.ref, inputs.trace_ref) }}
   cancel-in-progress: true
 
 jobs:
@@ -79,9 +83,11 @@ jobs:
         shell: bash
         env:
           SRC_REF: ${{ inputs.ref }}
+          REQUEST_ID: ${{ inputs.request_id }}
           DEPLOY_KEY: ${{ secrets.SOURCE_DEPLOY_KEY }}
         run: |
           set -euo pipefail
+          bash "$GITHUB_WORKSPACE/gate/scripts/validate-pr-check-request.sh" "$SRC_REF" "$REQUEST_ID"
           bash "$GITHUB_WORKSPACE/gate/scripts/validate-private-source-ref.sh" "$SRC_REF"
           if [ -z "${DEPLOY_KEY:-}" ]; then
             echo "::error::SOURCE_DEPLOY_KEY fehlt."
@@ -1035,9 +1041,11 @@ jobs:
         shell: bash
         env:
           SRC_REF: ${{ inputs.ref }}
+          REQUEST_ID: ${{ inputs.request_id }}
           DEPLOY_KEY: ${{ secrets.SOURCE_DEPLOY_KEY }}
         run: |
           set -euo pipefail
+          bash "$GITHUB_WORKSPACE/gate/scripts/validate-pr-check-request.sh" "$SRC_REF" "$REQUEST_ID"
           bash "$GITHUB_WORKSPACE/gate/scripts/validate-private-source-ref.sh" "$SRC_REF"
           if [ -z "${DEPLOY_KEY:-}" ]; then
             echo "::error::SOURCE_DEPLOY_KEY fehlt."

@@ -25,7 +25,9 @@ export function validateSourceConfidentiality(workflows, assetSelector) {
   }
 
   const pr = workflows["pr-check.yml"] ?? "";
-  require(pr.includes("run-name: SCAI PR · ${{ inputs.ref }}"), "pr-check.yml: runs must expose their exact private source ref");
+  require(pr.includes("run-name: ${{ inputs.request_id != '' && format('SCAI PR · {0} · {1}', inputs.ref, inputs.request_id) || format('SCAI PR · {0}', inputs.ref) }}"), "pr-check.yml: runs must expose their exact private source ref and optional request_id");
+  require(/request_id:\n\s+description:[^\n]+\n\s+required: false\n\s+default: ""/.test(pr), "pr-check.yml: request_id must remain optional for legacy ref callers");
+  require(pr.includes("group: ${{ inputs.request_id != '' && format('pr-check-{0}-{1}-{2}', inputs.ref, inputs.trace_ref, inputs.request_id) || format('pr-check-{0}-{1}', inputs.ref, inputs.trace_ref) }}"), "pr-check.yml: distinct requests must not cancel each other; legacy concurrency must remain compatible");
   for (const label of [
     "npm-ci", "frontend-unit-tests", "cli-drift", "release-meta", "plugin-bundles", "no-demo-data",
     "frontend-build", "support-diagnostics-proof", "meet-visual-proof", "chat-dock-visual-proof", "sentinel-crm-proof", "cargo-test", "native-cargo-check",
@@ -49,6 +51,8 @@ export function validateSourceConfidentiality(workflows, assetSelector) {
   for (const block of sourceCheckoutBlocks) {
     const validation = block.indexOf('bash "$GITHUB_WORKSPACE/gate/scripts/validate-private-source-ref.sh" "$SRC_REF"');
     const keyMaterial = block.indexOf('key_file="$HOME/.ssh/scai_src"');
+    const correlation = block.indexOf('bash "$GITHUB_WORKSPACE/gate/scripts/validate-pr-check-request.sh" "$SRC_REF" "$REQUEST_ID"');
+    require(block.includes('REQUEST_ID: ${{ inputs.request_id }}') && correlation >= 0 && correlation < keyMaterial, "pr-check.yml: request correlation must be validated before deploy-key material is created");
     require(validation >= 0 && keyMaterial > validation, "pr-check.yml: source refs must be allowlist-validated before deploy-key material is created");
     require(block.includes('git -C src fetch --depth 1 -- origin "$SRC_REF"'), "pr-check.yml: source fetch must terminate options before the validated ref");
   }
