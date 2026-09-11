@@ -217,15 +217,15 @@ jobs:
               echo "::error::Release $TAG ist bereits veröffentlicht — Assets werden niemals überschrieben."
               exit 1
             fi
-            if ! printf '%s' "$BODY" | grep -Fq "Source-SHA: $SOURCE_SHA"; then
+            if ! printf '%s' "$BODY" | grep -Fxq "Source-SHA: $SOURCE_SHA"; then
               echo "::error::Draft $TAG gehört nicht zum angeforderten Source-SHA $SOURCE_SHA."
               exit 1
             fi
-            if ! printf '%s' "$BODY" | grep -Fq "Fleet-Release-ID: $RELEASE_ID"; then
+            if ! printf '%s' "$BODY" | grep -Fxq "Fleet-Release-ID: $RELEASE_ID"; then
               echo "::error::Draft $TAG gehört nicht zur angeforderten Fleet-Release-ID $RELEASE_ID."
               exit 1
             fi
-            if ! printf '%s' "$BODY" | grep -Fq "Distribution-Policy: $DISTRIBUTION_POLICY"; then
+            if ! printf '%s' "$BODY" | grep -Fxq "Distribution-Policy: $DISTRIBUTION_POLICY"; then
               echo "::error::Draft $TAG gehört nicht zur angeforderten Distribution-Policy $DISTRIBUTION_POLICY."
               exit 1
             fi
@@ -1015,7 +1015,7 @@ jobs:
           set -euo pipefail
           IS_DRAFT=$(gh release view "$TAG" -R "$REPO" --json isDraft --jq .isDraft)
           BODY=$(gh release view "$TAG" -R "$REPO" --json body --jq .body)
-          if [ "$IS_DRAFT" != "true" ] || ! printf '%s' "$BODY" | grep -Fq "Source-SHA: $SOURCE_SHA"; then
+          if [ "$IS_DRAFT" != "true" ] || ! printf '%s' "$BODY" | grep -Fxq "Source-SHA: $SOURCE_SHA"; then
             echo "::error::$TAG ist kein zum Source-Pin gehörender Draft."
             exit 1
           fi
@@ -1173,9 +1173,9 @@ jobs:
           RELEASE=$(gh release view "$TAG" -R "$REPO" --json isDraft,body,assets)
           test "$(jq -r .isDraft <<<"$RELEASE")" = "true"
           BODY=$(jq -r .body <<<"$RELEASE")
-          printf '%s' "$BODY" | grep -Fq "Source-SHA: $SOURCE_SHA"
-          printf '%s' "$BODY" | grep -Fq "Fleet-Release-ID: $RELEASE_ID"
-          printf '%s' "$BODY" | grep -Fq "Distribution-Policy: $DISTRIBUTION_POLICY"
+          printf '%s' "$BODY" | grep -Fxq "Source-SHA: $SOURCE_SHA"
+          printf '%s' "$BODY" | grep -Fxq "Fleet-Release-ID: $RELEASE_ID"
+          printf '%s' "$BODY" | grep -Fxq "Distribution-Policy: $DISTRIBUTION_POLICY"
           jq '{draft:.isDraft, assets:(.assets|length)}' <<<"$RELEASE"
 
           if [ "$PUBLISH_UPDATE" != "true" ]; then

@@ -96,3 +96,20 @@ test("missing asset cannot reach gh upload", () => {
   assert.match(result.stderr + result.stdout, /Ungültiger Draft-Asset-Pfad/);
   assert.doesNotMatch(result.calls, /release upload/);
 });
+
+for (const [field, suffix] of [
+  ["Source-SHA", "a"],
+  ["Fleet-Release-ID", "0"],
+  ["Distribution-Policy", "-other"],
+]) {
+  test(`draft ${field} must match the complete value, not a prefix`, () => {
+    const body = [
+      `Source-SHA: ${sourceSha}`,
+      `Fleet-Release-ID: ${releaseId}`,
+      "Distribution-Policy: market-ready",
+    ].map((line) => line.startsWith(`${field}:`) ? `${line}${suffix}` : line).join("\n");
+    const result = runGuard({ body });
+    assert.notEqual(result.status, 0);
+    assert.doesNotMatch(result.calls, /release upload/);
+  });
+}
