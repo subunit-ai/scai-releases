@@ -24,7 +24,9 @@ permissions:
   contents: write
 
 concurrency:
-  group: publish-${{ inputs.release_id }}
+  # Derselbe Lock wie build-all.yml: kein Publisher kann einen Draft sichtbar
+  # machen, während ein Build-Job noch Assets mit bewusstem Draft-Clobber ersetzt.
+  group: scai-release-mutation
   cancel-in-progress: false
 
 jobs:
@@ -93,8 +95,8 @@ jobs:
           RELEASE=$(gh release view "$TAG" -R "$REPO" --json isDraft,body)
           test "$(jq -r .isDraft <<<"$RELEASE")" = "true"
           BODY=$(jq -r .body <<<"$RELEASE")
-          printf '%s' "$BODY" | grep -Fq "Source-SHA: $SOURCE_SHA"
-          printf '%s' "$BODY" | grep -Fq "Fleet-Release-ID: $RELEASE_ID"
+          printf '%s' "$BODY" | grep -Fxq "Source-SHA: $SOURCE_SHA"
+          printf '%s' "$BODY" | grep -Fxq "Fleet-Release-ID: $RELEASE_ID"
 
           ASSET_DIR="$RUNNER_TEMP/scai-publish-$TAG"
           mkdir -p "$ASSET_DIR"
