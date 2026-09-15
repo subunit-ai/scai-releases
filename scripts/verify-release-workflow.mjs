@@ -18,6 +18,7 @@ export const EXPECTED_RELEASE_CONTRACT_PATHS = [
   "fleet/evidence/operations-template.json",
   "fleet/manifest.schema.json",
   "fleet/release-contract.paths",
+  "scripts/assert-semver-monotonic.mjs",
   "scripts/checkout-private-source.sh",
   "scripts/encrypt-confidential-log.mjs",
   "scripts/merge-cyclonedx.mjs",
@@ -171,8 +172,16 @@ export function validateReleaseWorkflow(workflow) {
   const sourceMainIndex = workflow.lastIndexOf('test "$REMOTE_MAIN" = "$SOURCE_SHA"');
   const sourceTagIndex = workflow.lastIndexOf('test "$REMOTE_TAG" = "$SOURCE_SHA"');
   const updateDigestIndex = workflow.lastIndexOf("sha256sum -c SHA256SUMS");
+  const updateSemverIndex = workflow.lastIndexOf('node "$GITHUB_WORKSPACE/scripts/assert-semver-monotonic.mjs" "$LATEST_TAG" "$TAG"');
   const updatePublishIndex = workflow.lastIndexOf('gh release edit "$TAG" -R "$REPO" --draft=false');
-  require(sourceMainIndex > attestIndex && sourceTagIndex > sourceMainIndex && updateDigestIndex > sourceTagIndex && updatePublishIndex > updateDigestIndex, "automatic updater publication must follow attestations, exact source lineage and digest verification");
+  require(
+    sourceMainIndex > attestIndex
+      && sourceTagIndex > sourceMainIndex
+      && updateDigestIndex > sourceTagIndex
+      && updateSemverIndex > updateDigestIndex
+      && updatePublishIndex > updateSemverIndex,
+    "automatic updater publication must follow attestations, exact source lineage, digest verification and the SemVer downgrade gate",
+  );
   return errors;
 }
 
@@ -209,6 +218,15 @@ export function validatePublishWorkflow(workflow, contractPaths) {
   require(has(/Fleet-Release-ID: \$RELEASE_ID/), "publication must bind the draft to the release ID");
   require(has(/sha256sum -c SHA256SUMS/), "publication must recheck all release asset digests");
 
+  const semverCommand = 'node scripts/assert-semver-monotonic.mjs "$LATEST_TAG" "$TAG"';
+  const semverIndexes = [];
+  let semverIndex = workflow.indexOf(semverCommand);
+  while (semverIndex >= 0) {
+    semverIndexes.push(semverIndex);
+    semverIndex = workflow.indexOf(semverCommand, semverIndex + semverCommand.length);
+  }
+  require(semverIndexes.length === 2, "publication must check SemVer monotonicity exactly twice");
+
   for (const line of workflow.split("\n")) {
     const match = line.match(/^\s*(?:-\s*)?uses:\s*([^\s#]+)/);
     if (!match || match[1].startsWith("./")) continue;
@@ -217,9 +235,19 @@ export function validatePublishWorkflow(workflow, contractPaths) {
   }
 
   const passIndex = workflow.indexOf('= "pass"');
+  const draftBindingIndex = workflow.indexOf('Fleet-Release-ID: $RELEASE_ID');
+  const downloadIndex = workflow.indexOf('gh release download "$TAG"');
   const digestIndex = workflow.indexOf("sha256sum -c SHA256SUMS");
   const publishIndex = workflow.lastIndexOf('gh release edit "$TAG"');
   require(passIndex >= 0 && digestIndex > passIndex && publishIndex > digestIndex, "publication must happen only after PASS and asset verification");
+  require(
+    semverIndexes.length === 2
+      && semverIndexes[0] > draftBindingIndex
+      && semverIndexes[0] < downloadIndex
+      && semverIndexes[1] > digestIndex
+      && semverIndexes[1] < publishIndex,
+    "publication must reject SemVer downgrades before asset download and immediately before publish",
+  );
   return errors;
 }
 
