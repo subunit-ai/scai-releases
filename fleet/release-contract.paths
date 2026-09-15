@@ -10,6 +10,7 @@ fleet/evidence/market-template.json
 fleet/evidence/operations-template.json
 fleet/manifest.schema.json
 fleet/release-contract.paths
+scripts/assert-semver-monotonic.mjs
 scripts/checkout-private-source.sh
 scripts/encrypt-confidential-log.mjs
 scripts/merge-cyclonedx.mjs
@@ -18,6 +19,7 @@ scripts/run-indexed-confidential.sh
 scripts/run-package-smoke.ps1
 scripts/run-package-smoke.sh
 scripts/setup-auth-ci-databases.sh
+scripts/upload-draft-assets.sh
 scripts/validate-private-source-ref.sh
 scripts/validate-pr-check-request.sh
 scripts/validate-release-assets.sh

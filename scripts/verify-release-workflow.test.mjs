@@ -15,6 +15,24 @@ test("current release workflow is fail-closed", () => {
   assert.deepEqual(validateReleaseWorkflow(fixture), []);
 });
 
+test("build and publish share one non-cancelling release mutation lock", () => {
+  const unlockedBuild = fixture.replace("group: scai-release-mutation", "group: build-only");
+  assert.match(validateReleaseWorkflow(unlockedBuild).join("\n"), /shared non-cancelling concurrency lock/);
+
+  const cancellingBuild = fixture.replace("cancel-in-progress: false", "cancel-in-progress: true");
+  assert.match(validateReleaseWorkflow(cancellingBuild).join("\n"), /shared non-cancelling concurrency lock/);
+
+  const unlockedPublish = publishFixture.replace("group: scai-release-mutation", "group: publish-only");
+  assert.match(validatePublishWorkflow(unlockedPublish, contractPaths).join("\n"), /share the non-cancelling release mutation lock/);
+});
+
+test("build and publish reject prefix-only draft identity checks", () => {
+  const unsafeBuild = fixture.replace('grep -Fxq "Source-SHA:', 'grep -Fq "Source-SHA:');
+  assert.match(validateReleaseWorkflow(unsafeBuild).join("\n"), /match complete binding lines/);
+  const unsafePublish = publishFixture.replace('grep -Fxq "Source-SHA:', 'grep -Fq "Source-SHA:');
+  assert.match(validatePublishWorkflow(unsafePublish, contractPaths).join("\n"), /match complete binding lines/);
+});
+
 test("a public pre-build release is rejected", () => {
   const unsafe = fixture.replace("--draft \\", "--not-a-draft \\");
   assert.match(validateReleaseWorkflow(unsafe).join("\n"), /release must be created as a draft/);
@@ -94,8 +112,16 @@ test("Windows ARM CXX flags cannot be converted into a fake Git installation pat
 });
 
 test("a broad release upload cannot replace the explicit asset allowlist", () => {
-  const unsafe = fixture.replace('gh release upload "$TAG" "${ASSETS[@]}"', 'gh release upload "$TAG" "$BUNDLE_ROOT"');
+  const unsafe = fixture.replace('upload-draft-assets.sh" "${ASSETS[@]}"', 'upload-draft-assets.sh" "$BUNDLE_ROOT"');
   assert.match(validateReleaseWorkflow(unsafe).join("\n"), /explicit release asset allowlist/);
+});
+
+test("no asset upload can bypass the bound-draft guard", () => {
+  const unsafe = fixture.replace(
+    'bash "$GITHUB_WORKSPACE/gate/scripts/upload-draft-assets.sh" "$EVIDENCE"',
+    'gh release upload "$TAG" "$EVIDENCE" -R "$REPO" --clobber',
+  );
+  assert.match(validateReleaseWorkflow(unsafe).join("\n"), /every release asset upload|must not bypass/);
 });
 
 test("updater signatures cannot be treated as native platform signing", () => {
@@ -129,6 +155,14 @@ test("automatic updater publication verifies all asset digests first", () => {
   assert.match(validateReleaseWorkflow(unsafe).join("\n"), /after asset digest verification/);
 });
 
+test("automatic updater publication cannot bypass the SemVer downgrade gate", () => {
+  const unsafe = fixture.replace(
+    'node "$GITHUB_WORKSPACE/scripts/assert-semver-monotonic.mjs" "$LATEST_TAG" "$TAG"',
+    "echo semver-gate-removed",
+  );
+  assert.match(validateReleaseWorkflow(unsafe).join("\n"), /SemVer downgrade gate/);
+});
+
 test("legacy compatibility cannot run without the exact risk acknowledgement", () => {
   const unsafe = fixture.replace(
     'COMPATIBILITY_ACKNOWLEDGEMENT" != "I_ACCEPT_GATEKEEPER_AND_SMARTSCREEN"',
@@ -157,6 +191,25 @@ test("current publication workflow is fail-closed", () => {
 test("publication without Fleet PASS is rejected", () => {
   const unsafe = publishFixture.replace('test "$(jq -r .status "$MANIFEST")" = "pass"', "echo unchecked-status");
   assert.match(validatePublishWorkflow(unsafe, contractPaths).join("\n"), /publication must require manifest PASS/);
+});
+
+test("publication rejects removing either SemVer downgrade gate", () => {
+  const command = 'node scripts/assert-semver-monotonic.mjs "$LATEST_TAG" "$TAG"';
+  const missingEarlyGate = publishFixture.replace(command, "echo early-semver-gate-removed");
+  assert.match(validatePublishWorkflow(missingEarlyGate, contractPaths).join("\n"), /SemVer/);
+
+  const lastIndex = publishFixture.lastIndexOf(command);
+  const missingFinalGate = `${publishFixture.slice(0, lastIndex)}echo final-semver-gate-removed${publishFixture.slice(lastIndex + command.length)}`;
+  assert.match(validatePublishWorkflow(missingFinalGate, contractPaths).join("\n"), /SemVer/);
+});
+
+test("publication runs SemVer gates before download and after digest verification", () => {
+  const command = 'node scripts/assert-semver-monotonic.mjs "$LATEST_TAG" "$TAG"';
+  const firstIndex = publishFixture.indexOf(command);
+  const misplaced = publishFixture.replace(command, "echo early-semver-gate-moved")
+    .replace("sha256sum -c SHA256SUMS", `sha256sum -c SHA256SUMS\n          ${command}`);
+  assert.equal(firstIndex >= 0, true);
+  assert.match(validatePublishWorkflow(misplaced, contractPaths).join("\n"), /before asset download/);
 });
 
 test("publication without the approved manifest digest is rejected", () => {

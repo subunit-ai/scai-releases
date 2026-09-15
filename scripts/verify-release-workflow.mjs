@@ -18,6 +18,7 @@ export const EXPECTED_RELEASE_CONTRACT_PATHS = [
   "fleet/evidence/operations-template.json",
   "fleet/manifest.schema.json",
   "fleet/release-contract.paths",
+  "scripts/assert-semver-monotonic.mjs",
   "scripts/checkout-private-source.sh",
   "scripts/encrypt-confidential-log.mjs",
   "scripts/merge-cyclonedx.mjs",
@@ -26,6 +27,7 @@ export const EXPECTED_RELEASE_CONTRACT_PATHS = [
   "scripts/run-package-smoke.ps1",
   "scripts/run-package-smoke.sh",
   "scripts/setup-auth-ci-databases.sh",
+  "scripts/upload-draft-assets.sh",
   "scripts/validate-private-source-ref.sh",
   "scripts/validate-pr-check-request.sh",
   "scripts/validate-release-assets.sh",
@@ -44,10 +46,13 @@ export function validateReleaseWorkflow(workflow) {
   const require = (condition, message) => { if (!condition) errors.push(message); };
   const has = (pattern) => pattern.test(workflow);
 
+  require(!has(/grep -Fq "(?:Source-SHA|Fleet-Release-ID|Distribution-Policy):/), "draft identity checks must match complete binding lines");
+
   require(has(/source_sha:\s*\n(?:\s+.*\n){0,4}?\s+required:\s*true/m), "source_sha input must be required");
   require(has(/release_id:\s*\n(?:\s+.*\n){0,4}?\s+required:\s*true/m), "release_id input must be required");
   require(has(/distribution_policy:\s*\n[\s\S]{0,240}?- market-ready\s*\n\s*- legacy-v0\.125\s*\n\s*default:\s*market-ready/m), "distribution policy must default to market-ready and explicitly enumerate legacy-v0.125");
   require(has(/compatibility_acknowledgement:\s*\n[\s\S]{0,180}?default:\s*""/m), "legacy compatibility acknowledgement input must be explicit and empty by default");
+  require(has(/concurrency:\s*\n\s*group:\s*scai-release-mutation\s*\n\s*cancel-in-progress:\s*false/m), "release mutations must use the shared non-cancelling concurrency lock");
   require(has(/publish_update:\s*\n[\s\S]{0,180}?type:\s*boolean[\s\S]{0,80}?default:\s*false/m), "automatic updater publication must be explicit and default off");
   require(has(/run-name:\s*SCAI \$\{\{ inputs\.ref \}\} · \$\{\{ inputs\.source_sha \}\}/), "release runs must expose their immutable source identity");
   const secretPreflightIndex = workflow.indexOf("name: Release-Secret-Preflight");
@@ -107,7 +112,7 @@ export function validateReleaseWorkflow(workflow) {
   require(has(/run-confidential\.sh" "package-runtime-\$TARGET"[\s\S]{0,240}?run-package-smoke\.sh/), "macOS/Linux package runtime smoke must stay confidential");
   require(has(/run-confidential\.sh" "package-runtime-\$TARGET"[\s\S]{0,240}?run-package-smoke\.ps1/), "Windows package runtime smoke must stay confidential");
   require(has(/verify-runtime-evidence\.mjs"[\s\\]*"\$EVIDENCE" "\$TARGET" "\$VERSION" "\$SOURCE_SHA"/), "every platform runtime evidence must be validated before upload");
-  require(has(/runtime-evidence-\$TARGET\.json[\s\S]{0,240}?gh release upload "\$TAG" "\$EVIDENCE"/), "only the validated runtime evidence file may be uploaded");
+  require(has(/runtime-evidence-\$TARGET\.json[\s\S]{0,240}?upload-draft-assets\.sh" "\$EVIDENCE"/), "only the validated runtime evidence file may be uploaded");
   require(has(/for target in aarch64-apple-darwin x86_64-apple-darwin aarch64-pc-windows-msvc x86_64-pc-windows-msvc x86_64-unknown-linux-gnu; do[\s\S]{0,320}?verify-runtime-evidence\.mjs/), "final manifest must revalidate runtime evidence for all five targets");
   for (const label of ["runtime", "typescript", "vite"]) {
     require(has(new RegExp(`run-confidential\\.sh" "windows-${label}-\\$TARGET"`)), `Windows ${label} prepackage output must pass through the confidential runner`);
@@ -116,7 +121,9 @@ export function validateReleaseWorkflow(workflow) {
   require(has(/run-indexed-confidential\.sh"[\s\S]{0,100}?"windows-plugin-envelope-\$TARGET" 14 npm run check:plugin-envelope/), "Windows plugin envelope failures must use the fixed-size indexed confidential runner");
   require(has(/CXXFLAGS_aarch64_pc_windows_msvc=\/EHsc[\s\S]{0,260}?MSYS2_ENV_CONV_EXCL=CXXFLAGS_aarch64_pc_windows_msvc/), "Windows ARM C++ exception flags must be excluded from MSYS path conversion");
   require(has(/RUNNER_OS:-}" = "Windows"[\s\S]{0,2400}?BUILD_ARGS\+=\(--config '\{"build":\{"beforeBuildCommand":null\}\}'\)/), "Windows prepackage proof must disable only the already executed Tauri frontend hook");
-  require(has(/gh release upload "\$TAG" "\$\{ASSETS\[@\]\}"/), "only the explicit release asset allowlist may be uploaded");
+  require(has(/upload-draft-assets\.sh" "\$\{ASSETS\[@\]\}"/), "only the explicit release asset allowlist may be uploaded");
+  require((workflow.match(/upload-draft-assets\.sh/g) ?? []).length === 4, "every release asset upload must pass through the bound-draft guard");
+  require(!has(/gh release upload/), "workflow must not bypass the bound-draft upload guard");
   require(has(/IS_DRAFT=.*isDraft[\s\S]{0,500}?Source-SHA:/), "existing release reuse must verify draft state and source SHA");
   require(has(/needs:\s*\[release, build\][\s\S]{0,180}?needs\.build\.result == 'success'/), "evidence job must depend on successful release and build jobs");
   require(has(/Fleet-Release-ID: \$RELEASE_ID/), "draft must be bound to the Fleet release ID");
@@ -166,8 +173,16 @@ export function validateReleaseWorkflow(workflow) {
   const sourceMainIndex = workflow.lastIndexOf('test "$REMOTE_MAIN" = "$SOURCE_SHA"');
   const sourceTagIndex = workflow.lastIndexOf('test "$REMOTE_TAG" = "$SOURCE_SHA"');
   const updateDigestIndex = workflow.lastIndexOf("sha256sum -c SHA256SUMS");
+  const updateSemverIndex = workflow.lastIndexOf('node "$GITHUB_WORKSPACE/scripts/assert-semver-monotonic.mjs" "$LATEST_TAG" "$TAG"');
   const updatePublishIndex = workflow.lastIndexOf('gh release edit "$TAG" -R "$REPO" --draft=false');
-  require(sourceMainIndex > attestIndex && sourceTagIndex > sourceMainIndex && updateDigestIndex > sourceTagIndex && updatePublishIndex > updateDigestIndex, "automatic updater publication must follow attestations, exact source lineage and digest verification");
+  require(
+    sourceMainIndex > attestIndex
+      && sourceTagIndex > sourceMainIndex
+      && updateDigestIndex > sourceTagIndex
+      && updateSemverIndex > updateDigestIndex
+      && updatePublishIndex > updateSemverIndex,
+    "automatic updater publication must follow attestations, exact source lineage, digest verification and the SemVer downgrade gate",
+  );
   return errors;
 }
 
@@ -175,6 +190,8 @@ export function validatePublishWorkflow(workflow, contractPaths) {
   const errors = [];
   const require = (condition, message) => { if (!condition) errors.push(message); };
   const has = (pattern) => pattern.test(workflow);
+
+  require(!has(/grep -Fq "(?:Source-SHA|Fleet-Release-ID|Distribution-Policy):/), "publication identity checks must match complete binding lines");
 
   const actualContractPaths = contractPaths
     .split("\n")
@@ -189,6 +206,7 @@ export function validatePublishWorkflow(workflow, contractPaths) {
   for (const input of ["release_id", "tag", "manifest_sha256"]) {
     require(has(new RegExp(`${input}:\\s*\\n(?:\\s+.*\\n){0,4}?\\s+required:\\s*true`, "m")), `${input} input must be required`);
   }
+  require(has(/concurrency:\s*\n(?:\s*#.*\n)*\s*group:\s*scai-release-mutation\s*\n\s*cancel-in-progress:\s*false/m), "publication must share the non-cancelling release mutation lock");
   require(has(/test "\$GITHUB_REF" = "refs\/heads\/\$DEFAULT_BRANCH"/), "publication must run from the default branch");
   require(has(/node scripts\/verify-fleet-manifest\.mjs "\$MANIFEST"/), "publication must validate the Fleet manifest");
   require(has(/jq -r \.status "\$MANIFEST"[\s\S]{0,80}?= "pass"/), "publication must require manifest PASS");
@@ -201,6 +219,15 @@ export function validatePublishWorkflow(workflow, contractPaths) {
   require(has(/Fleet-Release-ID: \$RELEASE_ID/), "publication must bind the draft to the release ID");
   require(has(/sha256sum -c SHA256SUMS/), "publication must recheck all release asset digests");
 
+  const semverCommand = 'node scripts/assert-semver-monotonic.mjs "$LATEST_TAG" "$TAG"';
+  const semverIndexes = [];
+  let semverIndex = workflow.indexOf(semverCommand);
+  while (semverIndex >= 0) {
+    semverIndexes.push(semverIndex);
+    semverIndex = workflow.indexOf(semverCommand, semverIndex + semverCommand.length);
+  }
+  require(semverIndexes.length === 2, "publication must check SemVer monotonicity exactly twice");
+
   for (const line of workflow.split("\n")) {
     const match = line.match(/^\s*(?:-\s*)?uses:\s*([^\s#]+)/);
     if (!match || match[1].startsWith("./")) continue;
@@ -209,9 +236,19 @@ export function validatePublishWorkflow(workflow, contractPaths) {
   }
 
   const passIndex = workflow.indexOf('= "pass"');
+  const draftBindingIndex = workflow.indexOf('Fleet-Release-ID: $RELEASE_ID');
+  const downloadIndex = workflow.indexOf('gh release download "$TAG"');
   const digestIndex = workflow.indexOf("sha256sum -c SHA256SUMS");
   const publishIndex = workflow.lastIndexOf('gh release edit "$TAG"');
   require(passIndex >= 0 && digestIndex > passIndex && publishIndex > digestIndex, "publication must happen only after PASS and asset verification");
+  require(
+    semverIndexes.length === 2
+      && semverIndexes[0] > draftBindingIndex
+      && semverIndexes[0] < downloadIndex
+      && semverIndexes[1] > digestIndex
+      && semverIndexes[1] < publishIndex,
+    "publication must reject SemVer downgrades before asset download and immediately before publish",
+  );
   return errors;
 }
 
