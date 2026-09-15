@@ -131,6 +131,17 @@ jobs:
         shell: bash
         run: bash "$GITHUB_WORKSPACE/gate/scripts/run-confidential.sh" frontend-unit-tests bun test src/lib
 
+      - name: Plugin-Deploy-Vertrag isoliert prüfen
+        working-directory: src
+        shell: bash
+        timeout-minutes: 10
+        run: |
+          set -euo pipefail
+          # Ältere Source-Refs besitzen diese reine Git-/Transport-Fixture noch nicht.
+          if [ -f scripts/plugins/deploy.test.mjs ]; then
+            bash "$GITHUB_WORKSPACE/gate/scripts/run-confidential.sh" plugin-deploy-tests node --test scripts/plugins/deploy.test.mjs
+          fi
+
       # Vendored subunit-CLI muss mit Manifest/Signing-Key/Bundle-Wiring synchron
       # bleiben — schlägt bei veraltetem/handgepatchtem Vendor fehl.
       - name: CLI-Drift-Wächter

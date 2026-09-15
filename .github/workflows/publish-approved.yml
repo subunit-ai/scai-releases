@@ -90,6 +90,8 @@ jobs:
           RELEASE_ID: ${{ inputs.release_id }}
           TAG: ${{ inputs.tag }}
           SOURCE_SHA: ${{ steps.gate.outputs.source_sha }}
+          MANIFEST: ${{ steps.gate.outputs.manifest }}
+          EXPECTED_MANIFEST_SHA256: ${{ inputs.manifest_sha256 }}
         run: |
           set -euo pipefail
           RELEASE=$(gh release view "$TAG" -R "$REPO" --json isDraft,body)
@@ -98,6 +100,10 @@ jobs:
           printf '%s' "$BODY" | grep -Fxq "Source-SHA: $SOURCE_SHA"
           printf '%s' "$BODY" | grep -Fxq "Fleet-Release-ID: $RELEASE_ID"
 
+          RELEASE_METADATA="$RUNNER_TEMP/scai-approved-release.json"
+          gh api "repos/$REPO/releases/tags/$TAG" > "$RELEASE_METADATA"
+          node scripts/verify-approved-release.mjs "$MANIFEST" "$EXPECTED_MANIFEST_SHA256" "$REPO" "$TAG" "$RELEASE_ID" "$RELEASE_METADATA" --metadata-only
+
           LATEST_TAG=$(gh release view -R "$REPO" --json tagName --jq .tagName)
           node scripts/assert-semver-monotonic.mjs "$LATEST_TAG" "$TAG"
 
@@ -105,6 +111,9 @@ jobs:
           mkdir -p "$ASSET_DIR"
           gh release download "$TAG" -R "$REPO" --dir "$ASSET_DIR"
           test -s "$ASSET_DIR/SHA256SUMS"
+          # Prüft die Genehmigung aller 26 Dateien einschließlich SHA256SUMS
+          # selbst, bevor dessen Dateinamen an sha256sum weitergegeben werden.
+          node scripts/verify-approved-release.mjs "$MANIFEST" "$EXPECTED_MANIFEST_SHA256" "$REPO" "$TAG" "$RELEASE_ID" "$RELEASE_METADATA" "$ASSET_DIR"
           cd "$ASSET_DIR"
           sha256sum -c SHA256SUMS
 
@@ -113,11 +122,19 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           REPO: ${{ github.repository }}
           TAG: ${{ inputs.tag }}
+          RELEASE_ID: ${{ inputs.release_id }}
+          MANIFEST: ${{ steps.gate.outputs.manifest }}
+          EXPECTED_MANIFEST_SHA256: ${{ inputs.manifest_sha256 }}
         run: |
           set -euo pipefail
           LATEST_TAG=$(gh release view -R "$REPO" --json tagName --jq .tagName)
           node scripts/assert-semver-monotonic.mjs "$LATEST_TAG" "$TAG"
-          PRERELEASE=$(gh release view "$TAG" -R "$REPO" --json isPrerelease --jq .isPrerelease)
+          # Erneut echte Remote-Digests/Policy lesen: ein nachträglich ausgetauschtes
+          # Asset darf nicht mit den zuvor geprüften lokalen Bytes publiziert werden.
+          RELEASE_METADATA="$RUNNER_TEMP/scai-approved-release-final.json"
+          gh api "repos/$REPO/releases/tags/$TAG" > "$RELEASE_METADATA"
+          node scripts/verify-approved-release.mjs "$MANIFEST" "$EXPECTED_MANIFEST_SHA256" "$REPO" "$TAG" "$RELEASE_ID" "$RELEASE_METADATA" --metadata-only
+          PRERELEASE=$(jq -r .prerelease "$RELEASE_METADATA")
           FLAGS=(--draft=false)
           if [ "$PRERELEASE" = "true" ]; then
             FLAGS+=(--prerelease)

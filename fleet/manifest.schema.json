@@ -26,6 +26,7 @@
     "release_id": { "type": "string", "pattern": "^scai-candidate-[0-9]{4}-[0-9]{2}-[0-9]{2}\\.[0-9]+$" },
     "status": { "enum": ["candidate", "pass", "rejected", "superseded"] },
     "created_at": { "type": "string", "format": "date-time" },
+    "authorized_release": { "$ref": "#/$defs/authorizedRelease" },
     "supersession": { "$ref": "#/$defs/supersession" },
     "pins": {
       "type": "object",
@@ -71,12 +72,38 @@
   },
   "allOf": [
     {
+      "if": { "properties": { "status": { "const": "pass" } } },
+      "then": { "required": ["authorized_release"] }
+    },
+    {
       "if": { "properties": { "status": { "const": "superseded" } } },
       "then": { "required": ["supersession"] },
       "else": { "not": { "required": ["supersession"] } }
     }
   ],
   "$defs": {
+    "authorizedRelease": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["repository", "tag", "distribution_policy", "assets"],
+      "properties": {
+        "repository": { "const": "subunit-ai/scai-releases" },
+        "tag": { "type": "string", "pattern": "^v[0-9A-Za-z.+-]+$" },
+        "distribution_policy": { "enum": ["market-ready", "legacy-v0.125"] },
+        "assets": {
+          "type": "array", "minItems": 26, "maxItems": 26,
+          "items": {
+            "type": "object", "additionalProperties": false,
+            "required": ["name", "url", "sha256"],
+            "properties": {
+              "name": { "type": "string", "minLength": 1, "maxLength": 200 },
+              "url": { "type": "string", "format": "uri" },
+              "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" }
+            }
+          }
+        }
+      }
+    },
     "sha": { "type": "string", "pattern": "^[0-9a-f]{40}$" },
     "uriOrEmpty": { "type": "string", "pattern": "^(https://|$)" },
     "pin": {

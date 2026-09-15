@@ -25,6 +25,8 @@ export function validateSourceConfidentiality(workflows, assetSelector) {
   }
 
   const pr = workflows["pr-check.yml"] ?? "";
+  require(/name: Plugin-Deploy-Vertrag isoliert prüfen\n\s+working-directory: src\n\s+shell: bash\n\s+timeout-minutes: 10\n\s+run: \|\n\s+set -euo pipefail\n\s+#[^\n]+\n\s+if \[ -f scripts\/plugins\/deploy\.test\.mjs \]; then\n\s+bash "\$GITHUB_WORKSPACE\/gate\/scripts\/run-confidential\.sh" plugin-deploy-tests node --test scripts\/plugins\/deploy\.test\.mjs\n\s+fi/.test(pr),
+    "pr-check.yml: plugin deploy fixtures must run confidentially and fail closed when present, preserving legacy refs");
   require(pr.includes("run-name: ${{ inputs.request_id != '' && format('SCAI PR · {0} · {1}', inputs.ref, inputs.request_id) || format('SCAI PR · {0}', inputs.ref) }}"), "pr-check.yml: runs must expose their exact private source ref and optional request_id");
   require(/request_id:\n\s+description:[^\n]+\n\s+required: false\n\s+default: ""/.test(pr), "pr-check.yml: request_id must remain optional for legacy ref callers");
   require(pr.includes("group: ${{ inputs.request_id != '' && format('pr-check-{0}-{1}-{2}', inputs.ref, inputs.trace_ref, inputs.request_id) || format('pr-check-{0}-{1}', inputs.ref, inputs.trace_ref) }}"), "pr-check.yml: distinct requests must not cancel each other; legacy concurrency must remain compatible");

@@ -19,6 +19,18 @@ test("current public source workflows fail closed on source confidentiality", ()
   assert.deepEqual(validateSourceConfidentiality(fixtures, assetSelector), []);
 });
 
+test("plugin deploy fixtures cannot be skipped or expose private output", () => {
+  for (const [before, after] of [
+    ['run-confidential.sh" plugin-deploy-tests', 'run-publicly.sh" plugin-deploy-tests'],
+    ['plugin-deploy-tests node --test scripts/plugins/deploy.test.mjs', 'plugin-deploy-tests node --test scripts/plugins/deploy.test.mjs || true'],
+    ['if [ -f scripts/plugins/deploy.test.mjs ]; then', 'if false; then'],
+  ]) {
+    const unsafe = { ...fixtures, "pr-check.yml": fixtures["pr-check.yml"].replace(before, after) };
+    assert.notEqual(unsafe["pr-check.yml"], fixtures["pr-check.yml"]);
+    assert.match(validateSourceConfidentiality(unsafe, assetSelector).join("\n"), /plugin deploy fixtures/);
+  }
+});
+
 test("an automatic public trigger is rejected", () => {
   const unsafe = { ...fixtures, "pr-check.yml": fixtures["pr-check.yml"].replace("  workflow_dispatch:", "  pull_request:\n  workflow_dispatch:") };
   assert.match(validateSourceConfidentiality(unsafe, assetSelector).join("\n"), /must not have an automatic or fork trigger/);
