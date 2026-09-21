@@ -4,6 +4,71 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
+const PRIVATE_POSTGRES_WORKFLOWS = ["auth-pr-check.yml", "atlas-pr-check.yml", "fleet-source-check.yml"];
+
+function privateServiceOptions(workflow) {
+  const lines = workflow.split("\n");
+  const indent = (line) => line.match(/^ */)?.[0].length ?? 0;
+  const significant = (line) => line.trim() && !line.trimStart().startsWith("#");
+  const services = [];
+
+  for (let index = 0; index < lines.length; index += 1) {
+    // Only the repository's explicit job-level block form is accepted. Do not
+    // silently skip flow mappings or aliases beside an otherwise safe service.
+    if (/^ {4}services:/.test(lines[index]) && !/^ {4}services:\s*(?:#.*)?$/.test(lines[index])) {
+      services.push({ name: "unsupported-services-form", optionFields: [] });
+      continue;
+    }
+    const servicesMatch = lines[index].match(/^(\s*)services:\s*(?:#.*)?$/);
+    if (!servicesMatch) continue;
+    const servicesIndent = servicesMatch[1].length;
+    let servicesEnd = index + 1;
+    while (servicesEnd < lines.length && (!significant(lines[servicesEnd]) || indent(lines[servicesEnd]) > servicesIndent)) servicesEnd += 1;
+
+    for (let cursor = index + 1; cursor < servicesEnd; cursor += 1) {
+      if (!significant(lines[cursor]) || indent(lines[cursor]) !== servicesIndent + 2) continue;
+      const serviceMatch = lines[cursor].match(/^(\s*)([A-Za-z0-9_-]+):\s*(?:#.*)?$/);
+      if (!serviceMatch) {
+        services.push({ name: "unsupported-service-form", optionFields: [] });
+        continue;
+      }
+      const serviceIndent = serviceMatch[1].length;
+      let serviceEnd = cursor + 1;
+      while (serviceEnd < servicesEnd && (!significant(lines[serviceEnd]) || indent(lines[serviceEnd]) > serviceIndent)) serviceEnd += 1;
+
+      const optionFields = [];
+      for (let optionIndex = cursor + 1; optionIndex < serviceEnd; optionIndex += 1) {
+        const optionMatch = lines[optionIndex].match(/^(\s*)options:\s*(.*)$/);
+        if (!optionMatch || optionMatch[1].length !== serviceIndent + 2) continue;
+        const optionIndent = optionMatch[1].length;
+        const value = optionMatch[2].replace(/\s+#.*$/, "").trim();
+        const parts = /^(?:[>|][-+]?)(?:\s+#.*)?$/.test(value) ? [] : [value];
+        if (/^(?:[>|][-+]?)(?:\s+#.*)?$/.test(value)) {
+          let valueIndex = optionIndex + 1;
+          while (valueIndex < serviceEnd && (!significant(lines[valueIndex]) || indent(lines[valueIndex]) > optionIndent)) {
+            if (significant(lines[valueIndex])) parts.push(lines[valueIndex].trim());
+            valueIndex += 1;
+          }
+        }
+        optionFields.push(parts);
+      }
+      services.push({ name: serviceMatch[2], optionFields });
+      cursor = serviceEnd - 1;
+    }
+    index = servicesEnd - 1;
+  }
+  return services;
+}
+
+function hasClosedServiceLogging(workflow) {
+  const services = privateServiceOptions(workflow);
+  if (services.length === 0) return false;
+  return services.every(({ optionFields }) => {
+    if (optionFields.length !== 1) return false;
+    const driverMentions = optionFields[0].filter((option) => /(?:^|\s)--log-driver(?:=|\s)/.test(option));
+    return driverMentions.length === 1 && /^--log-driver(?:=|\s+)none$/.test(driverMentions[0]);
+  });
+}
 
 export function validateSourceConfidentiality(workflows, assetSelector) {
   const errors = [];
@@ -22,6 +87,11 @@ export function validateSourceConfidentiality(workflows, assetSelector) {
       const ref = match[1].split("@").at(-1);
       require(/^[0-9a-f]{40}$/.test(ref ?? ""), `${name}: action reference must be immutable: ${match[1]}`);
     }
+  }
+
+  for (const name of PRIVATE_POSTGRES_WORKFLOWS) {
+    const workflow = workflows[name] ?? "";
+    require(hasClosedServiceLogging(workflow), `${name}: every private service options field must set exactly one --log-driver none`);
   }
 
   const pr = workflows["pr-check.yml"] ?? "";
@@ -374,7 +444,7 @@ export function validateSourceConfidentiality(workflows, assetSelector) {
 
 function loadWorkflows() {
   return Object.fromEntries(
-    ["pr-check.yml", "build-all.yml", "windows-arm-smoke.yml", "auth-pr-check.yml"].map((name) => [
+    ["pr-check.yml", "build-all.yml", "windows-arm-smoke.yml", ...PRIVATE_POSTGRES_WORKFLOWS].map((name) => [
       name,
       readFileSync(join(ROOT, ".github/workflows", name), "utf8"),
     ]),

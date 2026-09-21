@@ -8,7 +8,7 @@ import { validateSourceConfidentiality } from "./verify-source-confidentiality.m
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const fixtures = Object.fromEntries(
-  ["pr-check.yml", "build-all.yml", "windows-arm-smoke.yml", "auth-pr-check.yml"].map((name) => [
+  ["pr-check.yml", "build-all.yml", "windows-arm-smoke.yml", "auth-pr-check.yml", "atlas-pr-check.yml", "fleet-source-check.yml"].map((name) => [
     name,
     readFileSync(join(ROOT, ".github/workflows", name), "utf8"),
   ]),
@@ -17,6 +17,84 @@ const assetSelector = readFileSync(join(ROOT, "scripts/validate-release-assets.s
 
 test("current public source workflows fail closed on source confidentiality", () => {
   assert.deepEqual(validateSourceConfidentiality(fixtures, assetSelector), []);
+});
+
+for (const declaration of [
+  '      replica: { image: postgres:fixture, options: "--health-cmd pg_isready" }',
+  '      "replica":\n        image: postgres:fixture',
+  '      replica: *unprotected-service',
+  '      <<: *unprotected-services',
+]) {
+  test(`unsupported service declaration cannot evade log protection: ${declaration.split("\n")[0].trim()}`, () => {
+    const unsafe = { ...fixtures, "auth-pr-check.yml": fixtures["auth-pr-check.yml"].replace("    services:\n", `    services:\n${declaration}\n`) };
+    assert.match(validateSourceConfidentiality(unsafe, assetSelector).join("\n"), /auth-pr-check\.yml: every private service options/);
+  });
+}
+
+test("a second job cannot hide service logging behind a flow mapping", () => {
+  const unsafe = { ...fixtures, "auth-pr-check.yml": fixtures["auth-pr-check.yml"] + '\n  another-private-job:\n    services: { postgres: { image: postgres:fixture } }\n' };
+  assert.match(validateSourceConfidentiality(unsafe, assetSelector).join("\n"), /auth-pr-check\.yml: every private service options/);
+});
+
+for (const name of ["auth-pr-check.yml", "atlas-pr-check.yml", "fleet-source-check.yml"]) {
+  test(`${name} PostgreSQL service cannot expose its teardown log`, () => {
+    const unsafe = { ...fixtures, [name]: fixtures[name].replace(/^\s+--log-driver none\s*$/m, "") };
+    assert.match(validateSourceConfidentiality(unsafe, assetSelector).join("\n"), new RegExp(`${name.replace(".", "\\.")}: every private service options`));
+  });
+}
+
+test("a commented or wrong-service log driver cannot satisfy the PostgreSQL boundary", () => {
+  const commented = {
+    ...fixtures,
+    "auth-pr-check.yml": fixtures["auth-pr-check.yml"].replace("          --log-driver none", "          # --log-driver none"),
+  };
+  assert.match(validateSourceConfidentiality(commented, assetSelector).join("\n"), /auth-pr-check\.yml: every private service options/);
+
+  const wrongService = {
+    ...fixtures,
+    "atlas-pr-check.yml": fixtures["atlas-pr-check.yml"]
+      .replace("          --log-driver none\n", "")
+      .replace("    services:\n", "    services:\n      redis:\n        image: redis:fixture\n        options: >-\n          --log-driver none\n"),
+  };
+  assert.match(validateSourceConfidentiality(wrongService, assetSelector).join("\n"), /atlas-pr-check\.yml: every private service options/);
+
+  const commandText = {
+    ...fixtures,
+    "auth-pr-check.yml": fixtures["auth-pr-check.yml"]
+      .replace("          --log-driver none\n", "")
+      .replace("          --health-cmd pg_isready", '          --health-cmd "echo --log-driver none"'),
+  };
+  assert.match(validateSourceConfidentiality(commandText, assetSelector).join("\n"), /auth-pr-check\.yml: every private service options/);
+});
+
+test("a differently named PostgreSQL replica cannot bypass private service log suppression", () => {
+  const unsafe = {
+    ...fixtures,
+    "auth-pr-check.yml": fixtures["auth-pr-check.yml"].replace(
+      "    services:\n",
+      `    services:
+      replica:
+        image: postgres@sha256:95206741a5b214807675e14165369d05b93a9cf692223b616d07cca227e74b0b
+        options: >-
+          --health-cmd pg_isready
+`,
+    ),
+  };
+  assert.match(validateSourceConfidentiality(unsafe, assetSelector).join("\n"), /auth-pr-check\.yml: every private service options/);
+});
+
+test("duplicate or overriding PostgreSQL log drivers fail closed", () => {
+  const duplicateDriver = {
+    ...fixtures,
+    "fleet-source-check.yml": fixtures["fleet-source-check.yml"].replace("          --log-driver none", "          --log-driver none\n          --log-driver json-file"),
+  };
+  assert.match(validateSourceConfidentiality(duplicateDriver, assetSelector).join("\n"), /fleet-source-check\.yml: every private service options/);
+
+  const duplicateOptions = {
+    ...fixtures,
+    "auth-pr-check.yml": fixtures["auth-pr-check.yml"].replace("          --health-retries 12", "          --health-retries 12\n        options: --log-driver json-file"),
+  };
+  assert.match(validateSourceConfidentiality(duplicateOptions, assetSelector).join("\n"), /auth-pr-check\.yml: every private service options/);
 });
 
 test("an automatic public trigger is rejected", () => {
