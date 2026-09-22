@@ -11,19 +11,23 @@
 # Repo hat, kann ihn auslösen.
 #
 # AUSGELÖST VON: scripts/session/ship.sh im Quell-Repo (vor dem Squash-Merge).
-#   gh workflow run pr-check.yml -R subunit-ai/scai-releases -f ref=session/<slug>
+#   gh workflow run pr-check.yml -R subunit-ai/scai-releases -f ref=<40sha> -f request_id=<uuidv4>
 # ship.sh wartet auf die Conclusion dieses Runs und merged nur bei grün.
 
 name: PR Check (Quell-Repo)
-run-name: SCAI PR · ${{ inputs.ref }}
+run-name: SCAI PR · ${{ inputs.ref }} · ${{ inputs.request_id }}
 
 on:
   workflow_dispatch:
     inputs:
       ref:
-        description: "Branch/SHA im privaten Quell-Repo (z.B. session/halo-p1-agent)"
+        description: "Exakter unveränderlicher 40-Zeichen-SHA im privaten Quell-Repo"
         required: true
-        default: "main"
+        type: string
+      request_id:
+        description: "Neue eindeutige UUIDv4 für diesen Source-Prüfauftrag"
+        required: true
+        type: string
       trace_ref:
         description: "Optionaler exakter 40-Zeichen-SHA aus trace-tauri für den Standalone-Matrixcheck"
         required: false
@@ -41,11 +45,38 @@ permissions:
   contents: read
 
 concurrency:
-  group: pr-check-${{ inputs.ref }}-${{ inputs.trace_ref }}
-  cancel-in-progress: true
+  group: pr-check-${{ inputs.ref }}-${{ inputs.request_id }}
+  cancel-in-progress: false
 
 jobs:
+  preflight:
+    name: Exakten Source-Prüfauftrag ohne private Schlüssel validieren
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      source_sha: ${{ steps.request.outputs.source_sha }}
+      request_id: ${{ steps.request.outputs.request_id }}
+      trace_sha: ${{ steps.request.outputs.trace_sha }}
+    steps:
+      - name: Öffentlichen Confidential-Runner auschecken
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2, immutable
+        with:
+          path: gate
+          persist-credentials: false
+      - name: Source und Request fail-closed prüfen
+        id: request
+        shell: bash
+        env:
+          SOURCE_SHA: ${{ inputs.ref }}
+          REQUEST_ID: ${{ inputs.request_id }}
+          TRACE_SHA: ${{ inputs.trace_ref }}
+          TRACE_BUNDLE_KEY: ${{ inputs.trace_bundle_public_key_base64 }}
+        run: node gate/scripts/verify-source-confidentiality.mjs --pr-request
+
   check:
+    needs: preflight
+    if: needs.preflight.result == 'success'
     name: tsc + vite + cargo test
     runs-on: ubuntu-latest
     steps:
@@ -78,7 +109,8 @@ jobs:
       - name: Quellcode auschecken (privates Repo, read-only Deploy-Key)
         shell: bash
         env:
-          SRC_REF: ${{ inputs.ref }}
+          SRC_REF: ${{ needs.preflight.outputs.source_sha }}
+          REQUEST_ID: ${{ needs.preflight.outputs.request_id }}
           DEPLOY_KEY: ${{ secrets.SOURCE_DEPLOY_KEY }}
         run: |
           set -euo pipefail
@@ -107,6 +139,7 @@ jobs:
           cleanup
           trap - EXIT
           echo "ausgecheckt: $SRC_REF → $ACTUAL_SHA"
+          echo "PASS private-checkout-scai (source-sha=$ACTUAL_SHA, request-id=$REQUEST_ID)"
 
       - name: Node einrichten
         uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4, immutable
@@ -124,6 +157,16 @@ jobs:
         working-directory: src
         shell: bash
         run: bash "$GITHUB_WORKSPACE/gate/scripts/run-confidential.sh" frontend-unit-tests bun test src/lib
+
+      - name: Web- und Release-Fixture-Verträge prüfen
+        working-directory: src
+        shell: bash
+        run: bash "$GITHUB_WORKSPACE/gate/scripts/run-confidential.sh" web-release-fixture-tests npm run test:web
+
+      - name: Plugin-Deploy-Snapshot und Fehlergrenzen prüfen
+        working-directory: src
+        shell: bash
+        run: bash "$GITHUB_WORKSPACE/gate/scripts/run-confidential.sh" plugin-deploy-tests npm run test:plugin-deploy
 
       # Vendored subunit-CLI muss mit Manifest/Signing-Key/Bundle-Wiring synchron
       # bleiben — schlägt bei veraltetem/handgepatchtem Vendor fehl.
@@ -477,6 +520,27 @@ jobs:
           if-no-files-found: error
           retention-days: 1
 
+      - name: Host-Restore explizit mit WebKit beweisen
+        id: host_restore_webkit
+        working-directory: src
+        shell: bash
+        env:
+          PAGES_PROOF_BROWSER: webkit
+          PAGES_PROOF_FOCUS: host-restore
+          PAGES_PROOF_OUT: ${{ runner.temp }}/scai-host-restore-webkit
+          SCAI_ENCRYPTED_DIAGNOSTIC_PUBLIC_KEY_BASE64: ${{ inputs.diagnostic_public_key_base64 }}
+          SCAI_ENCRYPTED_DIAGNOSTIC_PATH: ${{ inputs.diagnostic_public_key_base64 != '' && format('{0}/scai-host-restore-webkit-diagnostic.json', runner.temp) || '' }}
+        run: bash "$GITHUB_WORKSPACE/gate/scripts/run-confidential.sh" host-restore-webkit-proof node scripts/verify-pages-foundation.mjs
+
+      - name: Verschlüsselte WebKit-Host-Restore-Fehlerdiagnostik bereitstellen
+        if: failure() && steps.host_restore_webkit.outcome == 'failure' && inputs.diagnostic_public_key_base64 != ''
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4, immutable
+        with:
+          name: scai-host-restore-webkit-encrypted-diagnostic-${{ github.run_id }}
+          path: ${{ runner.temp }}/scai-host-restore-webkit-diagnostic.json
+          if-no-files-found: error
+          retention-days: 1
+
       - name: Meet-Plugin visuell und interaktiv beweisen
         working-directory: src
         env:
@@ -741,8 +805,9 @@ jobs:
           git config --global --unset-all url.git@github-trace:subunit-ai/trace-tauri.git.insteadOf || true
 
   trace-standalone:
+    needs: preflight
     name: Trace Standalone prüfen (${{ matrix.label }})
-    if: inputs.trace_ref != ''
+    if: inputs.trace_ref != '' && needs.preflight.result == 'success'
     timeout-minutes: 60
     strategy:
       fail-fast: false
@@ -772,7 +837,8 @@ jobs:
       - name: Exakten privaten Trace-Stand auschecken (read-only)
         shell: bash
         env:
-          SRC_REF: ${{ inputs.trace_ref }}
+          SRC_REF: ${{ needs.preflight.outputs.trace_sha }}
+          REQUEST_ID: ${{ needs.preflight.outputs.request_id }}
           DEPLOY_KEY: ${{ secrets.TRACE_SOURCE_DEPLOY_KEY }}
         run: |
           set -euo pipefail
@@ -1012,6 +1078,8 @@ jobs:
           retention-days: 1
 
   native-trace:
+    needs: preflight
+    if: needs.preflight.result == 'success'
     name: SCAI + Trace nativ kompilieren (${{ matrix.label }})
     timeout-minutes: 45
     strategy:
@@ -1034,7 +1102,8 @@ jobs:
       - name: Quellcode auschecken (privates Repo, read-only Deploy-Key)
         shell: bash
         env:
-          SRC_REF: ${{ inputs.ref }}
+          SRC_REF: ${{ needs.preflight.outputs.source_sha }}
+          REQUEST_ID: ${{ needs.preflight.outputs.request_id }}
           DEPLOY_KEY: ${{ secrets.SOURCE_DEPLOY_KEY }}
         run: |
           set -euo pipefail
@@ -1063,6 +1132,7 @@ jobs:
           cleanup
           trap - EXIT
           echo "ausgecheckt: $SRC_REF → $ACTUAL_SHA"
+          echo "PASS private-checkout-scai (source-sha=$ACTUAL_SHA, request-id=$REQUEST_ID)"
 
       - uses: dtolnay/rust-toolchain@4360b52568e2003a75bf9bc1d59f33a8e3fc893c # stable, immutable
 

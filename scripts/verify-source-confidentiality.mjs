@@ -1,10 +1,130 @@
 #!/usr/bin/env node
-import { readFileSync } from "node:fs";
+import { appendFileSync, readFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const PRIVATE_POSTGRES_WORKFLOWS = ["auth-pr-check.yml", "atlas-pr-check.yml", "fleet-source-check.yml"];
+
+// Also executed by the public-only preflight, before any job can receive a
+// private key. No normalization: names/outputs must match the caller's request.
+export function validatePrRequest(sourceSha, requestId, traceSha = "", traceBundleKey = "") {
+  const sha = (value) => typeof value === "string" && value.length === 40 && /^[0-9a-f]{40}$/.test(value);
+  if (!sha(sourceSha)) throw new Error("Exact lowercase 40-character source SHA required");
+  if (typeof requestId !== "string" || requestId.length !== 36
+      || !/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(requestId)) {
+    throw new Error("Unique lowercase UUIDv4 request_id required");
+  }
+  if (traceSha !== "" && !sha(traceSha)) throw new Error("Optional Trace source must be an exact lowercase SHA");
+  if (typeof traceBundleKey !== "string" || (traceBundleKey !== "" && traceSha === "")) {
+    throw new Error("Trace bundle recipient requires an exact Trace source");
+  }
+  return { source_sha: sourceSha, request_id: requestId, trace_sha: traceSha };
+}
+
+// Deliberately closed grammar for the small security-critical job, rather than
+// matching a safe-looking command inside comments or a skipped step. Changes to
+// this contract must update the policy and its executable negative cases too.
+const PR_PREFLIGHT = `  preflight:
+    name: Exakten Source-Prüfauftrag ohne private Schlüssel validieren
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      source_sha: \${{ steps.request.outputs.source_sha }}
+      request_id: \${{ steps.request.outputs.request_id }}
+      trace_sha: \${{ steps.request.outputs.trace_sha }}
+    steps:
+      - name: Öffentlichen Confidential-Runner auschecken
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2, immutable
+        with:
+          path: gate
+          persist-credentials: false
+      - name: Source und Request fail-closed prüfen
+        id: request
+        shell: bash
+        env:
+          SOURCE_SHA: \${{ inputs.ref }}
+          REQUEST_ID: \${{ inputs.request_id }}
+          TRACE_SHA: \${{ inputs.trace_ref }}
+          TRACE_BUNDLE_KEY: \${{ inputs.trace_bundle_public_key_base64 }}
+        run: node gate/scripts/verify-source-confidentiality.mjs --pr-request`;
+
+function requirePrContract(pr, require) {
+  const canonical = (text) => text.split("\n").filter((line) => line.trim() && !line.trimStart().startsWith("#")).join("\n");
+  const roots = [...pr.matchAll(/^([\w-]+):/gm)].map((match) => match[1]);
+  require(JSON.stringify(roots) === JSON.stringify(["name", "run-name", "on", "permissions", "concurrency", "jobs"])
+    && privateServiceOptions(pr) !== null, "pr-check.yml: request contract needs canonical unique workflow/job mappings, no global env or aliases");
+  require(/^run-name: SCAI PR · \$\{\{ inputs\.ref \}\} · \$\{\{ inputs\.request_id \}\}$/m.test(pr),
+    "pr-check.yml: run name must bind exact private source ref and request_id");
+  for (const key of ["ref", "request_id"]) {
+    const blocks = [...pr.matchAll(new RegExp(`^      ${key}:\\n([\\s\\S]*?)(?=^      [\\w-]+:|^\\S|$(?![\\s\\S]))`, "gm"))];
+    const body = blocks[0]?.[1] ?? "";
+    const fields = [...body.matchAll(/^        ([\w-]+):/gm)].map((m) => m[1]);
+    require(blocks.length === 1 && /^        required: true$/m.test(body) && /^        type: string$/m.test(body)
+      && JSON.stringify(fields) === JSON.stringify(["description", "required", "type"]),
+    `pr-check.yml: ${key} must be a required string without default`);
+  }
+  const concurrency = pr.match(/^concurrency:\n([\s\S]*?)(?=^\S)/m)?.[1] ?? "";
+  require(canonical(concurrency) === '  group: pr-check-${{ inputs.ref }}-${{ inputs.request_id }}\n  cancel-in-progress: false',
+    "pr-check.yml: concurrency must bind source/request without cancelling another proof");
+
+  const jobs = [...pr.slice(pr.indexOf("\njobs:\n") + 1).matchAll(/^  ([\w-]+):\n([\s\S]*?)(?=^  [\w-]+:|$(?![\s\S]))/gm)];
+  require(JSON.stringify(jobs.map((job) => job[1])) === JSON.stringify(["preflight", "check", "trace-standalone", "native-trace"]),
+    "pr-check.yml: all private jobs must stay in the explicit preflight dependency graph");
+  require(canonical(jobs[0]?.[0] ?? "") === PR_PREFLIGHT, "pr-check.yml: preflight must validate inputs without secrets, private checkout or bypass");
+  for (const [ , name, body] of jobs.slice(1)) {
+    const header = body.split(/^    steps:\s*$/m)[0];
+    const condition = name === "trace-standalone"
+      ? "    if: inputs.trace_ref != '' && needs.preflight.result == 'success'"
+      : "    if: needs.preflight.result == 'success'";
+    require(/^    needs: preflight$/m.test(header) && header.split("\n").includes(condition)
+      && !/^    (continue-on-error|env|defaults|services):/m.test(header),
+    `pr-check.yml: ${name} must require successful preflight without job-level bypass`);
+    const checkout = body.match(/      - name: (?:Quellcode auschecken|Exakten privaten Trace-Stand auschecken)[\s\S]*?(?=\n      - (?:name:|uses:))/)?.[0] ?? "";
+    const output = name === "trace-standalone" ? "trace_sha" : "source_sha";
+    require(checkout.includes(`          SRC_REF: \${{ needs.preflight.outputs.${output} }}`)
+      && checkout.includes('          REQUEST_ID: ${{ needs.preflight.outputs.request_id }}'),
+    `pr-check.yml: ${name} checkout must consume validated source/request outputs`);
+  }
+
+  const check = jobs.find((job) => job[1] === "check")?.[2] ?? "";
+  const steps = [...check.matchAll(/^      - (?:name:|uses:)[\s\S]*?(?=^      - (?:name:|uses:)|$(?![\s\S]))/gm)].map((m) => canonical(m[0]));
+  for (const [name, label, command] of [
+    ["Web- und Release-Fixture-Verträge prüfen", "web-release-fixture-tests", "npm run test:web"],
+    ["Plugin-Deploy-Snapshot und Fehlergrenzen prüfen", "plugin-deploy-tests", "npm run test:plugin-deploy"],
+  ]) {
+    const expected = `      - name: ${name}\n        working-directory: src\n        shell: bash\n        run: bash "$GITHUB_WORKSPACE/gate/scripts/run-confidential.sh" ${label} ${command}`;
+    require(steps.filter((step) => step === expected).length === 1,
+      `pr-check.yml: ${label} must be an unconditional confidential fail-closed source gate`);
+  }
+  const webkit = `      - name: Host-Restore explizit mit WebKit beweisen
+        id: host_restore_webkit
+        working-directory: src
+        shell: bash
+        env:
+          PAGES_PROOF_BROWSER: webkit
+          PAGES_PROOF_FOCUS: host-restore
+          PAGES_PROOF_OUT: \${{ runner.temp }}/scai-host-restore-webkit
+          SCAI_ENCRYPTED_DIAGNOSTIC_PUBLIC_KEY_BASE64: \${{ inputs.diagnostic_public_key_base64 }}
+          SCAI_ENCRYPTED_DIAGNOSTIC_PATH: \${{ inputs.diagnostic_public_key_base64 != '' && format('{0}/scai-host-restore-webkit-diagnostic.json', runner.temp) || '' }}
+        run: bash "$GITHUB_WORKSPACE/gate/scripts/run-confidential.sh" host-restore-webkit-proof node scripts/verify-pages-foundation.mjs`;
+  require(steps.filter((step) => step === webkit).length === 1, "pr-check.yml: WebKit host restore must retain its explicit confidential unfiltered source gate");
+  const install = steps.indexOf(`      - name: Browser für Seh-Harnesse
+        working-directory: src
+        shell: bash
+        run: bash "$GITHUB_WORKSPACE/gate/scripts/run-confidential.sh" playwright-install npx playwright install --with-deps chromium webkit`);
+  require(install >= 0 && install < steps.indexOf(webkit), "pr-check.yml: WebKit system dependencies must precede host restore");
+  const webkitUploads = steps.filter((step) => step.includes("uses: actions/upload-artifact@") && /host.restore.webkit/.test(step));
+  require(webkitUploads.length === 1 && webkitUploads[0] === `      - name: Verschlüsselte WebKit-Host-Restore-Fehlerdiagnostik bereitstellen
+        if: failure() && steps.host_restore_webkit.outcome == 'failure' && inputs.diagnostic_public_key_base64 != ''
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4, immutable
+        with:
+          name: scai-host-restore-webkit-encrypted-diagnostic-\${{ github.run_id }}
+          path: \${{ runner.temp }}/scai-host-restore-webkit-diagnostic.json
+          if-no-files-found: error
+          retention-days: 1`, "pr-check.yml: WebKit diagnostics must be only the keyed one-day encrypted envelope, never raw proof output");
+}
 
 function privateServiceOptions(workflow) {
   const lines = workflow.split("\n");
@@ -215,7 +335,7 @@ export function validateSourceConfidentiality(workflows, assetSelector) {
   }
 
   const pr = workflows["pr-check.yml"] ?? "";
-  require(pr.includes("run-name: SCAI PR · ${{ inputs.ref }}"), "pr-check.yml: runs must expose their exact private source ref");
+  requirePrContract(pr, require);
   for (const label of [
     "npm-ci", "frontend-unit-tests", "cli-drift", "release-meta", "plugin-bundles", "no-demo-data",
     "frontend-build", "support-diagnostics-proof", "meet-visual-proof", "chat-dock-visual-proof", "sentinel-crm-proof", "cargo-test", "native-cargo-check",
@@ -572,6 +692,16 @@ function loadWorkflows() {
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+  let request;
+  try {
+    if (process.argv[2] === "--pr-request" && process.argv.length === 3) {
+      request = validatePrRequest(process.env.SOURCE_SHA, process.env.REQUEST_ID, process.env.TRACE_SHA, process.env.TRACE_BUNDLE_KEY);
+      if (!process.env.GITHUB_OUTPUT) throw new Error("Preflight requires GITHUB_OUTPUT");
+    } else if (process.argv.length !== 2) throw new Error("Unknown confidentiality validator mode");
+  } catch (error) {
+    console.error(`FAIL ${error.message}`);
+    process.exit(1);
+  }
   const errors = validateSourceConfidentiality(
     loadWorkflows(),
     readFileSync(join(ROOT, "scripts/validate-release-assets.sh"), "utf8"),
@@ -579,6 +709,10 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
   if (errors.length) {
     for (const error of errors) console.error(`FAIL ${error}`);
     process.exit(1);
+  }
+  if (request) {
+    appendFileSync(process.env.GITHUB_OUTPUT, Object.entries(request).map(([key, value]) => `${key}=${value}\n`).join(""));
+    console.log(`PASS source-request (source-sha=${request.source_sha}, request-id=${request.request_id})`);
   }
   console.log("PASS public source workflows :: dispatch-only, immutable actions, confidential logs, no private build cache, allowlisted artifacts");
 }
