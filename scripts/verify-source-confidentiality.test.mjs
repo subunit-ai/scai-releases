@@ -1,10 +1,12 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { spawnSync } from "node:child_process";
+import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
 
-import { validateSourceConfidentiality } from "./verify-source-confidentiality.mjs";
+import { validatePrRequest, validateSourceConfidentiality } from "./verify-source-confidentiality.mjs";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const fixtures = Object.fromEntries(
@@ -177,9 +179,141 @@ test("an automatic public trigger is rejected", () => {
 });
 
 test("a PR check without its exact source identity in the run name is rejected", () => {
-  const unsafe = { ...fixtures, "pr-check.yml": fixtures["pr-check.yml"].replace("run-name: SCAI PR · ${{ inputs.ref }}\n", "") };
+  const unsafe = { ...fixtures, "pr-check.yml": fixtures["pr-check.yml"].replace("run-name: SCAI PR · ${{ inputs.ref }} · ${{ inputs.request_id }}\n", "") };
   assert.match(validateSourceConfidentiality(unsafe, assetSelector).join("\n"), /exact private source ref/);
 });
+
+const sourceSha = "a".repeat(40);
+const requestId = "e95aacd2-45ab-4e0b-9cff-bb7c015b1f90";
+const traceSha = "b".repeat(40);
+
+test("preflight preserves exact source/request binding, including all UUIDv4 variants", () => {
+  for (const variant of ["8", "9", "a", "b"]) {
+    const id = requestId.slice(0, 19) + variant + requestId.slice(20);
+    assert.deepEqual(validatePrRequest(sourceSha, id, traceSha, "public-recipient"), {
+      source_sha: sourceSha, request_id: id, trace_sha: traceSha,
+    });
+  }
+  assert.equal(validatePrRequest(sourceSha, requestId).trace_sha, "");
+});
+
+for (const [label, patch] of [
+  ["missing source", { SOURCE_SHA: "" }],
+  ["mutable source", { SOURCE_SHA: "main" }],
+  ["short source", { SOURCE_SHA: sourceSha.slice(1) }],
+  ["uppercase source", { SOURCE_SHA: sourceSha.toUpperCase() }],
+  ["newline source", { SOURCE_SHA: sourceSha + "\n" }],
+  ["shell source", { SOURCE_SHA: "$(touch must-not-execute)" }],
+  ["missing request", { REQUEST_ID: "" }],
+  ["uppercase request", { REQUEST_ID: requestId.toUpperCase() }],
+  ["UUIDv1", { REQUEST_ID: requestId.replace("-4e0b-", "-1e0b-") }],
+  ["non-RFC variant", { REQUEST_ID: requestId.replace("-9cff-", "-7cff-") }],
+  ["trailing space", { REQUEST_ID: requestId + " " }],
+  ["trailing newline", { REQUEST_ID: requestId + "\n" }],
+  ["output injection", { REQUEST_ID: requestId + "\nsource_sha=foreign" }],
+  ["mutable Trace", { TRACE_SHA: "main" }],
+  ["newline Trace", { TRACE_SHA: traceSha + "\n" }],
+  ["bundle without Trace", { TRACE_BUNDLE_KEY: "public-recipient" }],
+]) {
+  test(`real preflight rejects ${label} before writing any downstream output`, () => {
+    const dir = mkdtempSync(join(tmpdir(), "source-request-policy-"));
+    try {
+      const output = join(dir, "output");
+      const result = spawnSync(process.execPath, [join(ROOT, "scripts/verify-source-confidentiality.mjs"), "--pr-request"], {
+        cwd: dir, encoding: "utf8", timeout: 10000,
+        env: { PATH: process.env.PATH, SOURCE_SHA: sourceSha, REQUEST_ID: requestId, TRACE_SHA: "", TRACE_BUNDLE_KEY: "", GITHUB_OUTPUT: output, ...patch },
+      });
+      assert.equal(result.status, 1, result.stderr);
+      assert.match(result.stderr, /^FAIL /);
+      assert.equal(result.stdout, "");
+      assert.equal(existsSync(output), false);
+      assert.equal(existsSync(join(dir, "must-not-execute")), false);
+    } finally { rmSync(dir, { recursive: true, force: true }); }
+  });
+}
+
+test("the actual workflow preflight command emits only validated job outputs", () => {
+  const workflow = fixtures["pr-check.yml"];
+  assert.match(workflow, /run: node gate\/scripts\/verify-source-confidentiality\.mjs --pr-request/);
+  const dir = mkdtempSync(join(tmpdir(), "source-request-policy-"));
+  try {
+    const output = join(dir, "output");
+    const result = spawnSync(process.execPath, [join(ROOT, "scripts/verify-source-confidentiality.mjs"), "--pr-request"], {
+      cwd: dir, encoding: "utf8", timeout: 10000,
+      env: { PATH: process.env.PATH, SOURCE_SHA: sourceSha, REQUEST_ID: requestId, TRACE_SHA: traceSha, TRACE_BUNDLE_KEY: "public-recipient", GITHUB_OUTPUT: output },
+    });
+    assert.equal(result.status, 0, result.stderr);
+    assert.equal(readFileSync(output, "utf8"), `source_sha=${sourceSha}\nrequest_id=${requestId}\ntrace_sha=${traceSha}\n`);
+    assert.match(result.stdout, new RegExp(`source-sha=${sourceSha}, request-id=${requestId}`));
+    assert.ok(!result.stdout.includes("public-recipient"));
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
+function rejectPrMutation(label, mutate, expected) {
+  test(`request/gate policy rejects ${label}`, () => {
+    const source = fixtures["pr-check.yml"];
+    const changed = mutate(source);
+    assert.notEqual(changed, source, "negative mutation must really alter the workflow");
+    assert.match(validateSourceConfidentiality({ ...fixtures, "pr-check.yml": changed }, assetSelector).join("\n"), expected);
+  });
+}
+
+for (const [label, from, to, error] of [
+  ["legacy run name", " · ${{ inputs.request_id }}\n", "\n", /run name/],
+  ["optional request", '        description: "Neue eindeutige UUIDv4 für diesen Source-Prüfauftrag"\n        required: true', '        description: "Request"\n        required: false', /request_id must be/],
+  ["request default", "      request_id:\n", "      request_id:\n        default: fixed\n", /request_id must be/],
+  ["duplicate request requirement", "        type: string\n      trace_ref:", "        type: string\n        required: false\n      trace_ref:", /request_id must be/],
+  ["source default", "      ref:\n", "      ref:\n        default: main\n", /ref must be/],
+  ["source-only concurrency", '  group: pr-check-${{ inputs.ref }}-${{ inputs.request_id }}', '  group: pr-check-${{ inputs.ref }}', /concurrency/],
+  ["cancelling running proofs", "  cancel-in-progress: false", "  cancel-in-progress: true", /concurrency/],
+  ["skipped preflight", "  preflight:\n", "  preflight:\n    if: false\n", /preflight must/],
+  ["ignored preflight failure", "  preflight:\n", "  preflight:\n    continue-on-error: true\n", /preflight must/],
+  ["secret in preflight", "          SOURCE_SHA: ${{ inputs.ref }}", "          SOURCE_SHA: ${{ secrets.SOURCE_DEPLOY_KEY }}", /preflight must/],
+  ["forged source output", "source_sha: ${{ steps.request.outputs.source_sha }}", "source_sha: ${{ inputs.ref }}", /preflight must/],
+  ["preflight without validator", "run: node gate/scripts/verify-source-confidentiality.mjs --pr-request", "run: true", /preflight must/],
+  ["input embedded in shell", "run: node gate/scripts/verify-source-confidentiality.mjs --pr-request", "run: echo '${{ inputs.request_id }}'", /preflight must/],
+  ["global secret env", "jobs:\n", "env:\n  KEY: ${{ secrets.SOURCE_DEPLOY_KEY }}\njobs:\n", /canonical unique/],
+  ["duplicate job key", "  check:\n", "  check:\n    runs-on: ubuntu-latest\n  check:\n", /canonical unique|dependency graph/],
+  ["new unguarded private job", "jobs:\n", "jobs:\n  surprise:\n    runs-on: ubuntu-latest\n    env:\n      KEY: ${{ secrets.SOURCE_DEPLOY_KEY }}\n", /dependency graph/],
+  ["quoted job bypass", "  native-trace:\n", '  "native-trace":\n', /canonical unique|dependency graph/],
+]) rejectPrMutation(label, (source) => source.replace(from, to), error);
+
+for (const job of ["check", "trace-standalone", "native-trace"]) {
+  for (const [label, from, to, error] of [
+    ["missing dependency", "    needs: preflight\n", "", /successful preflight/],
+    ["always despite failed preflight", "needs.preflight.result == 'success'", "always()", /successful preflight/],
+    ["continue-on-error", `  ${job}:\n`, `  ${job}:\n    continue-on-error: true\n`, /successful preflight/],
+    ["unvalidated source", "SRC_REF: ${{ needs.preflight.outputs.", "SRC_REF: ${{ inputs.", /validated source\/request/],
+    ["unvalidated request", "REQUEST_ID: ${{ needs.preflight.outputs.request_id }}", "REQUEST_ID: ${{ inputs.request_id }}", /validated source\/request/],
+  ]) rejectPrMutation(`${job} ${label}`, (source) => source.replace(new RegExp(`^  ${job}:\\n[\\s\\S]*?(?=^  [\\w-]+:|$(?![\\s\\S]))`, "m"), (block) => block.replace(from, to)), error);
+}
+
+for (const [label, command] of [
+  ["web-release-fixture-tests", "npm run test:web"],
+  ["plugin-deploy-tests", "npm run test:plugin-deploy"],
+  ["host-restore-webkit-proof", "node scripts/verify-pages-foundation.mjs"],
+]) {
+  for (const [mutation, replace] of [
+    ["missing", () => "        run: true"],
+    ["unwrapped", () => `        run: ${command}`],
+    ["soft failure", (line) => line + " || true"],
+    ["skipped", (line) => `        if: false\n${line}`],
+    ["ignored failure", (line) => `        continue-on-error: true\n${line}`],
+    ["comment-only command", (line) => `        # ${line.trim()}\n        run: true`],
+  ]) rejectPrMutation(`${label} ${mutation}`, (source) => source.replace(new RegExp(`^        run: .* ${label} .*$`, "m"), replace), /confidential.*(?:gate|source)/);
+}
+
+for (const [label, from, to] of [
+  ["Chromium instead of WebKit", "PAGES_PROOF_BROWSER: webkit", "PAGES_PROOF_BROWSER: chromium"],
+  ["missing host focus", "          PAGES_PROOF_FOCUS: host-restore\n", ""],
+  ["only one viewport", "          PAGES_PROOF_FOCUS: host-restore", "          PAGES_PROOF_FOCUS: host-restore\n          PAGES_PROOF_VARIANT: light-390"],
+  ["overwriting normal Pages output", "PAGES_PROOF_OUT: ${{ runner.temp }}/scai-host-restore-webkit", "PAGES_PROOF_OUT: ~/.cache/u1-shots/scai-pages"],
+  ["missing WebKit deps", "install --with-deps chromium webkit", "install chromium"],
+  ["raw WebKit upload", "path: ${{ runner.temp }}/scai-host-restore-webkit-diagnostic.json", "path: ${{ runner.temp }}/scai-host-restore-webkit/"],
+  ["WebKit upload path suffix", "path: ${{ runner.temp }}/scai-host-restore-webkit-diagnostic.json", "path: ${{ runner.temp }}/scai-host-restore-webkit-diagnostic.json/../scai-host-restore-webkit/"],
+  ["second raw WebKit upload", "          path: ${{ runner.temp }}/scai-host-restore-webkit-diagnostic.json", "          path: ${{ runner.temp }}/scai-host-restore-webkit-diagnostic.json\n          path: src/"],
+  ["unkeyed WebKit diagnostic", "if: failure() && steps.host_restore_webkit.outcome == 'failure' && inputs.diagnostic_public_key_base64 != ''", "if: failure()"],
+]) rejectPrMutation(label, (source) => source.replace(from, to), /WebKit/);
 
 test("a mutable action can never run beside private source", () => {
   const unsafe = { ...fixtures, "windows-arm-smoke.yml": fixtures["windows-arm-smoke.yml"].replace(/actions\/setup-node@[0-9a-f]{40}/, "actions/setup-node@v4") };
