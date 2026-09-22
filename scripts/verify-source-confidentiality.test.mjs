@@ -8,7 +8,7 @@ import { validateSourceConfidentiality } from "./verify-source-confidentiality.m
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const fixtures = Object.fromEntries(
-  ["pr-check.yml", "build-all.yml", "windows-arm-smoke.yml", "auth-pr-check.yml", "atlas-pr-check.yml", "fleet-source-check.yml"].map((name) => [
+  ["pr-check.yml", "build-all.yml", "windows-arm-smoke.yml", "u1-chat-pr-check.yml", "auth-pr-check.yml", "atlas-pr-check.yml", "fleet-source-check.yml"].map((name) => [
     name,
     readFileSync(join(ROOT, ".github/workflows", name), "utf8"),
   ]),
@@ -17,6 +17,22 @@ const assetSelector = readFileSync(join(ROOT, "scripts/validate-release-assets.s
 
 test("current public source workflows fail closed on source confidentiality", () => {
   assert.deepEqual(validateSourceConfidentiality(fixtures, assetSelector), []);
+});
+
+test("u1-chat backend suites retain per-file isolation without test filters", () => {
+  for (const name of ["u1-chat-pr-check.yml", "fleet-source-check.yml"]) {
+    const missingIsolation = {
+      ...fixtures,
+      [name]: fixtures[name].replace("u1-chat-tests bun test --isolate", "u1-chat-tests bun test"),
+    };
+    assert.match(validateSourceConfidentiality(missingIsolation, assetSelector).join("\n"), new RegExp(`${name.replaceAll(".", "\\.")}: u1-chat backend suite`));
+
+    const filteredSuite = {
+      ...fixtures,
+      [name]: fixtures[name].replace("u1-chat-tests bun test --isolate", "u1-chat-tests bun test test/server.test.ts --isolate"),
+    };
+    assert.match(validateSourceConfidentiality(filteredSuite, assetSelector).join("\n"), new RegExp(`${name.replaceAll(".", "\\.")}: u1-chat backend suite`));
+  }
 });
 
 for (const declaration of [

@@ -214,6 +214,15 @@ export function validateSourceConfidentiality(workflows, assetSelector) {
     require(hasClosedServiceLogging(workflow), `${name}: every private service options field must set exactly one --log-driver none`);
   }
 
+  const isolatedU1ChatSuite = 'run: bash "$GITHUB_WORKSPACE/gate/scripts/run-confidential.sh" u1-chat-tests bun test --isolate';
+  for (const name of ["u1-chat-pr-check.yml", "fleet-source-check.yml"]) {
+    const commands = (workflows[name] ?? "").split("\n").map((line) => line.trim()).filter((line) => line.includes("u1-chat-tests"));
+    require(
+      commands.length === 1 && commands[0] === isolatedU1ChatSuite,
+      `${name}: u1-chat backend suite must run exactly once with Bun per-file isolation and no test filters`,
+    );
+  }
+
   const pr = workflows["pr-check.yml"] ?? "";
   require(pr.includes("run-name: SCAI PR · ${{ inputs.ref }}"), "pr-check.yml: runs must expose their exact private source ref");
   for (const label of [
@@ -564,7 +573,7 @@ export function validateSourceConfidentiality(workflows, assetSelector) {
 
 function loadWorkflows() {
   return Object.fromEntries(
-    ["pr-check.yml", "build-all.yml", "windows-arm-smoke.yml", ...PRIVATE_POSTGRES_WORKFLOWS].map((name) => [
+    ["pr-check.yml", "build-all.yml", "windows-arm-smoke.yml", "u1-chat-pr-check.yml", ...PRIVATE_POSTGRES_WORKFLOWS].map((name) => [
       name,
       readFileSync(join(ROOT, ".github/workflows", name), "utf8"),
     ]),

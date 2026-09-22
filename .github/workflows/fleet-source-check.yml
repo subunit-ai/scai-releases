@@ -82,7 +82,7 @@ jobs:
 
       - name: Backend- und Boundary-Suite
         working-directory: private/u1-chat
-        run: bash "$GITHUB_WORKSPACE/gate/scripts/run-confidential.sh" u1-chat-tests bun test
+        run: bash "$GITHUB_WORKSPACE/gate/scripts/run-confidential.sh" u1-chat-tests bun test --isolate
 
       - name: Backend bündeln
         working-directory: private/u1-chat
