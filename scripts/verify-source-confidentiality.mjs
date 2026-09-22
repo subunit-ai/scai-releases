@@ -9,63 +9,183 @@ const PRIVATE_POSTGRES_WORKFLOWS = ["auth-pr-check.yml", "atlas-pr-check.yml", "
 function privateServiceOptions(workflow) {
   const lines = workflow.split("\n");
   const indent = (line) => line.match(/^ */)?.[0].length ?? 0;
-  const significant = (line) => line.trim() && !line.trimStart().startsWith("#");
-  const services = [];
+  const significant = (line) => Boolean(line.trim()) && !line.trimStart().startsWith("#");
+  const scalarMarker = (value) => /^(?:[>|][-+]?)(?:\s+#.*)?$/.test(value);
+  const cleanValue = (value) => value.replace(/\s+#.*$/, "").trim();
+  const forbiddenValueForm = (value) => /^[{[*&]/.test(cleanValue(value));
+  const skippedScalarLines = new Set();
 
+  // Shell embedded in run: block scalars is data, even when it happens to look
+  // like a mapping key at one of the policy-controlled indentation levels.
   for (let index = 0; index < lines.length; index += 1) {
-    // Only the repository's explicit job-level block form is accepted. Do not
-    // silently skip flow mappings or aliases beside an otherwise safe service.
-    if (/^ {4}services:/.test(lines[index]) && !/^ {4}services:\s*(?:#.*)?$/.test(lines[index])) {
-      services.push({ name: "unsupported-services-form", optionFields: [] });
-      continue;
+    const scalar = lines[index].match(/^( *)(?:-\s+)?[A-Za-z_][A-Za-z0-9_-]*:\s*([>|][-+]?)\s*(?:#.*)?$/);
+    if (!scalar) continue;
+    const baseIndent = scalar[1].length;
+    for (let cursor = index + 1; cursor < lines.length; cursor += 1) {
+      if (significant(lines[cursor]) && indent(lines[cursor]) <= baseIndent) break;
+      skippedScalarLines.add(cursor);
     }
-    const servicesMatch = lines[index].match(/^(\s*)services:\s*(?:#.*)?$/);
-    if (!servicesMatch) continue;
-    const servicesIndent = servicesMatch[1].length;
-    let servicesEnd = index + 1;
-    while (servicesEnd < lines.length && (!significant(lines[servicesEnd]) || indent(lines[servicesEnd]) > servicesIndent)) servicesEnd += 1;
+  }
 
-    for (let cursor = index + 1; cursor < servicesEnd; cursor += 1) {
-      if (!significant(lines[cursor]) || indent(lines[cursor]) !== servicesIndent + 2) continue;
-      const serviceMatch = lines[cursor].match(/^(\s*)([A-Za-z0-9_-]+):\s*(?:#.*)?$/);
-      if (!serviceMatch) {
-        services.push({ name: "unsupported-service-form", optionFields: [] });
+  const entryAt = (index, expectedIndent) => {
+    if (skippedScalarLines.has(index) || !significant(lines[index]) || indent(lines[index]) !== expectedIndent) return undefined;
+    const match = lines[index].match(new RegExp(`^ {${expectedIndent}}([A-Za-z_][A-Za-z0-9_-]*):(.*)$`));
+    if (!match || (match[2] && !match[2].startsWith(" "))) return null;
+    return { key: match[1], value: match[2] };
+  };
+  const blockEnd = (start, parentIndent, limit = lines.length) => {
+    let cursor = start;
+    while (cursor < limit) {
+      if (!skippedScalarLines.has(cursor) && significant(lines[cursor]) && indent(lines[cursor]) <= parentIndent) break;
+      cursor += 1;
+    }
+    return cursor;
+  };
+  const emptyMappingValue = (value) => cleanValue(value) === "";
+  const unique = (seen, key) => {
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  };
+  const services = [];
+  let valid = true;
+  let jobsCount = 0;
+  const rootKeys = new Set();
+
+  const nextSignificant = (start, limit) => {
+    let cursor = start;
+    while (cursor < limit && (skippedScalarLines.has(cursor) || !significant(lines[cursor]))) cursor += 1;
+    return cursor;
+  };
+
+  const parseServices = (start, limit) => {
+    const serviceNames = new Set();
+    for (let cursor = nextSignificant(start, limit); cursor < limit; cursor = nextSignificant(cursor, limit)) {
+      if (indent(lines[cursor]) !== 6) {
+        valid = false;
+        cursor += 1;
         continue;
       }
-      const serviceIndent = serviceMatch[1].length;
-      let serviceEnd = cursor + 1;
-      while (serviceEnd < servicesEnd && (!significant(lines[serviceEnd]) || indent(lines[serviceEnd]) > serviceIndent)) serviceEnd += 1;
-
+      const service = entryAt(cursor, 6);
+      if (service === null || !emptyMappingValue(service.value) || !unique(serviceNames, service.key)) {
+        valid = false;
+        cursor += 1;
+        continue;
+      }
+      const serviceEnd = blockEnd(cursor + 1, 6, limit);
+      const attributeNames = new Set();
       const optionFields = [];
-      for (let optionIndex = cursor + 1; optionIndex < serviceEnd; optionIndex += 1) {
-        const optionMatch = lines[optionIndex].match(/^(\s*)options:\s*(.*)$/);
-        if (!optionMatch || optionMatch[1].length !== serviceIndent + 2) continue;
-        const optionIndent = optionMatch[1].length;
-        const value = optionMatch[2].replace(/\s+#.*$/, "").trim();
-        const parts = /^(?:[>|][-+]?)(?:\s+#.*)?$/.test(value) ? [] : [value];
-        if (/^(?:[>|][-+]?)(?:\s+#.*)?$/.test(value)) {
-          let valueIndex = optionIndex + 1;
-          while (valueIndex < serviceEnd && (!significant(lines[valueIndex]) || indent(lines[valueIndex]) > optionIndent)) {
-            if (significant(lines[valueIndex])) parts.push(lines[valueIndex].trim());
-            valueIndex += 1;
+      for (let attributeIndex = nextSignificant(cursor + 1, serviceEnd); attributeIndex < serviceEnd; attributeIndex = nextSignificant(attributeIndex, serviceEnd)) {
+        if (indent(lines[attributeIndex]) !== 8) {
+          valid = false;
+          attributeIndex += 1;
+          continue;
+        }
+        const attribute = entryAt(attributeIndex, 8);
+        if (attribute === null || !unique(attributeNames, attribute.key) || forbiddenValueForm(attribute.value)) {
+          valid = false;
+          attributeIndex += 1;
+          continue;
+        }
+        const attributeEnd = blockEnd(attributeIndex + 1, 8, serviceEnd);
+        if (attribute.key === "options") {
+          const value = cleanValue(attribute.value);
+          if (!scalarMarker(value)) {
+            valid = false;
+          } else {
+            const parts = [];
+            for (let valueIndex = attributeIndex + 1; valueIndex < attributeEnd; valueIndex += 1) {
+              if (significant(lines[valueIndex])) parts.push(lines[valueIndex].trim());
+            }
+            optionFields.push(parts);
           }
         }
-        optionFields.push(parts);
+        attributeIndex = attributeEnd;
       }
-      services.push({ name: serviceMatch[2], optionFields });
-      cursor = serviceEnd - 1;
+      services.push({ name: service.key, optionFields });
+      cursor = serviceEnd;
     }
-    index = servicesEnd - 1;
+  };
+
+  const parseJobs = (start, limit) => {
+    const jobNames = new Set();
+    for (let cursor = nextSignificant(start, limit); cursor < limit; cursor = nextSignificant(cursor, limit)) {
+      if (indent(lines[cursor]) !== 2) {
+        valid = false;
+        cursor += 1;
+        continue;
+      }
+      const job = entryAt(cursor, 2);
+      if (job === null || !emptyMappingValue(job.value) || !unique(jobNames, job.key)) {
+        valid = false;
+        cursor += 1;
+        continue;
+      }
+      const jobEnd = blockEnd(cursor + 1, 2, limit);
+      const attributeNames = new Set();
+      for (let attributeIndex = nextSignificant(cursor + 1, jobEnd); attributeIndex < jobEnd; attributeIndex = nextSignificant(attributeIndex, jobEnd)) {
+        if (indent(lines[attributeIndex]) !== 4) {
+          valid = false;
+          attributeIndex += 1;
+          continue;
+        }
+        const attribute = entryAt(attributeIndex, 4);
+        if (attribute === null || !unique(attributeNames, attribute.key) || forbiddenValueForm(attribute.value)) {
+          valid = false;
+          attributeIndex += 1;
+          continue;
+        }
+        const attributeEnd = blockEnd(attributeIndex + 1, 4, jobEnd);
+        if (attribute.key === "services") {
+          if (!emptyMappingValue(attribute.value)) {
+            valid = false;
+          } else {
+            parseServices(attributeIndex + 1, attributeEnd);
+          }
+        }
+        attributeIndex = attributeEnd;
+      }
+      cursor = jobEnd;
+    }
+  };
+
+  for (let cursor = nextSignificant(0, lines.length); cursor < lines.length; cursor = nextSignificant(cursor, lines.length)) {
+    if (indent(lines[cursor]) !== 0) {
+      valid = false;
+      cursor += 1;
+      continue;
+    }
+    const root = entryAt(cursor, 0);
+    if (root === null || !unique(rootKeys, root.key) || forbiddenValueForm(root.value)) {
+      valid = false;
+      cursor += 1;
+      continue;
+    }
+    const rootEnd = blockEnd(cursor + 1, 0);
+    if (root.key === "jobs") {
+      jobsCount += 1;
+      if (!emptyMappingValue(root.value)) {
+        valid = false;
+      } else {
+        parseJobs(cursor + 1, rootEnd);
+      }
+    }
+    cursor = rootEnd;
   }
-  return services;
+
+  return valid && jobsCount === 1 ? services : null;
 }
 
 function hasClosedServiceLogging(workflow) {
   const services = privateServiceOptions(workflow);
-  if (services.length === 0) return false;
+  if (!services || services.length === 0) return false;
   return services.every(({ optionFields }) => {
     if (optionFields.length !== 1) return false;
-    const driverMentions = optionFields[0].filter((option) => /(?:^|\s)--log-driver(?:=|\s)/.test(option));
+    // Accept only this repository's simple, one-option-per-line form. Quoting,
+    // interpolation or a value on a following line can hide another Docker
+    // flag after YAML folding / argument parsing; reject rather than guess.
+    if (!optionFields[0].every((option) => /^--[a-z][a-z0-9-]*(?:(?:=| )[A-Za-z0-9_./:@%+,-]+)?$/.test(option))) return false;
+    const driverMentions = optionFields[0].filter((option) => /^--log-driver(?:=|\s|$)/.test(option));
     return driverMentions.length === 1 && /^--log-driver(?:=|\s+)none$/.test(driverMentions[0]);
   });
 }

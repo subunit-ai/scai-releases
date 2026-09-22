@@ -36,6 +36,46 @@ test("a second job cannot hide service logging behind a flow mapping", () => {
   assert.match(validateSourceConfidentiality(unsafe, assetSelector).join("\n"), /auth-pr-check\.yml: every private service options/);
 });
 
+for (const servicesKey of ['"services":', "services :"]) {
+  test(`a second job cannot hide services behind non-canonical key syntax: ${servicesKey}`, () => {
+    const unsafe = {
+      ...fixtures,
+      "auth-pr-check.yml": `${fixtures["auth-pr-check.yml"]}\n  another-private-job:\n    ${servicesKey}\n      replica:\n        image: postgres:fixture\n`,
+    };
+    assert.match(validateSourceConfidentiality(unsafe, assetSelector).join("\n"), /auth-pr-check\.yml: every private service options/);
+  });
+}
+
+for (const mutation of [
+  ['quoted root jobs key', /^jobs:/m, '"jobs":'],
+  ['quoted job key', /^  consent-dsar:/m, '  "consent-dsar":'],
+  ['job alias', /^  consent-dsar:/m, '  consent-dsar: *private-job'],
+  ['root merge key', /^jobs:/m, '<<: *private-root\njobs:'],
+  ['job merge key', /^    runs-on:/m, '    <<: *private-job\n    runs-on:'],
+  ['quoted options key', /^        options:/m, '        "options":'],
+  ['service-attribute merge key', /^        image:/m, '        <<: *private-service\n        image:'],
+]) {
+  test(`private workflow structure rejects ${mutation[0]}`, () => {
+    const source = fixtures["auth-pr-check.yml"];
+    const changed = source.replace(mutation[1], mutation[2]);
+    assert.notEqual(changed, source, `fixture mutation for ${mutation[0]} must apply`);
+    const unsafe = { ...fixtures, "auth-pr-check.yml": changed };
+    assert.match(validateSourceConfidentiality(unsafe, assetSelector).join("\n"), /auth-pr-check\.yml: every private service options/);
+  });
+}
+
+test("run block scalar contents are not interpreted as workflow structure", () => {
+  const source = fixtures["auth-pr-check.yml"];
+  const changed = source.replace(
+    "          set -euo pipefail\n",
+    `          set -euo pipefail
+          printf '%s\\n' '"jobs":' 'services : hidden' '<<: *shell' '"options": hidden'
+`,
+  );
+  assert.notEqual(changed, source, "run block fixture mutation must apply");
+  assert.deepEqual(validateSourceConfidentiality({ ...fixtures, "auth-pr-check.yml": changed }, assetSelector), []);
+});
+
 for (const name of ["auth-pr-check.yml", "atlas-pr-check.yml", "fleet-source-check.yml"]) {
   test(`${name} PostgreSQL service cannot expose its teardown log`, () => {
     const unsafe = { ...fixtures, [name]: fixtures[name].replace(/^\s+--log-driver none\s*$/m, "") };
@@ -82,6 +122,24 @@ test("a differently named PostgreSQL replica cannot bypass private service log s
   };
   assert.match(validateSourceConfidentiality(unsafe, assetSelector).join("\n"), /auth-pr-check\.yml: every private service options/);
 });
+
+for (const hiddenFlag of [
+  '--log-driver\n          json-file',
+  '"--log-driver" json-file',
+  '--log-\\driver json-file',
+  '${{ inputs.extra_service_options }}',
+]) {
+  test(`non-canonical service arguments cannot hide a second log driver: ${hiddenFlag}`, () => {
+    const unsafe = {
+      ...fixtures,
+      "auth-pr-check.yml": fixtures["auth-pr-check.yml"].replace(
+        "          --log-driver none",
+        `          --log-driver none\n          ${hiddenFlag}`,
+      ),
+    };
+    assert.match(validateSourceConfidentiality(unsafe, assetSelector).join("\n"), /auth-pr-check\.yml: every private service options/);
+  });
+}
 
 test("duplicate or overriding PostgreSQL log drivers fail closed", () => {
   const duplicateDriver = {
