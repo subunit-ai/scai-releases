@@ -52,7 +52,7 @@ jobs:
         run: bash gate/scripts/checkout-private-source.sh u1-chat git@github.com:subunit-ai/u1-chat.git "$SOURCE_SHA"
       - name: Backend- und Boundary-Suite
         working-directory: private/u1-chat
-        run: bash "$GITHUB_WORKSPACE/gate/scripts/run-confidential.sh" u1-chat-tests bun test
+        run: bash "$GITHUB_WORKSPACE/gate/scripts/run-confidential.sh" u1-chat-tests bun test --isolate
       - name: Backend buendeln
         working-directory: private/u1-chat
         run: bash "$GITHUB_WORKSPACE/gate/scripts/run-confidential.sh" u1-chat-build bun build server.ts --target bun --outdir "$RUNNER_TEMP/u1chat-ci-build"
