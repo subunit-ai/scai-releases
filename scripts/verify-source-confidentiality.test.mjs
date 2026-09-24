@@ -258,6 +258,25 @@ function rejectPrMutation(label, mutate, expected) {
   });
 }
 
+const rustSetupStep = `      - name: Rust für compilerführende Frontendtests einrichten
+        uses: dtolnay/rust-toolchain@4360b52568e2003a75bf9bc1d59f33a8e3fc893c # stable, immutable
+        timeout-minutes: 5`;
+const rustReadyStep = `      - name: Rust-Compiler vor privaten Tests prüfen
+        shell: bash
+        timeout-minutes: 2
+        run: rustc --version --verbose`;
+for (const [label, mutate] of [
+  ["missing Rust setup", (source) => source.replace(rustSetupStep, "")],
+  ["duplicate Rust setup", (source) => source.replace(rustSetupStep, `${rustSetupStep}\n\n${rustSetupStep}`)],
+  ["skipped Rust setup", (source) => source.replace(rustSetupStep, `${rustSetupStep}\n        if: false`)],
+  ["ignored Rust setup failure", (source) => source.replace(rustSetupStep, `${rustSetupStep}\n        continue-on-error: true`)],
+  ["missing compiler readiness", (source) => source.replace(rustReadyStep, "")],
+  ["ignored compiler readiness failure", (source) => source.replace(rustReadyStep, `${rustReadyStep} || true`)],
+  ["unbounded compiler readiness", (source) => source.replace(rustReadyStep, rustReadyStep.replace("        timeout-minutes: 2\n", ""))],
+  ["readiness before setup", (source) => source.replace(rustSetupStep, rustReadyStep).replace(`${rustReadyStep}\n\n      # Klon`, `${rustSetupStep}\n\n      # Klon`)],
+  ["Rust setup only after frontend tests", (source) => source.replace(rustSetupStep, "").replace(rustReadyStep, "").replace("      - name: Tauri-Systemabhängigkeiten", `${rustSetupStep}\n\n${rustReadyStep}\n\n      - name: Tauri-Systemabhängigkeiten`)],
+]) rejectPrMutation(label, mutate, /Rust setup and bounded compiler readiness/);
+
 for (const [label, from, to, error] of [
   ["legacy run name", " · ${{ inputs.request_id }}\n", "\n", /run name/],
   ["optional request", '        description: "Neue eindeutige UUIDv4 für diesen Source-Prüfauftrag"\n        required: true', '        description: "Request"\n        required: false', /request_id must be/],

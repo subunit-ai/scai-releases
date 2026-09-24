@@ -90,6 +90,21 @@ function requirePrContract(pr, require) {
 
   const check = jobs.find((job) => job[1] === "check")?.[2] ?? "";
   const steps = [...check.matchAll(/^      - (?:name:|uses:)[\s\S]*?(?=^      - (?:name:|uses:)|$(?![\s\S]))/gm)].map((m) => canonical(m[0]));
+  const rustSetup = `      - name: Rust für compilerführende Frontendtests einrichten
+        uses: dtolnay/rust-toolchain@4360b52568e2003a75bf9bc1d59f33a8e3fc893c # stable, immutable
+        timeout-minutes: 5`;
+  const rustReady = `      - name: Rust-Compiler vor privaten Tests prüfen
+        shell: bash
+        timeout-minutes: 2
+        run: rustc --version --verbose`;
+  const privateCheckout = steps.findIndex((step) => step.startsWith("      - name: Quellcode auschecken ("));
+  const frontendTests = steps.findIndex((step) => step.startsWith("      - name: Frontend-Vertragstests ausführen\n"));
+  const rustSteps = steps.filter((step) => step.includes("uses: dtolnay/rust-toolchain@"));
+  require(rustSteps.length === 1 && rustSteps[0] === rustSetup
+    && steps.filter((step) => step === rustReady).length === 1
+    && steps.indexOf(rustSetup) < steps.indexOf(rustReady)
+    && steps.indexOf(rustReady) < privateCheckout && steps.indexOf(rustReady) < frontendTests,
+  "pr-check.yml: Rust setup and bounded compiler readiness must precede private checkout and frontend tests without bypass");
   for (const [name, label, command] of [
     ["Web- und Release-Fixture-Verträge prüfen", "web-release-fixture-tests", "npm run test:web"],
     ["Plugin-Deploy-Snapshot und Fehlergrenzen prüfen", "plugin-deploy-tests", "npm run test:plugin-deploy"],
