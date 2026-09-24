@@ -488,6 +488,56 @@ test("Pages diagnostics cannot upload plaintext or a source-tree path", () => {
   assert.match(validateSourceConfidentiality(unsafe, assetSelector).join("\n"), /Pages diagnostics may upload only a one-time-key encrypted envelope/);
 });
 
+test("Frontend unit diagnostics require the supplied key and exact encrypted envelope", () => {
+  const expected = /Frontend unit diagnostics (?:must stay confidential and use the supplied one-time key|may upload only the keyed one-day encrypted envelope, never raw test output)/;
+  const cases = [
+    fixtures["pr-check.yml"].replace(
+      "if: failure() && steps.frontend_unit_tests.outcome == 'failure' && inputs.diagnostic_public_key_base64 != ''",
+      "if: failure() && steps.frontend_unit_tests.outcome == 'failure'",
+    ),
+    fixtures["pr-check.yml"].replace(
+      "path: ${{ runner.temp }}/scai-frontend-unit-diagnostic.json",
+      "path: src/private-frontend-unit.log",
+    ),
+    fixtures["pr-check.yml"].replace(
+      "SCAI_ENCRYPTED_DIAGNOSTIC_PUBLIC_KEY_BASE64: ${{ inputs.diagnostic_public_key_base64 }}",
+      "SCAI_ENCRYPTED_DIAGNOSTIC_PUBLIC_KEY_BASE64:",
+    ),
+    fixtures["pr-check.yml"].replace(
+      "if: failure() && steps.frontend_unit_tests.outcome == 'failure' && inputs.diagnostic_public_key_base64 != ''",
+      "if: success() && steps.frontend_unit_tests.outcome == 'failure' && inputs.diagnostic_public_key_base64 != ''",
+    ),
+    fixtures["pr-check.yml"].replace(
+      "          if-no-files-found: error\n          retention-days: 1\n\n      - name: Web",
+      "          if-no-files-found: error\n\n      - name: Web",
+    ),
+    fixtures["pr-check.yml"].replace(
+      "          retention-days: 1\n\n      - name: Web- und Release-Fixture-Verträge prüfen",
+      `          retention-days: 1
+
+      - name: Raw Frontend unit diagnostic
+        uses: actions/upload-artifact@${"a".repeat(40)}
+        with:
+          name: scai-frontend-unit-raw-\${{ github.run_id }}
+          path: \${{ runner.temp }}/scai-frontend-unit/
+          if-no-files-found: error
+          retention-days: 1
+
+      - name: Web- und Release-Fixture-Verträge prüfen`,
+    ),
+    fixtures["pr-check.yml"].replace(
+      '        run: bash "$GITHUB_WORKSPACE/gate/scripts/run-confidential.sh" frontend-unit-tests bun test src/lib',
+      '        # run: bash "$GITHUB_WORKSPACE/gate/scripts/run-confidential.sh" frontend-unit-tests bun test src/lib\n        run: true',
+    ),
+  ];
+  for (const workflow of cases) {
+    assert.match(
+      validateSourceConfidentiality({ ...fixtures, "pr-check.yml": workflow }, assetSelector).join("\n"),
+      expected,
+    );
+  }
+});
+
 test("Chat-Dock proof cannot upload the private source tree", () => {
   const unsafe = {
     ...fixtures,

@@ -98,6 +98,25 @@ function requirePrContract(pr, require) {
     require(steps.filter((step) => step === expected).length === 1,
       `pr-check.yml: ${label} must be an unconditional confidential fail-closed source gate`);
   }
+  const frontendUnit = `      - name: Frontend-Vertragstests ausführen
+        id: frontend_unit_tests
+        working-directory: src
+        shell: bash
+        env:
+          SCAI_ENCRYPTED_DIAGNOSTIC_PUBLIC_KEY_BASE64: \${{ inputs.diagnostic_public_key_base64 }}
+          SCAI_ENCRYPTED_DIAGNOSTIC_PATH: \${{ inputs.diagnostic_public_key_base64 != '' && format('{0}/scai-frontend-unit-diagnostic.json', runner.temp) || '' }}
+        run: bash "$GITHUB_WORKSPACE/gate/scripts/run-confidential.sh" frontend-unit-tests bun test src/lib`;
+  require(steps.filter((step) => step === frontendUnit).length === 1,
+    "pr-check.yml: Frontend unit diagnostics must stay confidential and use the supplied one-time key");
+  const frontendUnitUploads = steps.filter((step) => step.includes("uses: actions/upload-artifact@") && step.includes("scai-frontend-unit"));
+  require(frontendUnitUploads.length === 1 && frontendUnitUploads[0] === `      - name: Verschlüsselte Frontend-Vertragstest-Fehlerdiagnostik bereitstellen
+        if: failure() && steps.frontend_unit_tests.outcome == 'failure' && inputs.diagnostic_public_key_base64 != ''
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4, immutable
+        with:
+          name: scai-frontend-unit-encrypted-diagnostic-\${{ github.run_id }}
+          path: \${{ runner.temp }}/scai-frontend-unit-diagnostic.json
+          if-no-files-found: error
+          retention-days: 1`, "pr-check.yml: Frontend unit diagnostics may upload only the keyed one-day encrypted envelope, never raw test output");
   const webkit = `      - name: Host-Restore explizit mit WebKit beweisen
         id: host_restore_webkit
         working-directory: src
