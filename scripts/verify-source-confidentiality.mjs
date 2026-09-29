@@ -381,7 +381,7 @@ export function validateSourceConfidentiality(workflows, assetSelector) {
   requirePrContract(pr, require);
   for (const label of [
     "npm-ci", "frontend-unit-tests", "cli-drift", "release-meta", "plugin-bundles", "no-demo-data",
-    "frontend-build", "support-diagnostics-proof", "meet-visual-proof", "chat-dock-visual-proof", "sentinel-crm-proof", "cargo-test", "native-cargo-check",
+    "frontend-build", "support-diagnostics-proof", "meet-visual-proof", "chat-dock-visual-proof", "sentinel-crm-proof", "sentinel-routing-proof", "cargo-test", "native-cargo-check",
     "revenue-proof-dependencies", "revenue-proof-esbuild", "billing-production-proof", "offers-v01-proof", "workgraph-blackbox-proof", "revenue-proof-artifacts",
     "workspace-tabs-proof", "workspace-app-plugins-proof", "subunit-call-proof", "workforce-inbox-proof",
     "native-product-binary", "native-pkce-tests", "native-keyring-smoke",
@@ -515,6 +515,20 @@ export function validateSourceConfidentiality(workflows, assetSelector) {
   require(
     /if: failure\(\) &&[^\n]*inputs\.diagnostic_public_key_base64 != ''[\s\S]{0,350}?path: \$\{\{ runner\.temp \}\}\/scai-sentinel-crm-diagnostic\.json/.test(pr),
     "pr-check.yml: Sentinel CRM diagnostics may upload only a one-time-key encrypted envelope",
+  );
+  const routingProofSteps = pr.split("      - name: Sentinel Lead Ownership und SLA Routing beweisen\n");
+  const routingProof = routingProofSteps[1]?.split("\n      - ")[0] ?? "";
+  require(
+    routingProofSteps.length === 2
+      && routingProof.includes("id: routing_proof")
+      && routingProof.includes("SCAI_ENCRYPTED_DIAGNOSTIC_PUBLIC_KEY_BASE64: ${{ inputs.diagnostic_public_key_base64 }}")
+      && routingProof.includes("SCAI_ENCRYPTED_DIAGNOSTIC_PATH: ${{ inputs.diagnostic_public_key_base64 != '' && format('{0}/scai-sentinel-routing-diagnostic.json', runner.temp) || '' }}")
+      && routingProof.includes('run: bash "$GITHUB_WORKSPACE/gate/scripts/run-confidential.sh" sentinel-routing-proof node scripts/verify-sentinel-routing.mjs'),
+    "pr-check.yml: Sentinel Routing proof must seal private failures with the supplied one-time key",
+  );
+  require(
+    /if: failure\(\) && steps\.routing_proof\.outcome == 'failure' && inputs\.diagnostic_public_key_base64 != ''[\s\S]{0,350}?path: \$\{\{ runner\.temp \}\}\/scai-sentinel-routing-diagnostic\.json/.test(pr),
+    "pr-check.yml: Sentinel Routing diagnostics may upload only a one-time-key encrypted envelope",
   );
   require(
     /if \[ -f scripts\/verify-sentinel-forecast\.mjs \]; then[\s\S]{0,220}?sentinel_forecast=true[\s\S]{0,220}?sentinel_forecast=false/.test(pr),
