@@ -21,6 +21,27 @@ test("current public source workflows fail closed on source confidentiality", ()
   assert.deepEqual(validateSourceConfidentiality(fixtures, assetSelector), []);
 });
 
+test("u1-chat test diagnostics reject missing keys, public plaintext and broad uploads", () => {
+  const name = "u1-chat-pr-check.yml";
+  const cases = [
+    ["missing key", "SCAI_ENCRYPTED_DIAGNOSTIC_PUBLIC_KEY_BASE64: ${{ inputs.diagnostic_public_key_base64 }}", "SCAI_ENCRYPTED_DIAGNOSTIC_PUBLIC_KEY_BASE64: ''"],
+    ["plaintext", "path: ${{ runner.temp }}/u1-chat-diagnostic.json", "path: ${{ runner.temp }}/scai-confidential-logs/"],
+    ["wildcard", "path: ${{ runner.temp }}/u1-chat-diagnostic.json", "path: ${{ runner.temp }}/u1-chat-*"],
+    ["unconditional upload", "if: failure() && steps.backend_tests.outcome == 'failure' && inputs.diagnostic_public_key_base64 != ''", "if: always()"],
+    ["stale success envelope", "if: failure() && steps.backend_tests.outcome == 'failure' && inputs.diagnostic_public_key_base64 != ''", "if: failure() && inputs.diagnostic_public_key_base64 != ''"],
+    ["long retention", "retention-days: 1", "retention-days: 90"],
+  ];
+  for (const [label, before, after] of cases) {
+    assert.ok(fixtures[name].includes(before), label);
+    const errors = validateSourceConfidentiality({ ...fixtures, [name]: fixtures[name].replace(before, after) }, assetSelector);
+    assert.ok(errors.some((error) => error.startsWith("u1-chat-pr-check.yml:")), label);
+  }
+  for (const decoder of ["pdfinfo", "djpeg", "pngcheck", "jq"]) {
+    const errors = validateSourceConfidentiality({ ...fixtures, [name]: fixtures[name].replace(`command -v ${decoder}`, "true") }, assetSelector);
+    assert.ok(errors.some((error) => error.endsWith(`not checked: ${decoder}`)), decoder);
+  }
+});
+
 test("u1-chat backend suites retain per-file isolation without test filters", () => {
   for (const name of ["u1-chat-pr-check.yml", "fleet-source-check.yml"]) {
     const missingIsolation = {

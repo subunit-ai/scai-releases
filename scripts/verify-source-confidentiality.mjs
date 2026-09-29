@@ -377,6 +377,34 @@ export function validateSourceConfidentiality(workflows, assetSelector) {
     );
   }
 
+  const u1Chat = workflows["u1-chat-pr-check.yml"] ?? "";
+  const u1Suite = u1Chat.split("      - name: Backend- und Boundary-Suite\n");
+  const suiteStep = u1Suite[1]?.split("\n      - ")[0] ?? "";
+  require(
+    u1Suite.length === 2
+      && suiteStep.includes("id: backend_tests")
+      && suiteStep.includes("SCAI_ENCRYPTED_DIAGNOSTIC_PUBLIC_KEY_BASE64: ${{ inputs.diagnostic_public_key_base64 }}")
+      && suiteStep.includes("SCAI_ENCRYPTED_DIAGNOSTIC_PATH: ${{ inputs.diagnostic_public_key_base64 != '' && format('{0}/u1-chat-diagnostic.json', runner.temp) || '' }}")
+      && suiteStep.includes(isolatedU1ChatSuite),
+    "u1-chat-pr-check.yml: private test diagnostics require the one-time-key confidential runner",
+  );
+  const u1Uploads = u1Chat.split("      - name: Verschluesselte u1-chat-Diagnostik sichern\n");
+  const uploadStep = u1Uploads[1]?.split("\n      - ")[0] ?? "";
+  const uploadLines = uploadStep.split("\n").map((line) => line.trim());
+  require(
+    u1Uploads.length === 2
+      && uploadLines.filter((line) => line.startsWith("if:")).length === 1
+      && uploadLines.includes("if: failure() && steps.backend_tests.outcome == 'failure' && inputs.diagnostic_public_key_base64 != ''")
+      && uploadLines.filter((line) => line.startsWith("path:")).length === 1
+      && uploadLines.includes("path: ${{ runner.temp }}/u1-chat-diagnostic.json")
+      && uploadLines.includes("if-no-files-found: error")
+      && uploadLines.includes("retention-days: 1"),
+    "u1-chat-pr-check.yml: only the keyed failure envelope may be uploaded for one day",
+  );
+  for (const decoder of ["pdfinfo", "djpeg", "pngcheck", "jq"]) {
+    require(u1Chat.includes(`command -v ${decoder}`), `u1-chat-pr-check.yml: required backend test executable is not checked: ${decoder}`);
+  }
+
   const pr = workflows["pr-check.yml"] ?? "";
   requirePrContract(pr, require);
   for (const label of [
