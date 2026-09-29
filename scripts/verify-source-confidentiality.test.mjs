@@ -599,6 +599,32 @@ test("Sentinel CRM diagnostics cannot upload plaintext or a source-tree path", (
   );
 });
 
+test("Sentinel Routing failures require a one-time-key envelope, never plaintext", () => {
+  const missingKey = {
+    ...fixtures,
+    "pr-check.yml": fixtures["pr-check.yml"].replace(
+      "SCAI_ENCRYPTED_DIAGNOSTIC_PATH: ${{ inputs.diagnostic_public_key_base64 != '' && format('{0}/scai-sentinel-routing-diagnostic.json', runner.temp) || '' }}",
+      "SCAI_ENCRYPTED_DIAGNOSTIC_PATH: ''",
+    ),
+  };
+  assert.match(
+    validateSourceConfidentiality(missingKey, assetSelector).join("\n"),
+    /Sentinel Routing proof must seal private failures with the supplied one-time key/,
+  );
+
+  const plaintext = {
+    ...fixtures,
+    "pr-check.yml": fixtures["pr-check.yml"].replace(
+      "path: ${{ runner.temp }}/scai-sentinel-routing-diagnostic.json",
+      "path: src/private-sentinel-routing.log",
+    ),
+  };
+  assert.match(
+    validateSourceConfidentiality(plaintext, assetSelector).join("\n"),
+    /Sentinel Routing diagnostics may upload only a one-time-key encrypted envelope/,
+  );
+});
+
 test("Revenue harnesses cannot be partially present or bypass confidential execution", () => {
   const partialAllowed = {
     ...fixtures,
