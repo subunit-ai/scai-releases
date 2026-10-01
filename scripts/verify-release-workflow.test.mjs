@@ -91,16 +91,30 @@ test("Windows native broker diagnostics cannot leak names or accept unchecked in
   const publicRunner = fixture.replace("run-indexed-confidential.sh", "run-publicly.sh");
   assert.match(validateReleaseWorkflow(publicRunner).join("\n"), /fixed-size indexed confidential runner/);
 
-  const variableSize = fixture.replace('"windows-native-broker-$TARGET" 33 npm run check:native-broker', '"windows-native-broker-$TARGET" "$UNTRUSTED_COUNT" npm run check:native-broker');
+  const variableSize = fixture.replace('"windows-native-broker-$TARGET" 37 npm run check:native-broker', '"windows-native-broker-$TARGET" "$UNTRUSTED_COUNT" npm run check:native-broker');
   assert.match(validateReleaseWorkflow(variableSize).join("\n"), /fixed-size indexed confidential runner/);
 });
 
 test("Windows plugin envelope diagnostics remain fixed-size and confidential", () => {
   const publicRunner = fixture.replace(
-    '"windows-plugin-envelope-$TARGET" 14 npm run check:plugin-envelope',
+    '"windows-plugin-envelope-$TARGET" 18 npm run check:plugin-envelope',
     '"windows-plugin-envelope-$TARGET" "$UNTRUSTED_COUNT" npm run check:plugin-envelope',
   );
   assert.match(validateReleaseWorkflow(publicRunner).join("\n"), /plugin envelope failures must use the fixed-size indexed confidential runner/);
+});
+
+test("Windows release gates reject the superseded proof sizes", () => {
+  const staleBroker = fixture.replace(
+    '"windows-native-broker-$TARGET" 37 npm run check:native-broker',
+    '"windows-native-broker-$TARGET" 33 npm run check:native-broker',
+  );
+  assert.match(validateReleaseWorkflow(staleBroker).join("\n"), /Windows native broker failures must use the fixed-size indexed confidential runner/);
+
+  const staleEnvelope = fixture.replace(
+    '"windows-plugin-envelope-$TARGET" 18 npm run check:plugin-envelope',
+    '"windows-plugin-envelope-$TARGET" 14 npm run check:plugin-envelope',
+  );
+  assert.match(validateReleaseWorkflow(staleEnvelope).join("\n"), /plugin envelope failures must use the fixed-size indexed confidential runner/);
 });
 
 test("Windows ARM CXX flags cannot be converted into a fake Git installation path", () => {
