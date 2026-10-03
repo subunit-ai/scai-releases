@@ -5,6 +5,8 @@ import {tmpdir} from 'node:os';
 import {spawnSync} from 'node:child_process';
 import {generateKeyPairSync,privateDecrypt,constants,createDecipheriv,createHash} from 'node:crypto';
 import test from 'node:test';
+import fs from 'node:fs';
+import {syncBuiltinESMExports} from 'node:module';
 import {collectPrivateProof,sealPrivateProof,MAX_BUNDLE_BYTES} from './seal-private-proof.mjs';
 const png=Buffer.from([137,80,78,71,13,10,26,10]);
 function fixture(){const temp=realpathSync(mkdtempSync(join(tmpdir(),'private-visual-test-')));const root=join(temp,'proof');mkdirSync(root,{mode:0o700});return {temp,root};}
@@ -59,4 +61,36 @@ test('existing envelope cannot be advertised as this run visual evidence',()=>{
  writeFileSync(fake,`#!/usr/bin/env bash\nif [[ "$1" == *seal-private-proof.mjs ]]; then exec "${process.execPath}" "$@"; fi\nexit 0\n`);chmodSync(fake,0o700);
  writeFileSync(outputs,'');const r=spawnSync('bash',[new URL('./run-agents-os-proof.sh',import.meta.url).pathname],{encoding:'utf8',env:{...process.env,PATH:`${bin}:${process.env.PATH}`,RUNNER_TEMP:temp,GITHUB_OUTPUT:outputs,SCAI_ENCRYPTED_DIAGNOSTIC_PUBLIC_KEY_BASE64:publicBase64}});
  assert.equal(r.status,70);assert.equal(readFileSync(outputs,'utf8'),'');assert.equal(readFileSync(join(temp,'scai-agents-os-encrypted-proof.json'),'utf8'),'foreign stale envelope');assert.equal(r.stdout,'');assert.equal(r.stderr,'private visual proof sealing failed\n');
+});
+
+test('native selection never visits unselected CLI symlinks, binary or logs',()=>{
+ const {root,temp}=fixture();writeFileSync(join(root,'receipt.json'),'{"status":"BLOCKED","synthetic":true}');
+ writeFileSync(join(root,'claude-pinned-binary'),'synthetic binary ignored');writeFileSync(join(root,'raw.log'),'synthetic log ignored');
+ mkdirSync(join(root,'inside'));symlinkSync(join(temp,'nonexistent-secret-canary'),join(root,'inside','private-config-link'));symlinkSync(temp,join(root,'cli-directory-link'));
+ const b=JSON.parse(collectPrivateProof(root,'native-cli',1));assert.deepEqual(b.files.map(f=>f.path),['receipt.json']);
+ for(const label of ['agents-os','workforce-coordination'])assert.throws(()=>collectPrivateProof(root,label,1));
+});
+for(const kind of ['selected-symlink','selected-hardlink','selected-directory','root-symlink','public-root','oversize','invalid-json'])test(`native selection rejects ${kind}`,()=>{
+ const {root,temp}=fixture();let candidate=root;
+ if(kind==='selected-symlink'){writeFileSync(join(temp,'outside-receipt.json'),'{}');symlinkSync(join(temp,'outside-receipt.json'),join(root,'receipt.json'));}
+ if(kind==='selected-hardlink'){writeFileSync(join(temp,'outside-receipt.json'),'{}');linkSync(join(temp,'outside-receipt.json'),join(root,'receipt.json'));}
+ if(kind==='selected-directory')mkdirSync(join(root,'receipt.json'));
+ if(kind==='root-symlink'){candidate=join(temp,'root-alias');symlinkSync(root,candidate);}
+ if(kind==='public-root')chmodSync(root,0o755);
+ if(kind==='oversize'){writeFileSync(join(root,'receipt.json'),'{}');truncateSync(join(root,'receipt.json'),MAX_BUNDLE_BYTES+1);}
+ if(kind==='invalid-json')writeFileSync(join(root,'receipt.json'),'not JSON');
+ assert.throws(()=>collectPrivateProof(candidate,'native-cli',1));
+});
+test('missing native receipt yields empty failed bundle; success remains rejected',()=>{
+ const {root,temp}=fixture();assert.deepEqual(JSON.parse(collectPrivateProof(root,'native-cli',1)).files,[]);assert.throws(()=>sealPrivateProof(root,'native-cli',0,temp,publicBase64));
+ const output=sealPrivateProof(root,'native-cli',1,temp,publicBase64);assert.deepEqual(decrypt(output).files,[]);
+});
+
+test('native receipt changing during its bounded fd read is rejected',()=>{
+ const {root}=fixture(),receipt=join(root,'receipt.json');writeFileSync(receipt,'{"status":"BLOCKED"}');
+ const read=fs.readSync;let changed=false;
+ fs.readSync=(...args)=>{const count=read(...args);if(!changed){changed=true;writeFileSync(receipt,'{"status":"CHANGED","extra":true}');}return count;};
+ syncBuiltinESMExports();
+ try{assert.throws(()=>collectPrivateProof(root,'native-cli',1),/changed during read/);assert.equal(changed,true);}
+ finally{fs.readSync=read;syncBuiltinESMExports();}
 });
