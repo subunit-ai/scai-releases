@@ -1109,3 +1109,19 @@ test("Auth discovery keys require unconditional cleanup", () => {
   const unsafe = { ...fixtures, "auth-pr-check.yml": workflow.replace('"$RUNNER_TEMP/auth-cutover-discovery-private.pem" "$RUNNER_TEMP/auth-cutover-discovery-public.pem"','') };
   assert.match(validateSourceConfidentiality(unsafe, assetSelector).join("\n"), /unconditional cleanup/);
 });
+
+test('restored mail and capacity contracts cannot silently skip or expose private output',()=>{
+ const original=fixtures['pr-check.yml'];
+ for(const [before,after] of [
+  ['detect-recovered-source-proofs.sh','removed-pair-check.sh'],
+  ["if: always() && steps.source_proofs.outputs.email_full_peek == 'true'",'if: false'],
+  ["if: always() && steps.source_proofs.outputs.backoffice_capacity == 'true'",'if: false'],
+  ['run-confidential.sh" email-full-peek-proof','echo" email-full-peek-proof'],
+  ['run-confidential.sh" backoffice-capacity-proof','echo" backoffice-capacity-proof'],
+  ["if: failure() && steps.email_full_peek_proof.outcome == 'failure' && inputs.diagnostic_public_key_base64 != ''",'if: always()'],
+  ['path: ${{ runner.temp }}/scai-backoffice-capacity-diagnostic.json','path: src/'],
+ ]){
+  assert.ok(original.includes(before),before);
+  assert.ok(validateSourceConfidentiality({...fixtures,'pr-check.yml':original.replace(before,after)},assetSelector).length>0,before);
+ }
+});

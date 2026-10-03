@@ -730,6 +730,11 @@ export function validateSourceConfidentiality(workflows, assetSelector) {
   for (const label of ["auth-install", "auth-db-fixture", "auth-tests", "auth-build", "auth-deploy-gate"]) {
     require(auth.includes(`run-confidential.sh" ${label}`), `auth-pr-check.yml: ${label} must suppress private output`);
   }
+  require(pr.includes('bash "$GITHUB_WORKSPACE/gate/scripts/detect-recovered-source-proofs.sh" . >> "$GITHUB_OUTPUT"'), "pr-check.yml: recovered feature/proof pairs must fail closed before selection");
+  for (const [key, label, harness] of [["email_full_peek", "email-full-peek", "verify-email-full-peek.mjs"], ["backoffice_capacity", "backoffice-capacity", "verify-backoffice-capacity-list.mjs"]]) {
+    require(pr.includes(`if: always() && steps.source_proofs.outputs.${key} == 'true'`) && pr.includes(`run-confidential.sh" ${label}-proof node scripts/${harness}`), `pr-check.yml: ${label} must run selected source proof confidentially`);
+    require(pr.includes(`if: failure() && steps.${key}_proof.outcome == 'failure' && inputs.diagnostic_public_key_base64 != ''`) && pr.includes(`path: \${{ runner.temp }}/scai-${label}-diagnostic.json`), `pr-check.yml: ${label} diagnostic requires the exact failed step and encrypted envelope`);
+  }
   require(auth.includes('scripts/checkout-private-source.sh subunit-auth') && auth.includes('"$SOURCE_SHA"'), "auth-pr-check.yml: private checkout must retain its exact source pin");
   require(auth.includes('scripts/ci/run-proof-suite.sh'), "auth-pr-check.yml: all source proof files must use the private isolated suite runner");
   require(auth.includes("SCAI_ENCRYPTED_DIAGNOSTIC_PUBLIC_KEY_BASE64") && auth.includes("SCAI_ENCRYPTED_DIAGNOSTIC_PATH"), "auth-pr-check.yml: private failures require optional one-time-key encryption");
