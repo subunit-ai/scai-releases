@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { NATIVE_CLI_WORKFLOW } from "./native-cli-workflow-policy.mjs";
 import { appendFileSync, readFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -367,6 +368,7 @@ function hasClosedServiceLogging(workflow) {
 
 export function validateSourceConfidentiality(workflows, assetSelector) {
   const errors = [];
+  if (workflows["native-cli-hermetic.yml"] !== NATIVE_CLI_WORKFLOW) errors.push("native-cli-hermetic.yml: exact manual pinned confidential native proof policy required");
   const require = (condition, message) => { if (!condition) errors.push(message); };
 
   for (const [name, workflow] of Object.entries(workflows)) {
@@ -834,7 +836,7 @@ export function validateSourceConfidentiality(workflows, assetSelector) {
 
 function loadWorkflows() {
   return Object.fromEntries(
-    ["pr-check.yml", "build-all.yml", "windows-arm-smoke.yml", "u1-chat-pr-check.yml", ...PRIVATE_POSTGRES_WORKFLOWS].map((name) => [
+    ["pr-check.yml", "build-all.yml", "windows-arm-smoke.yml", "u1-chat-pr-check.yml", "native-cli-hermetic.yml", ...PRIVATE_POSTGRES_WORKFLOWS].map((name) => [
       name,
       readFileSync(join(ROOT, ".github/workflows", name), "utf8"),
     ]),

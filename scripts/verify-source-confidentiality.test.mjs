@@ -10,7 +10,7 @@ import { validatePrRequest, validateSourceConfidentiality } from "./verify-sourc
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const fixtures = Object.fromEntries(
-  ["pr-check.yml", "build-all.yml", "windows-arm-smoke.yml", "u1-chat-pr-check.yml", "auth-pr-check.yml", "atlas-pr-check.yml", "fleet-source-check.yml"].map((name) => [
+  ["pr-check.yml", "build-all.yml", "windows-arm-smoke.yml", "u1-chat-pr-check.yml", "auth-pr-check.yml", "atlas-pr-check.yml", "fleet-source-check.yml", "native-cli-hermetic.yml"].map((name) => [
     name,
     readFileSync(join(ROOT, ".github/workflows", name), "utf8"),
   ]),
