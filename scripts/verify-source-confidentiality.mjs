@@ -734,7 +734,7 @@ export function validateSourceConfidentiality(workflows, assetSelector) {
   // Closed step grammar: safe strings in comments/other steps cannot authorize
   // a skipped, failure-tolerant or plaintext proof or diagnostic upload.
   const recoveredSteps = pr.split(/(?=^      - )/m).slice(1).map(block => block.trimEnd());
-  for (const [key, label, harness] of [["email_full_peek", "email-full-peek", "verify-email-full-peek.mjs"], ["backoffice_capacity", "backoffice-capacity", "verify-backoffice-capacity-list.mjs"], ["agents_os", "agents-os", null]]) {
+  for (const [key, label, harness] of [["email_full_peek", "email-full-peek", "verify-email-full-peek.mjs"], ["backoffice_capacity", "backoffice-capacity", "verify-backoffice-capacity-list.mjs"], ["agents_os", "agents-os", null], ["workforce_coordination", "workforce-coordination", null]]) {
     const expectedProof = `      - name: Restored ${label} contract beweisen
         id: ${key}_proof
         if: always() && steps.source_proofs.outputs.${key} == 'true'
@@ -744,7 +744,7 @@ export function validateSourceConfidentiality(workflows, assetSelector) {
           SCAI_TOOLCHAIN: \${{ github.workspace }}/src
           SCAI_ENCRYPTED_DIAGNOSTIC_PUBLIC_KEY_BASE64: \${{ inputs.diagnostic_public_key_base64 }}
           SCAI_ENCRYPTED_DIAGNOSTIC_PATH: \${{ inputs.diagnostic_public_key_base64 != '' && format('{0}/scai-${label}-diagnostic.json', runner.temp) || '' }}
-        run: bash "$GITHUB_WORKSPACE/gate/scripts/run-confidential.sh" ${label}-proof ${key === "agents_os" ? 'bash "$GITHUB_WORKSPACE/gate/scripts/run-agents-os-proof.sh"' : `node scripts/${harness}`}`;
+        run: bash "$GITHUB_WORKSPACE/gate/scripts/run-confidential.sh" ${label}-proof ${harness === null ? `bash "$GITHUB_WORKSPACE/gate/scripts/run-${label}-proof.sh"` : `node scripts/${harness}`}`;
     const expectedUpload = `      - name: Verschluesselte ${label} Fehlerdiagnostik bereitstellen
         if: failure() && steps.${key}_proof.outcome == 'failure' && inputs.diagnostic_public_key_base64 != ''
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4, immutable

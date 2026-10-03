@@ -16,4 +16,5 @@ done <<'CONTRACTS'
 email_full_peek|src/lib/workspaceMail.ts|export async function workspaceMailFullPeek(|scripts/verify-email-full-peek.mjs
 backoffice_capacity|src/lib/operations.ts|listProjectAllocations: async|scripts/verify-backoffice-capacity-list.mjs
 agents_os|src/plugins/agents/index.tsx|import { OsSurface } from "./os/surface";|scripts/lib/agent-operations-os-durable-proof.mjs
+workforce_coordination|src/plugins/projects/ProjectsRoot.tsx|import { CoordinationDesk } from "./CoordinationDesk";|scripts/verify-workforce-coordination.mjs
 CONTRACTS
