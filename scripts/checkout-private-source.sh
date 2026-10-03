@@ -18,6 +18,7 @@ case "$component:$source_repo" in
   u1-chat:git@github.com:subunit-ai/u1-chat.git) ;;
   atlas:git@github.com:subunit-ai/atlas.git) ;;
   subunit-auth:git@github.com:subunit-ai/subunit-auth.git) ;;
+  subunit-scai:git@github.com:subunit-ai/subunit-scai.git) ;;
   echo:git@github.com:subunit-ai/echo.git) ;;
   subunit-notch:git@github.com:subunit-ai/subunit-notch.git) ;;
   *)

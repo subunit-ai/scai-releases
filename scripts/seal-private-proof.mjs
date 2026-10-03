@@ -57,10 +57,17 @@ export function collectPrivateProof(root, label, proofExit) {
   return bundle;
 }
 export function sealPrivateProof(root, label, proofExit, runnerTemp, publicKey) {
-  if (!['agents-os','workforce-coordination'].includes(label) || !Number.isInteger(proofExit) || proofExit < 0 || proofExit > 255 || !publicKey) throw new Error('invalid proof sealing contract');
+  if (!['agents-os','workforce-coordination','native-cli'].includes(label) || !Number.isInteger(proofExit) || proofExit < 0 || proofExit > 255 || !publicKey) throw new Error('invalid proof sealing contract');
   const temp = realpathSync(runnerTemp);
   if (!realpathSync(root).startsWith(temp + '/')) throw new Error('proof root outside runner temp');
   const bundle = collectPrivateProof(root,label,proofExit);
+  if (label === 'native-cli' && proofExit === 0) {
+    const row = JSON.parse(bundle).files.find(file => file.path === 'receipt.json');
+    if (!row) throw new Error('successful native proof requires receipt');
+    const receipt = JSON.parse(Buffer.from(row.base64,'base64').toString('utf8'));
+    if (receipt.status !== 'PASS' || receipt.sourceSha !== process.env.SOURCE_SHA || receipt.requestId !== process.env.REQUEST_ID
+      || !/^[0-9a-f]{40}$/.test(receipt.sourceSha ?? '') || !/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(receipt.requestId ?? '')) throw new Error('native receipt does not match proof request');
+  }
   const stage = mkdtempSync(join(temp,'scai-proof-seal-'));
   // mkdir inherits 0700 from wrapper umask; explicitly secure direct CLI callers too.
   chmodSync(stage,0o700);
