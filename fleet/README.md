@@ -53,6 +53,48 @@ fail-closed. Er veröffentlicht, taggt, merged oder deployt nichts.
    Sie prüft zusätzlich Manifest-PASS, Manifest-Digest, Release-Contract-Drift,
    Release-ID, Source-SHA und sämtliche Asset-Digests.
 
+## Unveränderliche Genehmigung der veröffentlichten Dateien
+
+Ein neues PASS-Manifest braucht `authorized_release` mit exakt `repository`,
+`tag`, `distribution_policy` und `assets`. Jeder Asseteintrag enthält exakt
+`name`, die vollständige versionsgebundene GitHub-Download-`url` und `sha256`.
+Die bestehende Fünf-Ziel-Buildlane liefert 26 Dateien: sechs Updater-Payloads
+mit ihren sechs `.sig`, zwei macOS-DMGs, fünf Runtime- und vier Signing-Belege,
+`latest.json`, `scai.cdx.json` und `SHA256SUMS`. Alle 26 Hashes, einschließlich
+des Hashs von `SHA256SUMS` selbst, werden **vor** dem separat bestätigten
+Manifest-Digest eingetragen. Neue Assettypen brauchen einen neuen geprüften
+Release-Contract; eine zusätzliche beliebige Datei wird nicht still mitpubliziert.
+
+Der Prüfer vergleicht auch die fünf bestehenden Installer-/SBOM-Einträge mit
+diesem Inventar. Policy, Source und Fleet-ID müssen eindeutig im Draft stehen;
+URLs müssen exakt Repository, Tag und Dateiname treffen. Die REST-Digests des
+Drafts werden vor dem Download und direkt vor Veröffentlichung erneut mit dem
+genehmigten Inventar verglichen. Fehlende REST-Digests blockieren geschlossen.
+Die heruntergeladenen Dateien werden ohne Symlinks/Unterverzeichnisse gestreamt
+gehasht. Erst danach darf das ebenfalls gebundene `SHA256SUMS` ausgewertet werden.
+Ein selbstkonsistentes, aber ausgetauschtes Paar aus Installer und Checksums
+ist dadurch keine Genehmigung. Elf exakte Updater-Keys, Source/Version, Payload-
+URLs und zugehörige Signaturdateien sowie die Policy der Signing-Belege werden
+zusätzlich abgeglichen.
+
+Die tatsächlichen bestehenden Policywerte heißen `market-ready` und
+`legacy-v0.125`. Das Genehmigungsformat unterstützt beide, lockert aber **keine**
+bestehenden Fleet-, Market-, Legal-, Signatur- oder Provenance-Gates. Hashbindung
+ist keine neue kryptografische Signaturprüfung; die vorhandenen verifizierten
+Nachweise bleiben Voraussetzung. Insbesondere entsteht daraus keine pauschale
+Fleet-PASS-Freigabe für die technisch getrennte Legacy-Updater-Lane.
+Historische Nicht-PASS-Manifeste ohne `authorized_release` bleiben lesbar.
+
+Isoliert prüfen: `node --test scripts/verify-approved-release.test.mjs`.
+Der CLI unterscheidet ausdrücklich `remote-metadata-only` von der vollständigen
+lokalen Byteprüfung `approved-release-bytes`; er veröffentlicht nichts.
+
+Der aktuelle private PR-Check führt `npm run test:plugin-deploy` separat
+im Confidential-Runner aus, weil `bun test src/lib` diese Node-Suite nicht findet.
+Dieser bereits auf Main vorhandene Pflichtschritt bleibt unverändert; alte
+Source-Refs ohne den Skripteintrag sind damit nicht kompatibel. Die Suite ersetzt
+Build-, Signier-, Push-, Sync- und SSH-Aktionen durch isolierte Test-Doubles.
+
 `release-contract.paths` ist die geschlossene, selbst mitgepinnte Inventarliste
 der sicherheitskritischen Workflows, Output-Sinks, Asset-/Manifest-Validatoren
 und Evidence-Verträge. Stable-Promotion stoppt, sobald auch nur eine dieser

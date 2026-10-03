@@ -202,6 +202,26 @@ test("current publication workflow is fail-closed", () => {
   assert.deepEqual(validatePublishWorkflow(publishFixture, contractPaths), []);
 });
 
+test("manual publication cannot omit approved policy and complete asset binding", () => {
+  for (const [before, after] of [
+    ['"$RELEASE_METADATA" --metadata-only', '"$RELEASE_METADATA" --unchecked'],
+    ['"$RELEASE_METADATA" "$ASSET_DIR"', '"$RELEASE_METADATA" --metadata-only'],
+    ['"$RELEASE_METADATA" "$ASSET_DIR"', '"$RELEASE_METADATA" "$ASSET_DIR" || true'],
+    ['"$RELEASE_METADATA" --metadata-only', '"$RELEASE_METADATA" --metadata-only || true'],
+    ['gh api "repos/$REPO/releases/tags/$TAG" > "$RELEASE_METADATA"', 'true'],
+    ['MANIFEST: ${{ steps.gate.outputs.manifest }}', 'MANIFEST: unapproved.json'],
+  ]) {
+    const unsafe = publishFixture.replace(before, after);
+    assert.notEqual(unsafe, publishFixture);
+    assert.ok(validatePublishWorkflow(unsafe, contractPaths).length > 0);
+  }
+  const finalOnly = publishFixture.replace(/(node scripts\/verify-approved-release\.mjs[^\n]+ --metadata-only)(?![\s\S]*node scripts\/verify-approved-release\.mjs)/, 'true');
+  assert.notEqual(finalOnly, publishFixture);
+  assert.match(validatePublishWorkflow(finalOnly, contractPaths).join("\n"), /approved policy\/tag\/inventory/);
+  const ignored = publishFixture.replace('name: Draft, Bindung und sämtliche Asset-Digests verifizieren', 'name: Draft, Bindung und sämtliche Asset-Digests verifizieren\n        continue-on-error: true');
+  assert.match(validatePublishWorkflow(ignored, contractPaths).join("\n"), /cannot ignore a failed gate/);
+});
+
 test("publication without Fleet PASS is rejected", () => {
   const unsafe = publishFixture.replace('test "$(jq -r .status "$MANIFEST")" = "pass"', "echo unchecked-status");
   assert.match(validatePublishWorkflow(unsafe, contractPaths).join("\n"), /publication must require manifest PASS/);

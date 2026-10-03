@@ -22,6 +22,7 @@ export const EXPECTED_RELEASE_CONTRACT_PATHS = [
   "scripts/checkout-private-source.sh",
   "scripts/encrypt-confidential-log.mjs",
   "scripts/merge-cyclonedx.mjs",
+  "scripts/release-authorization.mjs",
   "scripts/run-confidential.sh",
   "scripts/run-indexed-confidential.sh",
   "scripts/run-package-smoke.ps1",
@@ -30,6 +31,7 @@ export const EXPECTED_RELEASE_CONTRACT_PATHS = [
   "scripts/upload-draft-assets.sh",
   "scripts/validate-private-source-ref.sh",
   "scripts/validate-release-assets.sh",
+  "scripts/verify-approved-release.mjs",
   "scripts/verify-fleet-manifest.mjs",
   "scripts/verify-fleet-source-workflow.mjs",
   "scripts/verify-market-evidence-binding.mjs",
@@ -239,6 +241,25 @@ export function validatePublishWorkflow(workflow, contractPaths) {
   const downloadIndex = workflow.indexOf('gh release download "$TAG"');
   const digestIndex = workflow.indexOf("sha256sum -c SHA256SUMS");
   const publishIndex = workflow.lastIndexOf('gh release edit "$TAG"');
+  const approvalCommand = 'node scripts/verify-approved-release.mjs "$MANIFEST" "$EXPECTED_MANIFEST_SHA256" "$REPO" "$TAG" "$RELEASE_ID" "$RELEASE_METADATA"';
+  const metadataGate = `${approvalCommand} --metadata-only`;
+  const bytesGate = `${approvalCommand} "$ASSET_DIR"`;
+  const metadataFirst = workflow.indexOf(metadataGate);
+  const metadataLast = workflow.lastIndexOf(metadataGate);
+  const bytesIndex = workflow.indexOf(bytesGate);
+  const commandLines = workflow.split("\n").map(line => line.trim());
+  require(commandLines.filter(line => line === metadataGate).length === 2
+    && commandLines.filter(line => line === bytesGate).length === 1
+    && metadataFirst > draftBindingIndex && metadataFirst < downloadIndex
+    && bytesIndex > downloadIndex && bytesIndex < digestIndex
+    && metadataLast > digestIndex && metadataLast < publishIndex,
+  "publication must bind approved policy/tag/inventory before download, all approved bytes before checksums, and fresh remote digests immediately before publish");
+  require((workflow.match(/gh api "repos\/\$REPO\/releases\/tags\/\$TAG" > "\$RELEASE_METADATA"/g) ?? []).length === 2,
+    "publication must freshly read complete remote asset digests twice");
+  require((workflow.match(/MANIFEST: \$\{\{ steps\.gate\.outputs\.manifest \}\}/g) ?? []).length === 2
+    && (workflow.match(/EXPECTED_MANIFEST_SHA256: \$\{\{ inputs\.manifest_sha256 \}\}/g) ?? []).length === 3,
+    "publication approval must use the originally hashed manifest in both steps");
+  require(!/^\s*continue-on-error:/m.test(workflow), "publication steps cannot ignore a failed gate");
   require(passIndex >= 0 && digestIndex > passIndex && publishIndex > digestIndex, "publication must happen only after PASS and asset verification");
   require(
     semverIndexes.length === 2

@@ -14,6 +14,7 @@ scripts/assert-semver-monotonic.mjs
 scripts/checkout-private-source.sh
 scripts/encrypt-confidential-log.mjs
 scripts/merge-cyclonedx.mjs
+scripts/release-authorization.mjs
 scripts/run-confidential.sh
 scripts/run-indexed-confidential.sh
 scripts/run-package-smoke.ps1
@@ -22,6 +23,7 @@ scripts/setup-auth-ci-databases.sh
 scripts/upload-draft-assets.sh
 scripts/validate-private-source-ref.sh
 scripts/validate-release-assets.sh
+scripts/verify-approved-release.mjs
 scripts/verify-fleet-manifest.mjs
 scripts/verify-fleet-source-workflow.mjs
 scripts/verify-market-evidence-binding.mjs

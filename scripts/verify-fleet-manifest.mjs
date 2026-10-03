@@ -2,6 +2,7 @@
 import { readFileSync, readdirSync } from "node:fs";
 import { resolve, dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { validateReleaseAuthorization } from "./release-authorization.mjs";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const EXPECTED_PINS = [
@@ -77,7 +78,13 @@ export function validateManifest(manifest, filename = "<memory>") {
 
   const expectedRootFields = manifest.status === "superseded"
     ? [...ROOT_FIELDS, "supersession"]
-    : ROOT_FIELDS;
+    : [...ROOT_FIELDS];
+  // Historical non-PASS manifests stay readable. Publication requires the
+  // independently hashed authorization, not hashes supplied by the draft itself.
+  if (Object.hasOwn(manifest, "authorized_release")) {
+    expectedRootFields.push("authorized_release");
+    for (const error of validateReleaseAuthorization(manifest.authorized_release)) require(false, error);
+  }
   require(exactKeys(manifest, expectedRootFields), "root fields must match schema exactly");
   require(manifest.$schema === "../manifest.schema.json", "$schema must pin the repository schema");
   require(manifest.schema_version === "1.2", "schema_version must equal 1.2");
@@ -277,6 +284,7 @@ export function validateManifest(manifest, filename = "<memory>") {
   }
 
   if (manifest.status === "pass") {
+    require(Object.hasOwn(manifest, "authorized_release"), "PASS requires complete authorized_release policy, tag and asset hashes");
     require((manifest.blockers ?? []).length === 0, "PASS requires an empty blocker list");
     require(EXPECTED_PINS.every((name) => manifest.pins?.[name]?.merge_status === "merged" && HTTPS.test(manifest.pins?.[name]?.pr_url ?? "")), "PASS requires every pin to be merged with HTTPS PR evidence");
     require(EXPECTED_GATES.every((id) => manifest.gates?.[id]?.status === "pass"), "PASS requires A1-A8 to PASS on the same release pin");
