@@ -238,6 +238,15 @@ jobs:
         shell: bash
         run: bash "$GITHUB_WORKSPACE/gate/scripts/run-confidential.sh" playwright-install npx playwright install --with-deps chromium webkit
 
+      - name: Sicherheitsgrenzen in Browser und Plugin-Bundles beweisen
+        working-directory: src
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -f scripts/plugins/maplibre-sanitizer.test.mjs ] || [ -f scripts/plugins/media-viewer.test.mjs ]; then
+            bash "$GITHUB_WORKSPACE/gate/scripts/run-confidential.sh" browser-security-proof npm run test:security-browser
+          fi
+
       # Der öffentliche Runner entwickelt sich unabhängig vom privaten Source-Repo.
       # Neue Feature-Proofs dürfen ältere/offene Source-Refs nicht rückwirkend brechen;
       # sobald das Harness im angeforderten Ref existiert, bleibt der Proof strikt.
