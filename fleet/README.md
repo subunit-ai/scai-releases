@@ -89,9 +89,10 @@ Isoliert prüfen: `node --test scripts/verify-approved-release.test.mjs`.
 Der CLI unterscheidet ausdrücklich `remote-metadata-only` von der vollständigen
 lokalen Byteprüfung `approved-release-bytes`; er veröffentlicht nichts.
 
-Der private PR-Check führt vorhandene `scripts/plugins/deploy.test.mjs` separat
+Der aktuelle private PR-Check führt `npm run test:plugin-deploy` separat
 im Confidential-Runner aus, weil `bun test src/lib` diese Node-Suite nicht findet.
-Alte Source-Refs ohne diese Suite bleiben kompatibel. Die Suite ersetzt alle
+Dieser bereits auf Main vorhandene Pflichtschritt bleibt unverändert; alte
+Source-Refs ohne den Skripteintrag sind damit nicht kompatibel. Die Suite ersetzt
 Build-, Signier-, Push-, Sync- und SSH-Aktionen durch isolierte Test-Doubles.
 
 `release-contract.paths` ist die geschlossene, selbst mitgepinnte Inventarliste
