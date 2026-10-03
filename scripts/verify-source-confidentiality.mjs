@@ -730,6 +730,37 @@ export function validateSourceConfidentiality(workflows, assetSelector) {
   for (const label of ["auth-install", "auth-db-fixture", "auth-tests", "auth-build", "auth-deploy-gate"]) {
     require(auth.includes(`run-confidential.sh" ${label}`), `auth-pr-check.yml: ${label} must suppress private output`);
   }
+  require(pr.includes('bash "$GITHUB_WORKSPACE/gate/scripts/detect-recovered-source-proofs.sh" . >> "$GITHUB_OUTPUT"'), "pr-check.yml: recovered feature/proof pairs must fail closed before selection");
+  // Closed step grammar: safe strings in comments/other steps cannot authorize
+  // a skipped, failure-tolerant or plaintext proof or diagnostic upload.
+  const recoveredSteps = pr.split(/(?=^      - )/m).slice(1).map(block => block.trimEnd());
+  for (const [key, label, harness] of [["email_full_peek", "email-full-peek", "verify-email-full-peek.mjs"], ["backoffice_capacity", "backoffice-capacity", "verify-backoffice-capacity-list.mjs"]]) {
+    const expectedProof = `      - name: Restored ${label} contract beweisen
+        id: ${key}_proof
+        if: always() && steps.source_proofs.outputs.${key} == 'true'
+        working-directory: src
+        shell: bash
+        env:
+          SCAI_TOOLCHAIN: \${{ github.workspace }}/src
+          SCAI_ENCRYPTED_DIAGNOSTIC_PUBLIC_KEY_BASE64: \${{ inputs.diagnostic_public_key_base64 }}
+          SCAI_ENCRYPTED_DIAGNOSTIC_PATH: \${{ inputs.diagnostic_public_key_base64 != '' && format('{0}/scai-${label}-diagnostic.json', runner.temp) || '' }}
+        run: bash "$GITHUB_WORKSPACE/gate/scripts/run-confidential.sh" ${label}-proof node scripts/${harness}`;
+    const expectedUpload = `      - name: Verschluesselte ${label} Fehlerdiagnostik bereitstellen
+        if: failure() && steps.${key}_proof.outcome == 'failure' && inputs.diagnostic_public_key_base64 != ''
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4, immutable
+        with:
+          name: scai-${label}-encrypted-diagnostic-\${{ github.run_id }}
+          path: \${{ runner.temp }}/scai-${label}-diagnostic.json
+          if-no-files-found: error
+          retention-days: 1`;
+    const proofs = recoveredSteps.filter(block => block.includes(`${key}_proof`) && /^      - name: Restored /m.test(block));
+    const uploads = recoveredSteps.filter(block => block.startsWith(`      - name: Verschluesselte ${label} Fehlerdiagnostik bereitstellen`));
+    require(proofs.length === 1 && proofs[0] === expectedProof
+      && recoveredSteps.filter(block => new RegExp(`^        id: ${key}_proof$`, "m").test(block)).length === 1,
+    `pr-check.yml: ${label} must run selected source proof confidentially with exact fail-closed policy`);
+    require(uploads.length === 1 && uploads[0] === expectedUpload,
+      `pr-check.yml: ${label} diagnostic requires the exact failed step and encrypted envelope`);
+  }
   require(auth.includes('scripts/checkout-private-source.sh subunit-auth') && auth.includes('"$SOURCE_SHA"'), "auth-pr-check.yml: private checkout must retain its exact source pin");
   require(auth.includes('scripts/ci/run-proof-suite.sh'), "auth-pr-check.yml: all source proof files must use the private isolated suite runner");
   require(auth.includes("SCAI_ENCRYPTED_DIAGNOSTIC_PUBLIC_KEY_BASE64") && auth.includes("SCAI_ENCRYPTED_DIAGNOSTIC_PATH"), "auth-pr-check.yml: private failures require optional one-time-key encryption");
