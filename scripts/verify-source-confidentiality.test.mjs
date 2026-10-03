@@ -1125,3 +1125,20 @@ test('restored mail and capacity contracts cannot silently skip or expose privat
   assert.ok(validateSourceConfidentiality({...fixtures,'pr-check.yml':original.replace(before,after)},assetSelector).length>0,before);
  }
 });
+
+for (const key of ["email_full_peek", "backoffice_capacity"]) {
+  for (const [label, mutate] of [
+    ["ignored failure", source => source.replace(`        id: ${key}_proof`, `        id: ${key}_proof\n        continue-on-error: true`)],
+    ["quoted ignored failure", source => source.replace(`        id: ${key}_proof`, `        id: ${key}_proof\n        "continue-on-error": true`)],
+    ["comment decoy", source => source.replace(`        if: always() && steps.source_proofs.outputs.${key} == 'true'`, `        if: false\n        # if: always() && steps.source_proofs.outputs.${key} == 'true'`)],
+    ["duplicate step", source => source + `\n      - name: Duplicate proof\n        id: ${key}_proof\n        run: true\n`],
+    ["commented wrapper", source => source.replace(`        run: bash "$GITHUB_WORKSPACE/gate/scripts/run-confidential.sh" ${key.replaceAll("_", "-")}-proof`, `        run: echo skipped\n        # run: bash "$GITHUB_WORKSPACE/gate/scripts/run-confidential.sh" ${key.replaceAll("_", "-")}-proof`)],
+    ["upload condition decoy", source => source.replace(`        if: failure() && steps.${key}_proof.outcome == 'failure' && inputs.diagnostic_public_key_base64 != ''`, `        if: always()\n        # if: failure() && steps.${key}_proof.outcome == 'failure' && inputs.diagnostic_public_key_base64 != ''`)],
+  ]) {
+    test(`recovered ${key} proof rejects ${label}`, () => {
+      const changed = mutate(fixtures["pr-check.yml"]);
+      assert.notEqual(changed, fixtures["pr-check.yml"]);
+      assert.ok(validateSourceConfidentiality({ ...fixtures, "pr-check.yml": changed }, assetSelector).some(error => error.includes(key.replaceAll("_", "-"))));
+    });
+  }
+}
