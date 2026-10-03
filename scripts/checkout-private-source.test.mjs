@@ -38,6 +38,8 @@ test("repository allowlist, immutable SHA and dedicated key fail closed", () => 
     [["u1-chat", "git@github.com:attacker/source.git", SHA], 64, /not allowlisted/],
     [["u1-chat", "git@github.com:subunit-ai/u1-chat.git", "main"], 64, /40 lowercase hexadecimal/],
     [["u1-chat", "git@github.com:subunit-ai/u1-chat.git", SHA], 65, /deploy key is missing/],
+    [["subunit-notch", "git@github.com:subunit-ai/subunit-notch.git", SHA], 65, /deploy key is missing/],
+    [["subunit-notch", "git@github.com:subunit-ai/echo.git", SHA], 64, /not allowlisted/],
   ]) {
     const result = invoke(args);
     assert.equal(result.status, expectedStatus);

@@ -1,0 +1,149 @@
+# Subunit Notch — signierter Bau fuer das PRIVATE Quell-Repo.
+#
+# Die Notch ist eine native macOS-App (Swift). Ihre Signier-Identitaet liegt nur
+# hier als Secret (dieselbe Apple-Zertifikatskette wie SCAI). Dieser ausschliess-
+# lich manuell ausloesbare Public-Runner checkt genau einen vollstaendigen
+# Commit-SHA mit einem read-only Deploy-Key aus, baut und signiert das Bundle und
+# legt es als kurzlebiges Workflow-Artefakt ab. Compiler- und Build-Ausgaben
+# koennen Quelltext enthalten und bleiben deshalb in fluechtigen Dateien
+# (run-confidential.sh); oeffentlich erscheinen nur Pin, Signatur-Metadaten und
+# Pruefsummen.
+
+name: Notch Signed Build (private source)
+
+on:
+  workflow_dispatch:
+    inputs:
+      source_sha:
+        description: "Vollstaendiger subunit-notch-Commit-SHA"
+        required: true
+        type: string
+      version:
+        description: "Erwartete CFBundleShortVersionString (z. B. 0.6.0)"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: notch-build-${{ inputs.source_sha }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Notch bauen und signieren
+    runs-on: macos-latest
+    timeout-minutes: 30
+    env:
+      SOURCE_SHA: ${{ inputs.source_sha }}
+      EXPECTED_VERSION: ${{ inputs.version }}
+    steps:
+      - name: Oeffentliche Gate-Tools auschecken
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2, immutable
+        with:
+          path: gate
+          persist-credentials: false
+
+      - name: Commit-Pin und Version pruefen
+        shell: bash
+        run: |
+          set -euo pipefail
+          printf '%s' "$SOURCE_SHA" | grep -Eq '^[0-9a-f]{40}$'
+          printf '%s' "$EXPECTED_VERSION" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$'
+          echo "PASS notch-source-pin (source-sha=$SOURCE_SHA version=$EXPECTED_VERSION)"
+
+      - name: Notch exakt und read-only auschecken
+        env:
+          SOURCE_DEPLOY_KEY: ${{ secrets.NOTCH_SOURCE_DEPLOY_KEY }}
+        run: bash gate/scripts/checkout-private-source.sh subunit-notch git@github.com:subunit-ai/subunit-notch.git "$SOURCE_SHA"
+
+      - name: Signier-Identitaet in temporaeren Schluesselbund laden
+        env:
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          set +x
+          if [ -z "${APPLE_CERTIFICATE:-}" ] || [ -z "${APPLE_SIGNING_IDENTITY:-}" ]; then
+            echo "::error::APPLE_CERTIFICATE / APPLE_SIGNING_IDENTITY fehlen — kein ad-hoc Notch-Release."
+            exit 1
+          fi
+          case "$APPLE_SIGNING_IDENTITY" in
+            "Developer ID Application:"*|"Apple Development:"*) ;;
+            *) echo "::error::Unerwartete Signier-Identitaet."; exit 1 ;;
+          esac
+          p12="$RUNNER_TEMP/notch-sign.p12"
+          kc="$RUNNER_TEMP/notch-build.keychain-db"
+          printf '%s' "$APPLE_CERTIFICATE" | base64 --decode > "$p12"
+          kc_pw="$(openssl rand -hex 24)"
+          security create-keychain -p "$kc_pw" "$kc"
+          security set-keychain-settings -lut 3600 "$kc"
+          security unlock-keychain -p "$kc_pw" "$kc"
+          security import "$p12" -k "$kc" -P "${APPLE_CERTIFICATE_PASSWORD:-}" -T /usr/bin/codesign > /dev/null
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$kc_pw" "$kc" > /dev/null
+          security list-keychains -d user -s "$kc" $(security list-keychains -d user | tr -d '"')
+          rm -f "$p12"
+          security find-identity -v -p codesigning "$kc" | tail -1
+          echo "NOTCH_KEYCHAIN=$kc" >> "$GITHUB_ENV"
+
+      - name: Bundle bauen und signieren
+        working-directory: private/subunit-notch
+        env:
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          NOTCH_SIGN_ID="$APPLE_SIGNING_IDENTITY" \
+            bash "$GITHUB_WORKSPACE/gate/scripts/run-confidential.sh" notch-build ./build.sh release
+          test -d dist/SubunitNotch.app
+
+      - name: Signatur, Version und Team pruefen
+        working-directory: private/subunit-notch
+        shell: bash
+        run: |
+          set -euo pipefail
+          app=dist/SubunitNotch.app
+          version=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$app/Contents/Info.plist")
+          if [ "$version" != "$EXPECTED_VERSION" ]; then
+            echo "::error::Bundle-Version $version passt nicht zu $EXPECTED_VERSION."
+            exit 1
+          fi
+          codesign --verify --strict --deep "$app"
+          codesign --verify --strict "$app/Contents/Helpers/SubunitAgentBridge"
+          team=$(codesign -dv "$app" 2>&1 | sed -n 's/^TeamIdentifier=//p')
+          if [ "$team" != "Y23NYAZM6M" ]; then
+            echo "::error::Unerwartetes Team: $team"
+            exit 1
+          fi
+          codesign -dv "$app" 2>&1 | grep -E '^(Identifier|TeamIdentifier|Authority)=' | head -4
+          echo "PASS notch-signature (version=$version team=$team)"
+
+      - name: Archiv und Pruefsumme
+        working-directory: private/subunit-notch
+        shell: bash
+        run: |
+          set -euo pipefail
+          out="$RUNNER_TEMP/notch-out"
+          mkdir -p "$out"
+          archive="$out/SubunitNotch-$EXPECTED_VERSION.zip"
+          ditto -c -k --keepParent dist/SubunitNotch.app "$archive"
+          (cd "$out" && shasum -a 256 "SubunitNotch-$EXPECTED_VERSION.zip" | tee "SubunitNotch-$EXPECTED_VERSION.zip.sha256")
+          printf '{"source_sha":"%s","version":"%s"}\n' "$SOURCE_SHA" "$EXPECTED_VERSION" > "$out/build-receipt.json"
+
+      - name: Artefakt hochladen
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4, immutable
+        with:
+          name: subunit-notch-${{ inputs.version }}
+          path: ${{ runner.temp }}/notch-out/
+          retention-days: 7
+          if-no-files-found: error
+
+      - name: Temporaeren Schluesselbund entfernen
+        if: always()
+        shell: bash
+        run: |
+          if [ -n "${NOTCH_KEYCHAIN:-}" ]; then security delete-keychain "$NOTCH_KEYCHAIN" || true; fi
+          rm -rf "$GITHUB_WORKSPACE/private"
