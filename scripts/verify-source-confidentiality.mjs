@@ -734,7 +734,7 @@ export function validateSourceConfidentiality(workflows, assetSelector) {
   // Closed step grammar: safe strings in comments/other steps cannot authorize
   // a skipped, failure-tolerant or plaintext proof or diagnostic upload.
   const recoveredSteps = pr.split(/(?=^      - )/m).slice(1).map(block => block.trimEnd());
-  for (const [key, label, harness] of [["email_full_peek", "email-full-peek", "verify-email-full-peek.mjs"], ["backoffice_capacity", "backoffice-capacity", "verify-backoffice-capacity-list.mjs"], ["agents_os", "agents-os", null], ["workforce_coordination", "workforce-coordination", null]]) {
+  for (const [key, label, harness] of [["email_full_peek", "email-full-peek", "verify-email-full-peek.mjs"], ["backoffice_capacity", "backoffice-capacity", "verify-backoffice-capacity-list.mjs"], ["agents_os", "agents-os", null], ["workforce_coordination", "workforce-coordination", null], ["native_usage_core", "native-usage-core", null]]) {
     const expectedProof = `      - name: Restored ${label} contract beweisen
         id: ${key}_proof
         if: always() && steps.source_proofs.outputs.${key} == 'true'
