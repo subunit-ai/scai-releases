@@ -19,6 +19,7 @@ case "$component:$source_repo" in
   atlas:git@github.com:subunit-ai/atlas.git) ;;
   subunit-auth:git@github.com:subunit-ai/subunit-auth.git) ;;
   echo:git@github.com:subunit-ai/echo.git) ;;
+  subunit-notch:git@github.com:subunit-ai/subunit-notch.git) ;;
   *)
     echo "component/repository is not allowlisted" >&2
     exit 64
