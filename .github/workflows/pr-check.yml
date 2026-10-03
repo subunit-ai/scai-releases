@@ -422,6 +422,15 @@ jobs:
           if-no-files-found: error
           retention-days: 1
 
+      - name: Verschluesselte agents-os Visualbelege bereitstellen
+        if: always() && steps.source_proofs.outputs.agents_os == 'true' && (steps.agents_os_proof.outcome == 'success' || steps.agents_os_proof.outcome == 'failure') && steps.agents_os_proof.outputs.encrypted_visual_receipt == 'true' && inputs.diagnostic_public_key_base64 != ''
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4, immutable
+        with:
+          name: scai-agents-os-encrypted-proof-${{ github.run_id }}
+          path: ${{ runner.temp }}/scai-agents-os-encrypted-proof.json
+          if-no-files-found: error
+          retention-days: 1
+
       - name: Restored workforce-coordination contract beweisen
         id: workforce_coordination_proof
         if: always() && steps.source_proofs.outputs.workforce_coordination == 'true'
@@ -439,6 +448,15 @@ jobs:
         with:
           name: scai-workforce-coordination-encrypted-diagnostic-${{ github.run_id }}
           path: ${{ runner.temp }}/scai-workforce-coordination-diagnostic.json
+          if-no-files-found: error
+          retention-days: 1
+
+      - name: Verschluesselte workforce-coordination Visualbelege bereitstellen
+        if: always() && steps.source_proofs.outputs.workforce_coordination == 'true' && (steps.workforce_coordination_proof.outcome == 'success' || steps.workforce_coordination_proof.outcome == 'failure') && steps.workforce_coordination_proof.outputs.encrypted_visual_receipt == 'true' && inputs.diagnostic_public_key_base64 != ''
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4, immutable
+        with:
+          name: scai-workforce-coordination-encrypted-proof-${{ github.run_id }}
+          path: ${{ runner.temp }}/scai-workforce-coordination-encrypted-proof.json
           if-no-files-found: error
           retention-days: 1
 

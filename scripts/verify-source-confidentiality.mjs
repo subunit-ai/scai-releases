@@ -760,6 +760,19 @@ export function validateSourceConfidentiality(workflows, assetSelector) {
     `pr-check.yml: ${label} must run selected source proof confidentially with exact fail-closed policy`);
     require(uploads.length === 1 && uploads[0] === expectedUpload,
       `pr-check.yml: ${label} diagnostic requires the exact failed step and encrypted envelope`);
+    if (["agents-os", "workforce-coordination"].includes(label)) {
+      const expectedVisual = `      - name: Verschluesselte ${label} Visualbelege bereitstellen
+        if: always() && steps.source_proofs.outputs.${key} == 'true' && (steps.${key}_proof.outcome == 'success' || steps.${key}_proof.outcome == 'failure') && steps.${key}_proof.outputs.encrypted_visual_receipt == 'true' && inputs.diagnostic_public_key_base64 != ''
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4, immutable
+        with:
+          name: scai-${label}-encrypted-proof-\${{ github.run_id }}
+          path: \${{ runner.temp }}/scai-${label}-encrypted-proof.json
+          if-no-files-found: error
+          retention-days: 1`;
+      const visuals = recoveredSteps.filter(block => block.startsWith(`      - name: Verschluesselte ${label} Visualbelege bereitstellen`) || block.includes(`scai-${label}-encrypted-proof`));
+      require(visuals.length === 1 && visuals[0] === expectedVisual,
+        `pr-check.yml: ${label} visual proof requires exact selected executed step and encrypted envelope`);
+    }
   }
   require(auth.includes('scripts/checkout-private-source.sh subunit-auth') && auth.includes('"$SOURCE_SHA"'), "auth-pr-check.yml: private checkout must retain its exact source pin");
   require(auth.includes('scripts/ci/run-proof-suite.sh'), "auth-pr-check.yml: all source proof files must use the private isolated suite runner");
