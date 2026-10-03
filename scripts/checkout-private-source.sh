@@ -61,7 +61,9 @@ mkdir -p "$private_root"
 chmod 700 "$private_root"
 printf '%s\n' "$SOURCE_DEPLOY_KEY" > "$key_file"
 chmod 600 "$key_file"
-ssh-keyscan -t ed25519 github.com > "$known_hosts" 2>/dev/null
+# OpenSSH >= 10 (macOS-Runner) schreibt die Banner-Kommentarzeile auf stdout;
+# nur Schluesselzeilen zaehlen, die Pruefung auf genau EINEN gepinnten Schluessel bleibt.
+{ ssh-keyscan -t ed25519 github.com 2>/dev/null || true; } | { grep -v '^#' || true; } > "$known_hosts"
 chmod 600 "$known_hosts"
 
 host_key_count=$(wc -l < "$known_hosts" | tr -d '[:space:]')
