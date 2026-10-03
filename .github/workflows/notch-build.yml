@@ -3,11 +3,13 @@
 # Die Notch ist eine native macOS-App (Swift). Ihre Signier-Identitaet liegt nur
 # hier als Secret (dieselbe Apple-Zertifikatskette wie SCAI). Dieser ausschliess-
 # lich manuell ausloesbare Public-Runner checkt genau einen vollstaendigen
-# Commit-SHA mit einem read-only Deploy-Key aus, baut und signiert das Bundle und
-# legt es als kurzlebiges Workflow-Artefakt ab. Compiler- und Build-Ausgaben
-# koennen Quelltext enthalten und bleiben deshalb in fluechtigen Dateien
-# (run-confidential.sh); oeffentlich erscheinen nur Pin, Signatur-Metadaten und
-# Pruefsummen.
+# Commit-SHA mit einem read-only Deploy-Key aus, baut und signiert das Bundle.
+# Weil dieses Repo oeffentlich ist, verlaesst das Bundle den Runner NUR als
+# verschluesselter Umschlag (AES-256-GCM, Schluessel per RSA-OAEP an einen
+# Einmal-Empfaengerschluessel, dessen privater Teil den Mac nie verlaesst).
+# Compiler- und Build-Ausgaben koennen Quelltext enthalten und bleiben in
+# fluechtigen Dateien (run-confidential.sh). Oeffentlich erscheinen nur Pin,
+# Team-ID, Bundle-Identifier und Pruefsummen — keine Zertifikatsnamen.
 
 name: Notch Signed Build (private source)
 
@@ -20,6 +22,10 @@ on:
         type: string
       version:
         description: "Erwartete CFBundleShortVersionString (z. B. 0.6.0)"
+        required: true
+        type: string
+      recipient_public_key_base64:
+        description: "Einmal-RSA-Public-Key (PEM, base64, >= 3072 Bit) fuer den verschluesselten Umschlag"
         required: true
         type: string
 
@@ -38,6 +44,7 @@ jobs:
     env:
       SOURCE_SHA: ${{ inputs.source_sha }}
       EXPECTED_VERSION: ${{ inputs.version }}
+      RECIPIENT_PUBLIC_KEY_BASE64: ${{ inputs.recipient_public_key_base64 }}
     steps:
       - name: Oeffentliche Gate-Tools auschecken
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2, immutable
@@ -51,6 +58,7 @@ jobs:
           set -euo pipefail
           printf '%s' "$SOURCE_SHA" | grep -Eq '^[0-9a-f]{40}$'
           printf '%s' "$EXPECTED_VERSION" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$'
+          node -e 'const k=require("node:crypto").createPublicKey(Buffer.from(process.env.RECIPIENT_PUBLIC_KEY_BASE64,"base64").toString("utf8")); if(k.asymmetricKeyType!=="rsa"||k.asymmetricKeyDetails.modulusLength<3072){process.exit(1)}'
           echo "PASS notch-source-pin (source-sha=$SOURCE_SHA version=$EXPECTED_VERSION)"
 
       - name: Notch exakt und read-only auschecken
@@ -118,20 +126,24 @@ jobs:
             echo "::error::Unerwartetes Team: $team"
             exit 1
           fi
-          codesign -dv "$app" 2>&1 | grep -E '^(Identifier|TeamIdentifier|Authority)=' | head -4
+          codesign -dv "$app" 2>&1 | grep -E '^(Identifier|TeamIdentifier)=' | head -2
           echo "PASS notch-signature (version=$version team=$team)"
 
-      - name: Archiv und Pruefsumme
+      - name: Archiv verschluesseln
         working-directory: private/subunit-notch
         shell: bash
         run: |
           set -euo pipefail
+          plain="$RUNNER_TEMP/notch-plain"
           out="$RUNNER_TEMP/notch-out"
-          mkdir -p "$out"
-          archive="$out/SubunitNotch-$EXPECTED_VERSION.zip"
+          mkdir -p "$plain" "$out"
+          archive="$plain/SubunitNotch-$EXPECTED_VERSION.zip"
           ditto -c -k --keepParent dist/SubunitNotch.app "$archive"
-          (cd "$out" && shasum -a 256 "SubunitNotch-$EXPECTED_VERSION.zip" | tee "SubunitNotch-$EXPECTED_VERSION.zip.sha256")
+          node "$GITHUB_WORKSPACE/gate/scripts/encrypt-confidential-log.mjs" \
+            "$archive" "$out/SubunitNotch-$EXPECTED_VERSION.zip.envelope.json" "$RECIPIENT_PUBLIC_KEY_BASE64"
+          rm -rf "$plain"
           printf '{"source_sha":"%s","version":"%s"}\n' "$SOURCE_SHA" "$EXPECTED_VERSION" > "$out/build-receipt.json"
+          echo "PASS notch-envelope (plaintext nur im Umschlag)"
 
       - name: Artefakt hochladen
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4, immutable
@@ -146,4 +158,4 @@ jobs:
         shell: bash
         run: |
           if [ -n "${NOTCH_KEYCHAIN:-}" ]; then security delete-keychain "$NOTCH_KEYCHAIN" || true; fi
-          rm -rf "$GITHUB_WORKSPACE/private"
+          rm -rf "$GITHUB_WORKSPACE/private" "$RUNNER_TEMP/notch-plain"
