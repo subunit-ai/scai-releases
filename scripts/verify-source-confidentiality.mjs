@@ -757,7 +757,7 @@ export function validateSourceConfidentiality(workflows, assetSelector) {
   // Closed step grammar: safe strings in comments/other steps cannot authorize
   // a skipped, failure-tolerant or plaintext proof or diagnostic upload.
   const recoveredSteps = pr.split(/(?=^      - )/m).slice(1).map(block => block.trimEnd());
-  for (const [key, label, harness] of [["email_full_peek", "email-full-peek", "verify-email-full-peek.mjs"], ["backoffice_capacity", "backoffice-capacity", "verify-backoffice-capacity-list.mjs"], ["agents_os", "agents-os", null], ["workforce_coordination", "workforce-coordination", null], ["native_usage_core", "native-usage-core", null]]) {
+  for (const [key, label, harness] of [["email_full_peek", "email-full-peek", "verify-email-full-peek.mjs"], ["backoffice_capacity", "backoffice-capacity", "verify-backoffice-capacity-list.mjs"], ["agents_os", "agents-os", null], ["workforce_coordination", "workforce-coordination", null], ["migration_host", "migration-host", null], ["native_usage_core", "native-usage-core", null]]) {
     const expectedProof = `      - name: Restored ${label} contract beweisen
         id: ${key}_proof
         if: always() && steps.source_proofs.outputs.${key} == 'true'
@@ -783,7 +783,7 @@ export function validateSourceConfidentiality(workflows, assetSelector) {
     `pr-check.yml: ${label} must run selected source proof confidentially with exact fail-closed policy`);
     require(uploads.length === 1 && uploads[0] === expectedUpload,
       `pr-check.yml: ${label} diagnostic requires the exact failed step and encrypted envelope`);
-    if (["agents-os", "workforce-coordination"].includes(label)) {
+    if (["agents-os", "workforce-coordination", "migration-host"].includes(label)) {
       const expectedVisual = `      - name: Verschluesselte ${label} Visualbelege bereitstellen
         if: always() && steps.source_proofs.outputs.${key} == 'true' && (steps.${key}_proof.outcome == 'success' || steps.${key}_proof.outcome == 'failure') && steps.${key}_proof.outputs.encrypted_visual_receipt == 'true' && inputs.diagnostic_public_key_base64 != ''
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4, immutable

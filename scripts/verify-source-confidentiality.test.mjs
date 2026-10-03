@@ -1126,7 +1126,7 @@ test('restored mail and capacity contracts cannot silently skip or expose privat
  }
 });
 
-for (const key of ["email_full_peek", "backoffice_capacity", "agents_os", "workforce_coordination", "native_usage_core"]) {
+for (const key of ["email_full_peek", "backoffice_capacity", "agents_os", "workforce_coordination", "migration_host", "native_usage_core"]) {
   for (const [label, mutate] of [
     ["ignored failure", source => source.replace(`        id: ${key}_proof`, `        id: ${key}_proof\n        continue-on-error: true`)],
     ["quoted ignored failure", source => source.replace(`        id: ${key}_proof`, `        id: ${key}_proof\n        "continue-on-error": true`)],
@@ -1143,7 +1143,7 @@ for (const key of ["email_full_peek", "backoffice_capacity", "agents_os", "workf
   }
 }
 
-for (const [key,label] of [['agents_os','agents-os'],['workforce_coordination','workforce-coordination']]) {
+for (const [key,label] of [['agents_os','agents-os'],['workforce_coordination','workforce-coordination'],['migration_host','migration-host']]) {
  const condition=`if: always() && steps.source_proofs.outputs.${key} == 'true' && (steps.${key}_proof.outcome == 'success' || steps.${key}_proof.outcome == 'failure') && steps.${key}_proof.outputs.encrypted_visual_receipt == 'true' && inputs.diagnostic_public_key_base64 != ''`;
  for (const [name,before,after] of [
   ['unconditional upload',condition,'if: always()'],
@@ -1155,7 +1155,7 @@ for (const [key,label] of [['agents_os','agents-os'],['workforce_coordination','
   const original=fixtures['pr-check.yml'];assert.ok(original.includes(before));const changed=original.replace(before,after);assert.ok(validateSourceConfidentiality({...fixtures,'pr-check.yml':changed},assetSelector).some(e=>e.includes(`${label} visual proof`)));
  });
 }
-for (const label of ['agents-os','workforce-coordination']) test(`${label} rejects duplicate visual envelope upload under another name`,()=>{
+for (const label of ['agents-os','workforce-coordination','migration-host']) test(`${label} rejects duplicate visual envelope upload under another name`,()=>{
  const changed=fixtures['pr-check.yml']+`\n      - name: Extra upload\n        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02\n        with:\n          path: \${{ runner.temp }}/scai-${label}-encrypted-proof.json\n`;
  assert.ok(validateSourceConfidentiality({...fixtures,'pr-check.yml':changed},assetSelector).some(e=>e.includes(`${label} visual proof`)));
 });

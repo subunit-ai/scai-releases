@@ -17,5 +17,6 @@ email_full_peek|src/lib/workspaceMail.ts|export async function workspaceMailFull
 backoffice_capacity|src/lib/operations.ts|listProjectAllocations: async|scripts/verify-backoffice-capacity-list.mjs
 agents_os|src/plugins/agents/index.tsx|import { OsSurface } from "./os/surface";|scripts/lib/agent-operations-os-durable-proof.mjs
 workforce_coordination|src/plugins/projects/ProjectsRoot.tsx|import { CoordinationDesk } from "./CoordinationDesk";|scripts/verify-workforce-coordination.mjs
+migration_host|src/components/settings/MigrationSettings.tsx|import { MigrationApp } from "./migration-ui";|scripts/verify-migration-host.mjs
 native_usage_core|src-tauri/src/lib.rs|mod native_usage;|src-tauri/crates/native-usage-harness/Cargo.toml
 CONTRACTS
