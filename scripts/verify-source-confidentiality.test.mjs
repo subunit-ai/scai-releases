@@ -1126,7 +1126,7 @@ test('restored mail and capacity contracts cannot silently skip or expose privat
  }
 });
 
-for (const key of ["email_full_peek", "backoffice_capacity"]) {
+for (const key of ["email_full_peek", "backoffice_capacity", "agents_os"]) {
   for (const [label, mutate] of [
     ["ignored failure", source => source.replace(`        id: ${key}_proof`, `        id: ${key}_proof\n        continue-on-error: true`)],
     ["quoted ignored failure", source => source.replace(`        id: ${key}_proof`, `        id: ${key}_proof\n        "continue-on-error": true`)],

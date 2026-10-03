@@ -5,7 +5,7 @@ import {tmpdir} from 'node:os';
 import {spawnSync} from 'node:child_process';
 import test from 'node:test';
 const script=new URL('./detect-recovered-source-proofs.sh',import.meta.url).pathname;
-const rows=[['email_full_peek','src/lib/workspaceMail.ts','export async function workspaceMailFullPeek(','scripts/verify-email-full-peek.mjs'],['backoffice_capacity','src/lib/operations.ts','listProjectAllocations: async','scripts/verify-backoffice-capacity-list.mjs']];
+const rows=[['agents_os','src/plugins/agents/index.tsx','import { OsSurface } from "./os/surface";','scripts/lib/agent-operations-os-durable-proof.mjs'],['email_full_peek','src/lib/workspaceMail.ts','export async function workspaceMailFullPeek(','scripts/verify-email-full-peek.mjs'],['backoffice_capacity','src/lib/operations.ts','listProjectAllocations: async','scripts/verify-backoffice-capacity-list.mjs']];
 for(const [key,source,marker,harness] of rows)for(const [feature,proof] of [[false,false],[true,false],[false,true],[true,true]])test(`${key}: source=${feature} proof=${proof}`,()=>{
  const root=mkdtempSync(join(tmpdir(),'recovered-proof-pair-'));
  const put=(path,text)=>{mkdirSync(dirname(join(root,path)),{recursive:true});writeFileSync(join(root,path),text);};
