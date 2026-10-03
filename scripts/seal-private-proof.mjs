@@ -10,6 +10,36 @@ export function collectPrivateProof(root, label, proofExit) {
   const canonical = realpathSync(root), first = lstatSync(root);
   if (resolve(root) !== canonical || !first.isDirectory() || first.isSymbolicLink() || (first.mode & 0o777) !== 0o700 || first.uid !== process.getuid()) throw new Error('invalid private proof root');
   const files = [], directories = []; let encoded = 0, visited = 0;
+  function collectFile(path, name, stat) {
+    if (!stat.isFile() || stat.isSymbolicLink() || stat.nlink !== 1 || (label === 'native-cli' && stat.uid !== process.getuid())) throw new Error('proof nonregular or hardlinked file rejected');
+    const png = label !== 'native-cli' && name.endsWith('.png'), json = name.endsWith('.json') && /(?:^|[-_.])(report|receipt)(?:[-_.]|$)/.test(name.slice(0,-5));
+    if (!png && !json) return;
+    if (files.length >= 512 || stat.size > MAX_BUNDLE_BYTES || encoded + Math.ceil(stat.size / 3) * 4 > MAX_BUNDLE_BYTES) throw new Error('proof bundle exceeds limit');
+    const fd = openSync(path, constants.O_RDONLY | constants.O_NOFOLLOW);
+    let bytes;
+    try {
+      const actual = fstatSync(fd), real = realpathSync(path);
+      if (!actual.isFile() || actual.nlink !== 1 || actual.dev !== stat.dev || actual.ino !== stat.ino || actual.size !== stat.size || actual.mtimeMs !== stat.mtimeMs || actual.ctimeMs !== stat.ctimeMs || !real.startsWith(canonical + '/')) throw new Error('proof changed or escaped');
+      // Read exactly the prevalidated size: concurrent growth cannot force
+      // an unbounded read/allocation before the post-read consistency check.
+      bytes = Buffer.alloc(stat.size);
+      let offset=0;
+      while (offset < bytes.length) {
+        const count=readSync(fd,bytes,offset,bytes.length-offset,offset);
+        if (count===0) throw new Error('proof truncated during read');
+        offset+=count;
+      }
+      const after = fstatSync(fd);
+      if (after.size !== stat.size || after.mtimeMs !== actual.mtimeMs || after.ctimeMs !== actual.ctimeMs || after.nlink !== 1 || bytes.length !== stat.size) throw new Error('proof changed during read');
+      const current = lstatSync(path);
+      if (!current.isFile() || current.isSymbolicLink() || current.nlink !== 1 || current.dev !== after.dev || current.ino !== after.ino
+        || current.mtimeMs !== after.mtimeMs || current.ctimeMs !== after.ctimeMs) throw new Error('proof receipt path changed during read');
+    } finally { closeSync(fd); }
+    if (png && !bytes.subarray(0,8).equals(Buffer.from([137,80,78,71,13,10,26,10]))) throw new Error('invalid proof PNG');
+    if (json) JSON.parse(bytes.toString('utf8'));
+    const data = bytes.toString('base64'); encoded += Buffer.byteLength(data);
+    files.push({path:relative(canonical,path),media_type:png?'image/png':'application/json',bytes:bytes.length,sha256:createHash('sha256').update(bytes).digest('hex'),base64:data});
+  }
   function walk(dir, depth) {
     if (depth > 16) throw new Error('proof nesting exceeds limit');
     const initial = lstatSync(dir);
@@ -21,33 +51,21 @@ export function collectPrivateProof(root, label, proofExit) {
       if (stat.isSymbolicLink()) throw new Error('proof symlink rejected');
       if (stat.isDirectory()) { walk(path, depth + 1); continue; }
       if (!stat.isFile() || stat.nlink !== 1) throw new Error('proof nonregular or hardlinked file rejected');
-      const png = name.endsWith('.png'), json = name.endsWith('.json') && /(?:^|[-_.])(report|receipt)(?:[-_.]|$)/.test(name.slice(0,-5));
-      if (!png && !json) continue;
-      if (files.length >= 512 || stat.size > MAX_BUNDLE_BYTES || encoded + Math.ceil(stat.size / 3) * 4 > MAX_BUNDLE_BYTES) throw new Error('proof bundle exceeds limit');
-      const fd = openSync(path, constants.O_RDONLY | constants.O_NOFOLLOW);
-      let bytes;
-      try {
-        const actual = fstatSync(fd), real = realpathSync(path);
-        if (!actual.isFile() || actual.nlink !== 1 || actual.dev !== stat.dev || actual.ino !== stat.ino || actual.size !== stat.size || !real.startsWith(canonical + '/')) throw new Error('proof changed or escaped');
-        // Read exactly the prevalidated size: concurrent growth cannot force
-        // an unbounded read/allocation before the post-read consistency check.
-        bytes = Buffer.alloc(stat.size);
-        let offset=0;
-        while (offset < bytes.length) {
-          const count=readSync(fd,bytes,offset,bytes.length-offset,offset);
-          if (count===0) throw new Error('proof truncated during read');
-          offset+=count;
-        }
-        const after = fstatSync(fd);
-        if (after.size !== stat.size || after.mtimeMs !== actual.mtimeMs || bytes.length !== stat.size) throw new Error('proof changed during read');
-      } finally { closeSync(fd); }
-      if (png && !bytes.subarray(0,8).equals(Buffer.from([137,80,78,71,13,10,26,10]))) throw new Error('invalid proof PNG');
-      if (json) JSON.parse(bytes.toString('utf8'));
-      const data = bytes.toString('base64'); encoded += Buffer.byteLength(data);
-      files.push({path:relative(canonical,path),media_type:png?'image/png':'application/json',bytes:bytes.length,sha256:createHash('sha256').update(bytes).digest('hex'),base64:data});
+      collectFile(path, name, stat);
     }
   }
-  walk(canonical, 0);
+  if (label === 'native-cli') {
+    // Native CLI owns its internal tree. Never enumerate or inspect it: only
+    // the reviewed root receipt is evidence, never logs, sessions or binaries.
+    directories.push([canonical, first]);
+    const path = join(canonical, 'receipt.json');
+    let selected;
+    try { selected = lstatSync(path); }
+    catch (error) { if (error.code !== 'ENOENT') throw error; }
+    if (selected) collectFile(path, 'receipt.json', selected);
+  } else {
+    walk(canonical, 0);
+  }
   for (const [dir, initial] of directories) {
     const now = lstatSync(dir);
     if (now.isSymbolicLink() || now.dev !== initial.dev || now.ino !== initial.ino || realpathSync(dir) !== dir) throw new Error('proof directory changed');
