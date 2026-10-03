@@ -75,7 +75,7 @@ export function collectPrivateProof(root, label, proofExit) {
   return bundle;
 }
 export function sealPrivateProof(root, label, proofExit, runnerTemp, publicKey) {
-  if (!['agents-os','workforce-coordination','native-cli'].includes(label) || !Number.isInteger(proofExit) || proofExit < 0 || proofExit > 255 || !publicKey) throw new Error('invalid proof sealing contract');
+  if (!['agents-os','workforce-coordination','migration-host','native-cli'].includes(label) || !Number.isInteger(proofExit) || proofExit < 0 || proofExit > 255 || !publicKey) throw new Error('invalid proof sealing contract');
   const temp = realpathSync(runnerTemp);
   if (!realpathSync(root).startsWith(temp + '/')) throw new Error('proof root outside runner temp');
   const bundle = collectPrivateProof(root,label,proofExit);

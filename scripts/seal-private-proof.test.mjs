@@ -42,10 +42,10 @@ test('rejects foreign root, invalid recipient and output symlinks without follow
  const victim=join(a.temp,'victim');writeFileSync(victim,'untouched');symlinkSync(victim,join(a.temp,'scai-agents-os-encrypted-proof.json'));
  assert.throws(()=>sealPrivateProof(a.root,'agents-os',0,a.temp,publicBase64));assert.equal(readFileSync(victim,'utf8'),'untouched');
 });
-for(const label of ['agents-os','workforce-coordination'])for(const code of [0,37])test(`${label} wrapper seals on exit ${code} while preserving failure`,()=>{
+for(const label of ['agents-os','workforce-coordination','migration-host'])for(const code of [0,37])test(`${label} wrapper seals on exit ${code} while preserving failure`,()=>{
  const temp=mkdtempSync(join(tmpdir(),'private-wrapper-test-')),bin=join(temp,'bin');mkdirSync(bin);
  const fake=join(bin,'node');
- writeFileSync(fake,`#!/usr/bin/env bash\nif [[ "$1" == *seal-private-proof.mjs ]]; then exec "${process.execPath}" "$@"; fi\nroot="\${SCAI_OS_DURABLE_UI_PROOF_ROOT:-\${SCAI_W3C_COORDINATION_PROOF_ROOT}}"\nprintf '{}' > "$root/browser-receipt.json"\nexit "\${FIXTURE_EXIT}"\n`);chmodSync(fake,0o700);
+ writeFileSync(fake,`#!/usr/bin/env bash\nif [[ "$1" == *seal-private-proof.mjs ]]; then exec "${process.execPath}" "$@"; fi\nroot="\${SCAI_OS_DURABLE_UI_PROOF_ROOT:-\${SCAI_W3C_COORDINATION_PROOF_ROOT:-\${SCAI_MIGRATION_HOST_PROOF_ROOT}}}"\nprintf '{}' > "$root/browser-receipt.json"\nexit "\${FIXTURE_EXIT}"\n`);chmodSync(fake,0o700);
  const script=new URL(`./run-${label}-proof.sh`,import.meta.url).pathname;const githubOutput=join(temp,'outputs');
  const r=spawnSync('bash',[script],{encoding:'utf8',env:{...process.env,PATH:`${bin}:${process.env.PATH}`,RUNNER_TEMP:temp,FIXTURE_EXIT:String(code),GITHUB_OUTPUT:githubOutput,SCAI_ENCRYPTED_DIAGNOSTIC_PUBLIC_KEY_BASE64:publicBase64}});
  assert.equal(r.status,code,r.stderr);const bundle=decrypt(join(temp,`scai-${label}-encrypted-proof.json`));assert.equal(bundle.proof_exit,code);assert.equal(bundle.files[0].path,'browser-receipt.json');assert.equal(r.stdout,'');assert.equal(readFileSync(githubOutput,'utf8'),'encrypted_visual_receipt=true\n');
@@ -68,7 +68,7 @@ test('native selection never visits unselected CLI symlinks, binary or logs',()=
  writeFileSync(join(root,'claude-pinned-binary'),'synthetic binary ignored');writeFileSync(join(root,'raw.log'),'synthetic log ignored');
  mkdirSync(join(root,'inside'));symlinkSync(join(temp,'nonexistent-secret-canary'),join(root,'inside','private-config-link'));symlinkSync(temp,join(root,'cli-directory-link'));
  const b=JSON.parse(collectPrivateProof(root,'native-cli',1));assert.deepEqual(b.files.map(f=>f.path),['receipt.json']);
- for(const label of ['agents-os','workforce-coordination'])assert.throws(()=>collectPrivateProof(root,label,1));
+ for(const label of ['agents-os','workforce-coordination','migration-host'])assert.throws(()=>collectPrivateProof(root,label,1));
 });
 for(const kind of ['selected-symlink','selected-hardlink','selected-directory','root-symlink','public-root','oversize','invalid-json'])test(`native selection rejects ${kind}`,()=>{
  const {root,temp}=fixture();let candidate=root;
