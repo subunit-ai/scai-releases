@@ -132,6 +132,27 @@ function requirePrContract(pr, require) {
           path: \${{ runner.temp }}/scai-frontend-unit-diagnostic.json
           if-no-files-found: error
           retention-days: 1`, "pr-check.yml: Frontend unit diagnostics may upload only the keyed one-day encrypted envelope, never raw test output");
+  const frontendBuild = `      - name: Bauen (tsc + vite)
+        id: frontend_build
+        working-directory: src
+        shell: bash
+        env:
+          SCAI_ENCRYPTED_DIAGNOSTIC_PUBLIC_KEY_BASE64: \${{ inputs.diagnostic_public_key_base64 }}
+          SCAI_ENCRYPTED_DIAGNOSTIC_PATH: \${{ inputs.diagnostic_public_key_base64 != '' && format('{0}/scai-frontend-build-diagnostic.json', runner.temp) || '' }}
+        run: bash "$GITHUB_WORKSPACE/gate/scripts/run-confidential.sh" frontend-build npm run build`;
+  require(steps.filter(step => step === frontendBuild).length === 1
+    && steps.filter(step => /^        id: frontend_build$/m.test(step)).length === 1,
+    "pr-check.yml: Frontend build diagnostics require exact mandatory confidential keyed gate");
+  const frontendBuildUploads = steps.filter(step => step.includes("uses: actions/upload-artifact@") && step.includes("scai-frontend-build"));
+  require(frontendBuildUploads.length === 1 && frontendBuildUploads[0] === `      - name: Verschlüsselte Frontend-Build-Fehlerdiagnostik bereitstellen
+        if: failure() && steps.frontend_build.outcome == 'failure' && inputs.diagnostic_public_key_base64 != ''
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4, immutable
+        with:
+          name: scai-frontend-build-encrypted-diagnostic-\${{ github.run_id }}
+          path: \${{ runner.temp }}/scai-frontend-build-diagnostic.json
+          if-no-files-found: error
+          retention-days: 1`,
+    "pr-check.yml: Frontend build diagnostics require exact failed step one-day encrypted envelope");
   const webkit = `      - name: Host-Restore explizit mit WebKit beweisen
         id: host_restore_webkit
         working-directory: src

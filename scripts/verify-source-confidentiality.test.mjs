@@ -1159,3 +1159,15 @@ for (const label of ['agents-os','workforce-coordination']) test(`${label} rejec
  const changed=fixtures['pr-check.yml']+`\n      - name: Extra upload\n        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02\n        with:\n          path: \${{ runner.temp }}/scai-${label}-encrypted-proof.json\n`;
  assert.ok(validateSourceConfidentiality({...fixtures,'pr-check.yml':changed},assetSelector).some(e=>e.includes(`${label} visual proof`)));
 });
+
+for(const [label,before,after] of [
+ ['failure ignored','id: frontend_build','id: frontend_build\n        continue-on-error: true'],
+ ['proof skipped','id: frontend_build','id: frontend_build\n        if: false'],
+ ['wrapper skipped','run-confidential.sh" frontend-build','echo" frontend-build'],
+ ['raw upload','path: ${{ runner.temp }}/scai-frontend-build-diagnostic.json','path: src/'],
+ ['success upload',"if: failure() && steps.frontend_build.outcome == 'failure' && inputs.diagnostic_public_key_base64 != ''",'if: always()'],
+ ['key missing',"format('{0}/scai-frontend-build-diagnostic.json', runner.temp)","format('{0}/wrong-diagnostic.json', runner.temp)"],
+ ['upload failure ignored','- name: Verschlüsselte Frontend-Build-Fehlerdiagnostik bereitstellen','- name: Verschlüsselte Frontend-Build-Fehlerdiagnostik bereitstellen\n        continue-on-error: true'],
+])test(`frontend build diagnostic rejects ${label}`,()=>{
+ const original=fixtures['pr-check.yml'];assert.ok(original.includes(before));assert.ok(validateSourceConfidentiality({...fixtures,'pr-check.yml':original.replace(before,after)},assetSelector).some(e=>e.includes('Frontend build diagnostics')));
+});
