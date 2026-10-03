@@ -1142,3 +1142,20 @@ for (const key of ["email_full_peek", "backoffice_capacity", "agents_os", "workf
     });
   }
 }
+
+for (const [key,label] of [['agents_os','agents-os'],['workforce_coordination','workforce-coordination']]) {
+ const condition=`if: always() && steps.source_proofs.outputs.${key} == 'true' && (steps.${key}_proof.outcome == 'success' || steps.${key}_proof.outcome == 'failure') && steps.${key}_proof.outputs.encrypted_visual_receipt == 'true' && inputs.diagnostic_public_key_base64 != ''`;
+ for (const [name,before,after] of [
+  ['unconditional upload',condition,'if: always()'],
+  ['skipped proof upload',condition,`if: always() && inputs.diagnostic_public_key_base64 != ''`],
+  ['raw path',`path: \${{ runner.temp }}/scai-${label}-encrypted-proof.json`,'path: src/'],
+  ['long retention',`name: scai-${label}-encrypted-proof-\${{ github.run_id }}\n          path: \${{ runner.temp }}/scai-${label}-encrypted-proof.json\n          if-no-files-found: error\n          retention-days: 1`,`name: scai-${label}-encrypted-proof-\${{ github.run_id }}\n          path: \${{ runner.temp }}/scai-${label}-encrypted-proof.json\n          if-no-files-found: error\n          retention-days: 90`],
+  ['ignored upload failure',`- name: Verschluesselte ${label} Visualbelege bereitstellen`,`- name: Verschluesselte ${label} Visualbelege bereitstellen\n        continue-on-error: true`],
+ ]) test(`${label} visual receipt rejects ${name}`,()=>{
+  const original=fixtures['pr-check.yml'];assert.ok(original.includes(before));const changed=original.replace(before,after);assert.ok(validateSourceConfidentiality({...fixtures,'pr-check.yml':changed},assetSelector).some(e=>e.includes(`${label} visual proof`)));
+ });
+}
+for (const label of ['agents-os','workforce-coordination']) test(`${label} rejects duplicate visual envelope upload under another name`,()=>{
+ const changed=fixtures['pr-check.yml']+`\n      - name: Extra upload\n        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02\n        with:\n          path: \${{ runner.temp }}/scai-${label}-encrypted-proof.json\n`;
+ assert.ok(validateSourceConfidentiality({...fixtures,'pr-check.yml':changed},assetSelector).some(e=>e.includes(`${label} visual proof`)));
+});
