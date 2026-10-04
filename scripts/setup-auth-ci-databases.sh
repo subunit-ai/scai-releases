@@ -6,6 +6,11 @@ source_dir=$1; github_env=$2
 for helper in prepare-migration-fixture.ts seed-legacy-upgrade.sql run-proof-suite.sh; do
   test -f "$source_dir/scripts/ci/$helper" || { echo 'Private fixture helper missing' >&2; exit 65; }
 done
+native_fixture=false
+if [[ -e "$source_dir/migrations/059_native_execution.sql" || -e "$source_dir/scripts/ci/prepare-native-execution-fixture.ts" ]]; then
+  test -f "$source_dir/migrations/059_native_execution.sql" && test -f "$source_dir/scripts/ci/prepare-native-execution-fixture.ts" || { echo 'Incomplete native fixture source pair' >&2; exit 65; }
+  native_fixture=true
+fi
 host=${PGHOST:-127.0.0.1}; port=${PGPORT:-5432}; admin_user=${PGUSER:-postgres}
 case "$host" in 127.0.0.1|localhost) ;; *) echo 'Fixture PostgreSQL must use IPv4 loopback or localhost' >&2; exit 64 ;; esac
 [[ "$port" =~ ^[0-9]{1,5}$ && "$admin_user" =~ ^[a-z_][a-z0-9_]*$ ]] || exit 64
@@ -18,6 +23,7 @@ admin_password_encoded=$(bun -e 'process.stdout.write(encodeURIComponent(process
 admin_url="postgresql://${admin_user}:${admin_password_encoded}@${host}:${port}/postgres"
 psql_admin=(psql "$admin_url" -X -v ON_ERROR_STOP=1)
 databases=(test fresh upgrade workload cutover boundary atomic unknown drift account_recovery_security_test verification_code_atomicity_test)
+if "$native_fixture"; then databases+=(native_execution native_bridge native_unbridged); fi
 for name in "$migrator" "$owner" "$runtime" "${databases[@]/#/${prefix}_}"; do
   collision=$("${psql_admin[@]}" -v name="$name" -At <<'SQL'
 SELECT EXISTS (SELECT 1 FROM pg_roles WHERE rolname=:'name') OR EXISTS (SELECT 1 FROM pg_database WHERE datname=:'name');
@@ -48,6 +54,12 @@ psql "${migration_url}/${prefix}_upgrade" -X -v ON_ERROR_STOP=1 -f "$source_dir/
 run_migration upgrade
 prepare atomic 36
 prepare unknown 32
+if "$native_fixture"; then
+  run_migration native_execution
+  for kind in bridge unbridged; do
+    DATABASE_MIGRATION_URL="${migration_url}/${prefix}_native_${kind}" env -u DATABASE_URL -u DATABASE_RUNTIME_URL bun "$source_dir/scripts/ci/prepare-native-execution-fixture.ts" "$kind"
+  done
+fi
 # drift deliberately stays empty: its test asserts migration fails before any DDL.
 workload_secret=$(openssl rand -hex 32); vault_secret=$(openssl rand -hex 32); cutover_secret=$(openssl rand -hex 32)
 # Hex is converted to base64url without shell interpolation into executable code.
@@ -84,5 +96,15 @@ AUTH_DATABASE_UNKNOWN_MIGRATION_URL=${migration_url}/${prefix}_unknown
 AUTH_DATABASE_UNKNOWN_ADMIN_URL=${admin_url%/postgres}/${prefix}_unknown
 AUTH_DATABASE_INHERIT_DRIFT_URL=${migration_url}/${prefix}_drift
 EOF
+if "$native_fixture"; then
+  cat >> "$github_env" <<EOF
+AUTH_CI_NATIVE_EXECUTION_RUNTIME_URL=${runtime_url}/${prefix}_native_execution
+AUTH_CI_NATIVE_EXECUTION_ADMIN_URL=${admin_url%/postgres}/${prefix}_native_execution
+AUTH_NATIVE_EXECUTION_BRIDGE_MIGRATION_URL=${migration_url}/${prefix}_native_bridge
+AUTH_NATIVE_EXECUTION_BRIDGE_ADMIN_URL=${admin_url%/postgres}/${prefix}_native_bridge
+AUTH_NATIVE_EXECUTION_UNBRIDGED_MIGRATION_URL=${migration_url}/${prefix}_native_unbridged
+AUTH_NATIVE_EXECUTION_UNBRIDGED_ADMIN_URL=${admin_url%/postgres}/${prefix}_native_unbridged
+EOF
+fi
 chmod 600 "$github_env"
 echo 'PASS disposable Auth database fixtures prepared'
