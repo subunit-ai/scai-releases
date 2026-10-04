@@ -94,3 +94,14 @@ test('native receipt changing during its bounded fd read is rejected',()=>{
  try{assert.throws(()=>collectPrivateProof(root,'native-cli',1),/changed during read/);assert.equal(changed,true);}
  finally{fs.readSync=read;syncBuiltinESMExports();}
 });
+test('Radar inherits full-tree evidence validation, no native selected-receipt exception',()=>{
+ const {root,temp}=fixture();writeFileSync(join(root,'report.json'),'{}');writeFileSync(join(root,'scene.png'),png);
+ const bundle=JSON.parse(collectPrivateProof(root,'radar',0));assert.equal(bundle.files.length,2);
+ symlinkSync(join(temp,'unselected-private'),join(root,'unselected.log'));
+ assert.throws(()=>collectPrivateProof(root,'radar',1),/symlink rejected/);
+});
+test('Radar-only limit96MiB is bounded and other labels remain32MiB without large writes',()=>{
+ const {root}=fixture(),file=join(root,'huge.png');writeFileSync(file,png);truncateSync(file,96*1024*1024+1);
+ assert.throws(()=>collectPrivateProof(root,'radar',1),/exceeds limit/);
+ truncateSync(file,32*1024*1024+1);assert.throws(()=>collectPrivateProof(root,'agents-os',1),/exceeds limit/);
+});
