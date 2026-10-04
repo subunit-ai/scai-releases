@@ -613,6 +613,16 @@ jobs:
           if [ "$WINDOWS_SIGNING" = "true" ]; then
             BUILD_ARGS+=(--config src-tauri/tauri.windows-signing.json)
           fi
+          # Presence S3 (Quell-Repo docs/presence-wsl-hook.md): Der Claude-Code-
+          # Hook-Helfer wird für genau dieses Ziel gebaut (eigenes Target-
+          # Verzeichnis, --locked, statische CRT) und als Tauri-Sidecar neben
+          # subunit-scai.exe gelegt. Ältere Quellstände ohne den Helfer bleiben
+          # unverändert.
+          if [ "${RUNNER_OS:-}" = "Windows" ] && [ -f src-tauri/tauri.agent-hook.json ]; then
+            bash "$GITHUB_WORKSPACE/gate/scripts/run-confidential.sh" "agent-hook-$TARGET" \
+              node scripts/agent-hook/stage.mjs --target "$TARGET"
+            BUILD_ARGS+=(--config src-tauri/tauri.agent-hook.json)
+          fi
 
           # Cargo darf Tauri exakt EIN Produkt-Binary liefern. Zusätzliche
           # src/bin-Helfer führten in v0.131-v0.135 dazu, dass ein grüner Build
@@ -683,10 +693,14 @@ jobs:
           VERSION=$(node -p "require('./src/src-tauri/tauri.conf.json').version")
           BUNDLE_ROOT="$GITHUB_WORKSPACE/src/src-tauri/target/$TARGET/release/bundle"
           EVIDENCE="$RUNNER_TEMP/runtime-evidence-$TARGET.json"
+          AGENT_HOOK_ARGS=()
+          if [ -f "$GITHUB_WORKSPACE/src/src-tauri/tauri.agent-hook.json" ]; then
+            AGENT_HOOK_ARGS=(-AgentHook)
+          fi
           bash "$GITHUB_WORKSPACE/gate/scripts/run-confidential.sh" "package-runtime-$TARGET" \
             pwsh -NoProfile -File "$GITHUB_WORKSPACE/gate/scripts/run-package-smoke.ps1" \
             -Target "$TARGET" -BundleRoot "$BUNDLE_ROOT" -Version "$VERSION" \
-            -SourceSha "$SOURCE_SHA" -Output "$EVIDENCE"
+            -SourceSha "$SOURCE_SHA" -Output "$EVIDENCE" "${AGENT_HOOK_ARGS[@]}"
 
       - name: Secret-freien Runtime-Beleg validieren und sichern
         shell: bash
