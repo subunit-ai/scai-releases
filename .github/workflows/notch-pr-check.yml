@@ -1,0 +1,133 @@
+# Subunit Notch — SHA-gebundener PR-Check fuer das PRIVATE Quell-Repo.
+#
+# Das private Notch-Repo kann wegen der Org-Billing-Sperre derzeit keine Jobs
+# starten. Dieser ausschliesslich manuell ausloesbare Public-Runner checkt genau
+# einen vollstaendigen Commit-SHA read-only aus und fuehrt die benannten
+# Pruefschritte aus `scripts/ci-check.sh` des Notch-Repos aus (eine Quelle der
+# Wahrheit mit dessen eigener CI). Jede Ausgabe bleibt in fluechtigen Dateien
+# (run-confidential.sh); oeffentlich erscheinen nur PASS/FAIL je Schritt. Bei
+# Fehlern kann das private Protokoll nur als verschluesselter Umschlag an einen
+# Einmal-Empfaengerschluessel das Runner verlassen.
+
+name: Notch PR Check (private source)
+
+on:
+  workflow_dispatch:
+    inputs:
+      source_sha:
+        description: "Vollstaendiger subunit-notch-Commit-SHA"
+        required: true
+        type: string
+      base_sha:
+        description: "Optional: Basis-SHA fuer den Whitespace-Check (leer = ueberspringen)"
+        required: false
+        type: string
+        default: ""
+      diagnostic_public_key_base64:
+        description: "Optional: Einmal-RSA-Public-Key (PEM, base64, >= 3072 Bit) fuer verschluesselte Fehlerprotokolle"
+        required: false
+        type: string
+        default: ""
+
+permissions:
+  contents: read
+
+concurrency:
+  group: notch-pr-check-${{ inputs.source_sha }}
+  cancel-in-progress: true
+
+jobs:
+  checks:
+    name: Notch Selbsttests und Beweise
+    runs-on: macos-latest
+    timeout-minutes: 45
+    env:
+      SOURCE_SHA: ${{ inputs.source_sha }}
+      BASE_SHA: ${{ inputs.base_sha }}
+      DIAG_KEY: ${{ inputs.diagnostic_public_key_base64 }}
+    steps:
+      - name: Oeffentliche Gate-Tools auschecken
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2, immutable
+        with:
+          path: gate
+          persist-credentials: false
+
+      - name: Pins pruefen
+        shell: bash
+        run: |
+          set -euo pipefail
+          printf '%s' "$SOURCE_SHA" | grep -Eq '^[0-9a-f]{40}$'
+          if [ -n "$BASE_SHA" ]; then printf '%s' "$BASE_SHA" | grep -Eq '^[0-9a-f]{40}$'; fi
+          if [ -n "$DIAG_KEY" ]; then
+            node -e 'const k=require("node:crypto").createPublicKey(Buffer.from(process.env.DIAG_KEY,"base64").toString("utf8")); if(k.asymmetricKeyType!=="rsa"||k.asymmetricKeyDetails.modulusLength<3072){process.exit(1)}'
+          fi
+          echo "PASS notch-pr-check-pins (source-sha=$SOURCE_SHA)"
+
+      - name: Notch exakt und read-only auschecken
+        env:
+          SOURCE_DEPLOY_KEY: ${{ secrets.NOTCH_SOURCE_DEPLOY_KEY }}
+        run: bash gate/scripts/checkout-private-source.sh subunit-notch git@github.com:subunit-ai/subunit-notch.git "$SOURCE_SHA"
+
+      - name: Basis fuer Whitespace nachladen
+        if: inputs.base_sha != ''
+        env:
+          SOURCE_DEPLOY_KEY: ${{ secrets.NOTCH_SOURCE_DEPLOY_KEY }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          set +x
+          key="$RUNNER_TEMP/notch-base-key"; kh="$RUNNER_TEMP/notch-base-kh"
+          trap 'rm -f "$key" "$kh"' EXIT
+          printf '%s\n' "$SOURCE_DEPLOY_KEY" > "$key"; chmod 600 "$key"
+          { ssh-keyscan -t ed25519 github.com 2>/dev/null || true; } | { grep -v '^#' || true; } > "$kh"
+          fp=$(ssh-keygen -lf "$kh" -E sha256 | awk 'NR==1{print $2}')
+          [ "$fp" = "SHA256:+DiY3wvvV6TuJJhbpZisF/zLDA0zPMSvHdkr4UvCOqU" ] || { echo "::error::GitHub host key mismatch"; exit 68; }
+          export GIT_SSH_COMMAND="ssh -i $key -o IdentitiesOnly=yes -o UserKnownHostsFile=$kh -o StrictHostKeyChecking=yes"
+          cd private/subunit-notch
+          git remote add origin git@github.com:subunit-ai/subunit-notch.git
+          bash "$GITHUB_WORKSPACE/gate/scripts/run-confidential.sh" notch-base-fetch git fetch --depth 200 origin "$BASE_SHA" "$SOURCE_SHA"
+          git remote remove origin
+          echo "PASS notch-base-fetch"
+
+      - name: Pruefschritte
+        working-directory: private/subunit-notch
+        shell: bash
+        run: |
+          set -uo pipefail
+          test -f scripts/ci-check.sh || { echo "::error::scripts/ci-check.sh fehlt im Quellstand"; exit 1; }
+          diag_dir="$RUNNER_TEMP/notch-diagnostics"; mkdir -p "$diag_dir"
+          failed=0
+          names=$(bash scripts/ci-check.sh list 2>/dev/null)
+          for name in $names; do
+            case "$name" in *[!a-z0-9-]*|'') echo "::error::ungueltiger Pruefname"; exit 1 ;; esac
+            if [ "$name" = "whitespace" ]; then
+              if [ -z "$BASE_SHA" ]; then echo "SKIP whitespace (keine Basis)"; continue; fi
+              set -- "$BASE_SHA"
+            else
+              set --
+            fi
+            if [ -n "$DIAG_KEY" ]; then
+              export SCAI_ENCRYPTED_DIAGNOSTIC_PATH="$diag_dir/$name.envelope.json"
+              export SCAI_ENCRYPTED_DIAGNOSTIC_PUBLIC_KEY_BASE64="$DIAG_KEY"
+            fi
+            if ! bash "$GITHUB_WORKSPACE/gate/scripts/run-confidential.sh" "notch-$name" bash scripts/ci-check.sh "$name" "$@"; then
+              failed=$((failed + 1))
+            fi
+            unset SCAI_ENCRYPTED_DIAGNOSTIC_PATH SCAI_ENCRYPTED_DIAGNOSTIC_PUBLIC_KEY_BASE64
+          done
+          echo "Fehlgeschlagene Pruefschritte: $failed"
+          [ "$failed" -eq 0 ]
+
+      - name: Verschluesselte Fehlerprotokolle hochladen
+        if: failure() && inputs.diagnostic_public_key_base64 != ''
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4, immutable
+        with:
+          name: notch-diagnostics-${{ inputs.source_sha }}
+          path: ${{ runner.temp }}/notch-diagnostics/
+          retention-days: 3
+          if-no-files-found: ignore
+
+      - name: Privaten Quellstand entfernen
+        if: always()
+        shell: bash
+        run: rm -rf "$GITHUB_WORKSPACE/private"
