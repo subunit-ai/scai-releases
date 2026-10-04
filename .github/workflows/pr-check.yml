@@ -998,9 +998,22 @@ jobs:
           echo "CARGO_NET_GIT_FETCH_WITH_CLI=true" >> "$GITHUB_ENV"
 
       - name: cargo test (Sidecar-Trust-Modell + halo + verify-Suite)
+        id: cargo_test
         working-directory: src
         shell: bash
+        env:
+          SCAI_ENCRYPTED_DIAGNOSTIC_PUBLIC_KEY_BASE64: ${{ inputs.diagnostic_public_key_base64 }}
+          SCAI_ENCRYPTED_DIAGNOSTIC_PATH: ${{ inputs.diagnostic_public_key_base64 != '' && format('{0}/scai-cargo-test-diagnostic.json', runner.temp) || '' }}
         run: bash "$GITHUB_WORKSPACE/gate/scripts/run-confidential.sh" cargo-test cargo test --manifest-path src-tauri/Cargo.toml --lib --features local-meet
+
+      - name: Verschlüsselte Cargo-Test-Fehlerdiagnostik bereitstellen
+        if: failure() && steps.cargo_test.outcome == 'failure' && inputs.diagnostic_public_key_base64 != ''
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4, immutable
+        with:
+          name: scai-cargo-test-encrypted-diagnostic-${{ github.run_id }}
+          path: ${{ runner.temp }}/scai-cargo-test-diagnostic.json
+          if-no-files-found: error
+          retention-days: 1
 
       - name: Private Trace-Credentials entfernen
         if: always()
