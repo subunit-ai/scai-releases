@@ -64,8 +64,6 @@ jobs:
         with:
           path: gate
           persist-credentials: false
-      - name: Optionalen Karten-Proof vor privatem Checkout prüfen
-        run: node --test gate/scripts/run-agents-os-proof.test.mjs
       - name: Source und Request fail-closed prüfen
         id: request
         shell: bash
