@@ -1192,3 +1192,17 @@ for(const [label,transform] of [
 ])test(`cargo test diagnostic rejects ${label}`,()=>{
  const original=fixtures['pr-check.yml'];const start=original.indexOf('      - name: cargo test (Sidecar-Trust-Modell');const end=original.indexOf('      - name: Private Trace-Credentials entfernen',start);const block=original.slice(start,end);const altered=transform(block);assert.notEqual(altered,block);const changed=original.slice(0,start)+altered+original.slice(end);assert.ok(validateSourceConfidentiality({...fixtures,'pr-check.yml':changed},assetSelector).some(e=>e.includes('Cargo test diagnostics')));
 });
+for(const [name,mutate] of [
+ ['skip mandatory Radar',s=>s.replace("if: always() && steps.source_proofs.outputs.radar == 'true'","if: false")],
+ ['allow failed Radar',s=>s.replace('id: radar_proof','id: radar_proof\n        continue-on-error: true')],
+ ['raw Radar artifact',s=>s.replace('path: ${{ runner.temp }}/scai-radar-encrypted-proof.json','path: src/**')],
+ ['extend Radar retention',s=>s.replace(/(name: scai-radar-encrypted-proof-[\s\S]*?retention-days: )1/,'$27')],
+])test(name,()=>{
+ const unsafe={...fixtures,'pr-check.yml':mutate(fixtures['pr-check.yml'])};assert.ok(validateSourceConfidentiality(unsafe,assetSelector).some(e=>e.includes('radar')));
+});
+for(const field of ['SOURCE_SHA','REQUEST_ID'])test(`Radar rejects absent ${field} binding`,()=>{
+ const value=field==='SOURCE_SHA'?'source_sha':'request_id';
+ const block=fixtures['pr-check.yml'];const start=block.indexOf('      - name: Restored radar contract beweisen');
+ const prefix=block.slice(0,start),rest=block.slice(start).replace(`          ${field}: \${{ needs.preflight.outputs.${value} }}\n`,'');
+ assert.ok(validateSourceConfidentiality({...fixtures,'pr-check.yml':prefix+rest},assetSelector).some(e=>e.includes('radar')));
+});

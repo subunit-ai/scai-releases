@@ -20,3 +20,15 @@ workforce_coordination|src/plugins/projects/ProjectsRoot.tsx|import { Coordinati
 migration_host|src/components/settings/MigrationSettings.tsx|import { MigrationApp } from "./migration-ui";|scripts/verify-migration-host.mjs
 native_usage_core|src-tauri/src/lib.rs|mod native_usage;|src-tauri/crates/native-usage-harness/Cargo.toml
 CONTRACTS
+
+# Older Radar harnesses predate the Spotlight feature. Once either feature part
+# exists, both source parts and all three real proofs are mandatory.
+radar=false
+if [[ -f "$root/src/plugins/radar/spotlight.tsx" ]] || { [[ -f "$root/src/plugins/radar/explorer.tsx" ]] && grep -Fq 'import { RadarSpotlight } from "./spotlight";' "$root/src/plugins/radar/explorer.tsx"; }; then
+  [[ -f "$root/src/plugins/radar/spotlight.tsx" ]] && grep -Fq 'import { RadarSpotlight } from "./spotlight";' "$root/src/plugins/radar/explorer.tsx" || exit 65
+  for harness in verify-radar-territories.mjs verify-radar-intelligence.mjs verify-radar-plugin-update.mjs; do
+    [[ -f "$root/scripts/$harness" ]] || exit 65
+  done
+  radar=true
+fi
+printf 'radar=%s\n' "$radar"

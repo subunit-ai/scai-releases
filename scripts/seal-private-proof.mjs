@@ -5,16 +5,19 @@ import {join, relative, resolve} from 'node:path';
 import {spawnSync} from 'node:child_process';
 import {fileURLToPath} from 'node:url';
 import {createHash} from 'node:crypto';
+import {validateRadarBundle} from './run-radar-proof.mjs';
+export const RADAR_MAX_BUNDLE_BYTES = 96 * 1024 * 1024;
 export const MAX_BUNDLE_BYTES = 32 * 1024 * 1024;
 export function collectPrivateProof(root, label, proofExit) {
   const canonical = realpathSync(root), first = lstatSync(root);
   if (resolve(root) !== canonical || !first.isDirectory() || first.isSymbolicLink() || (first.mode & 0o777) !== 0o700 || first.uid !== process.getuid()) throw new Error('invalid private proof root');
+  const limit = label === 'radar' ? RADAR_MAX_BUNDLE_BYTES : MAX_BUNDLE_BYTES;
   const files = [], directories = []; let encoded = 0, visited = 0;
   function collectFile(path, name, stat) {
     if (!stat.isFile() || stat.isSymbolicLink() || stat.nlink !== 1 || (label === 'native-cli' && stat.uid !== process.getuid())) throw new Error('proof nonregular or hardlinked file rejected');
     const png = label !== 'native-cli' && name.endsWith('.png'), json = name.endsWith('.json') && /(?:^|[-_.])(report|receipt)(?:[-_.]|$)/.test(name.slice(0,-5));
     if (!png && !json) return;
-    if (files.length >= 512 || stat.size > MAX_BUNDLE_BYTES || encoded + Math.ceil(stat.size / 3) * 4 > MAX_BUNDLE_BYTES) throw new Error('proof bundle exceeds limit');
+    if (files.length >= 512 || stat.size > limit || encoded + Math.ceil(stat.size / 3) * 4 > limit) throw new Error('proof bundle exceeds limit');
     const fd = openSync(path, constants.O_RDONLY | constants.O_NOFOLLOW);
     let bytes;
     try {
@@ -71,14 +74,15 @@ export function collectPrivateProof(root, label, proofExit) {
     if (now.isSymbolicLink() || now.dev !== initial.dev || now.ino !== initial.ino || realpathSync(dir) !== dir) throw new Error('proof directory changed');
   }
   const bundle = Buffer.from(JSON.stringify({schema_version:1,label,proof_exit:proofExit,files}) + '\n');
-  if (bundle.length > MAX_BUNDLE_BYTES) throw new Error('proof bundle exceeds limit');
+  if (bundle.length > limit) throw new Error('proof bundle exceeds limit');
   return bundle;
 }
 export function sealPrivateProof(root, label, proofExit, runnerTemp, publicKey) {
-  if (!['agents-os','workforce-coordination','migration-host','native-cli'].includes(label) || !Number.isInteger(proofExit) || proofExit < 0 || proofExit > 255 || !publicKey) throw new Error('invalid proof sealing contract');
+  if (!['agents-os','workforce-coordination','migration-host','radar','native-cli'].includes(label) || !Number.isInteger(proofExit) || proofExit < 0 || proofExit > 255 || !publicKey) throw new Error('invalid proof sealing contract');
   const temp = realpathSync(runnerTemp);
   if (!realpathSync(root).startsWith(temp + '/')) throw new Error('proof root outside runner temp');
   const bundle = collectPrivateProof(root,label,proofExit);
+  if (label === 'radar' && proofExit === 0) validateRadarBundle(JSON.parse(bundle),process.env.SOURCE_SHA,process.env.REQUEST_ID);
   if (label === 'native-cli' && proofExit === 0) {
     const row = JSON.parse(bundle).files.find(file => file.path === 'receipt.json');
     if (!row) throw new Error('successful native proof requires receipt');
