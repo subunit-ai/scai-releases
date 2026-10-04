@@ -154,6 +154,27 @@ function requirePrContract(pr, require) {
           if-no-files-found: error
           retention-days: 1`,
     "pr-check.yml: Frontend build diagnostics require exact failed step one-day encrypted envelope");
+  const cargoTest = `      - name: cargo test (Sidecar-Trust-Modell + halo + verify-Suite)
+        id: cargo_test
+        working-directory: src
+        shell: bash
+        env:
+          SCAI_ENCRYPTED_DIAGNOSTIC_PUBLIC_KEY_BASE64: \${{ inputs.diagnostic_public_key_base64 }}
+          SCAI_ENCRYPTED_DIAGNOSTIC_PATH: \${{ inputs.diagnostic_public_key_base64 != '' && format('{0}/scai-cargo-test-diagnostic.json', runner.temp) || '' }}
+        run: bash "$GITHUB_WORKSPACE/gate/scripts/run-confidential.sh" cargo-test cargo test --manifest-path src-tauri/Cargo.toml --lib --features local-meet`;
+  require(steps.filter(step => step === cargoTest).length === 1
+    && steps.filter(step => /^        id: cargo_test$/m.test(step)).length === 1,
+    "pr-check.yml: Cargo test diagnostics require exact mandatory confidential keyed gate");
+  const cargoTestUploads = steps.filter(step => step.includes("uses: actions/upload-artifact@") && step.includes("scai-cargo-test"));
+  require(cargoTestUploads.length === 1 && cargoTestUploads[0] === `      - name: Verschlüsselte Cargo-Test-Fehlerdiagnostik bereitstellen
+        if: failure() && steps.cargo_test.outcome == 'failure' && inputs.diagnostic_public_key_base64 != ''
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4, immutable
+        with:
+          name: scai-cargo-test-encrypted-diagnostic-\${{ github.run_id }}
+          path: \${{ runner.temp }}/scai-cargo-test-diagnostic.json
+          if-no-files-found: error
+          retention-days: 1`,
+    "pr-check.yml: Cargo test diagnostics require exact failed step one-day encrypted envelope");
   const webkit = `      - name: Host-Restore explizit mit WebKit beweisen
         id: host_restore_webkit
         working-directory: src
