@@ -79,8 +79,13 @@ jobs:
           key="$RUNNER_TEMP/notch-base-key"; kh="$RUNNER_TEMP/notch-base-kh"
           trap 'rm -f "$key" "$kh"' EXIT
           printf '%s\n' "$SOURCE_DEPLOY_KEY" > "$key"; chmod 600 "$key"
-          { ssh-keyscan -t ed25519 github.com 2>/dev/null || true; } | { grep -v '^#' || true; } > "$kh"
-          fp=$(ssh-keygen -lf "$kh" -E sha256 | awk 'NR==1{print $2}')
+          # Statisch gepinnter, von GitHub veroeffentlichter ED25519-Host-Schluessel
+          # (Fingerabdruck SHA256:+DiY3wvvV6TuJJhbpZisF/zLDA0zPMSvHdkr4UvCOqU) —
+          # keine Abfrage zur Laufzeit, genau eine Zeile.
+          printf '%s\n' 'github.com ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOMqqnkVzrm0SdG6UOoqKLsabgH5C9okWi0dh2l9GKJl' > "$kh"
+          chmod 600 "$kh"
+          [ "$(wc -l < "$kh" | tr -d '[:space:]')" = "1" ] || { echo "::error::known_hosts muss genau eine Zeile haben"; exit 68; }
+          fp=$(ssh-keygen -lf "$kh" -E sha256 | awk '{print $2}')
           [ "$fp" = "SHA256:+DiY3wvvV6TuJJhbpZisF/zLDA0zPMSvHdkr4UvCOqU" ] || { echo "::error::GitHub host key mismatch"; exit 68; }
           export GIT_SSH_COMMAND="ssh -i $key -o IdentitiesOnly=yes -o UserKnownHostsFile=$kh -o StrictHostKeyChecking=yes"
           cd private/subunit-notch
