@@ -1171,3 +1171,24 @@ for(const [label,before,after] of [
 ])test(`frontend build diagnostic rejects ${label}`,()=>{
  const original=fixtures['pr-check.yml'];assert.ok(original.includes(before));assert.ok(validateSourceConfidentiality({...fixtures,'pr-check.yml':original.replace(before,after)},assetSelector).some(e=>e.includes('Frontend build diagnostics')));
 });
+
+for(const [label,before,after] of [
+ ['failure ignored','id: cargo_test','id: cargo_test\n        continue-on-error: true'],
+ ['proof skipped','id: cargo_test','id: cargo_test\n        if: false'],
+ ['wrapper skipped','run-confidential.sh" cargo-test','echo" cargo-test'],
+ ['raw upload','path: ${{ runner.temp }}/scai-cargo-test-diagnostic.json','path: src/'],
+ ['success upload',"if: failure() && steps.cargo_test.outcome == 'failure' && inputs.diagnostic_public_key_base64 != ''",'if: always()'],
+ ['key missing',"format('{0}/scai-cargo-test-diagnostic.json', runner.temp)","format('{0}/wrong-diagnostic.json', runner.temp)"],
+ ['upload failure ignored','- name: Verschlüsselte Cargo-Test-Fehlerdiagnostik bereitstellen','- name: Verschlüsselte Cargo-Test-Fehlerdiagnostik bereitstellen\n        continue-on-error: true'],
+])test(`cargo test diagnostic rejects ${label}`,()=>{
+ const original=fixtures['pr-check.yml'];assert.ok(original.includes(before));assert.ok(validateSourceConfidentiality({...fixtures,'pr-check.yml':original.replace(before,after)},assetSelector).some(e=>e.includes('Cargo test diagnostics')));
+});
+
+for(const [label,transform] of [
+ ["missing recipient",s=>s.replace('SCAI_ENCRYPTED_DIAGNOSTIC_PUBLIC_KEY_BASE64: ${{ inputs.diagnostic_public_key_base64 }}',"SCAI_ENCRYPTED_DIAGNOSTIC_PUBLIC_KEY_BASE64: ''")],
+ ["long retention",s=>s.replace('retention-days: 1','retention-days: 2')],
+ ["filtered command",s=>s.replace('--lib --features local-meet','--lib --features local-meet native_usage')],
+ ["duplicate upload",s=>s+'\n'+s.slice(s.indexOf('      - name: Verschlüsselte Cargo-Test-Fehlerdiagnostik bereitstellen'))],
+])test(`cargo test diagnostic rejects ${label}`,()=>{
+ const original=fixtures['pr-check.yml'];const start=original.indexOf('      - name: cargo test (Sidecar-Trust-Modell');const end=original.indexOf('      - name: Private Trace-Credentials entfernen',start);const block=original.slice(start,end);const altered=transform(block);assert.notEqual(altered,block);const changed=original.slice(0,start)+altered+original.slice(end);assert.ok(validateSourceConfidentiality({...fixtures,'pr-check.yml':changed},assetSelector).some(e=>e.includes('Cargo test diagnostics')));
+});
