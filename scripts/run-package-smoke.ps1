@@ -3,7 +3,10 @@ param(
   [Parameter(Mandatory = $true)][string]$BundleRoot,
   [Parameter(Mandatory = $true)][string]$Version,
   [Parameter(Mandatory = $true)][string]$SourceSha,
-  [Parameter(Mandatory = $true)][string]$Output
+  [Parameter(Mandatory = $true)][string]$Output,
+  # Presence S3: Der Claude-Code-Hook-Helfer muss neben subunit-scai.exe liegen
+  # und auf diesem Ziel nativ starten (statische CRT, keine Runtime nötig).
+  [switch]$AgentHook
 )
 
 $ErrorActionPreference = "Stop"
@@ -25,6 +28,20 @@ if ($install.ExitCode -ne 0) { throw "NSIS installer failed with exit $($install
 
 $binaries = @(Get-ChildItem -LiteralPath $installRoot -Recurse -Filter "subunit-scai.exe" -File)
 if ($binaries.Count -ne 1) { throw "Expected exactly one installed subunit-scai.exe, found $($binaries.Count)" }
+
+if ($AgentHook) {
+  $helper = Join-Path (Split-Path -Parent $binaries[0].FullName) "scai-agent-hook.exe"
+  if (-not (Test-Path -LiteralPath $helper -PathType Leaf)) { throw "scai-agent-hook.exe missing next to subunit-scai.exe" }
+  $helperCount = @(Get-ChildItem -LiteralPath $installRoot -Recurse -Filter "scai-agent-hook.exe" -File).Count
+  if ($helperCount -ne 1) { throw "Expected exactly one installed scai-agent-hook.exe, found $helperCount" }
+  $versionOut = & $helper --version
+  if ($LASTEXITCODE -ne 0 -or "$versionOut" -notmatch '^[0-9]+\.[0-9]+\.[0-9]+$') { throw "scai-agent-hook --version failed" }
+  # Ohne laufendes SCAI gibt es keine Pipe: der Helfer muss das sauber melden
+  # (Exit 1, fester Code) statt abzustürzen.
+  $pingOut = & $helper --ping
+  if ($LASTEXITCODE -ne 1 -or "$pingOut" -ne "no_pipe") { throw "scai-agent-hook --ping without SCAI did not report no_pipe" }
+  Write-Output "PASS agent hook helper ${Target}: present, starts natively, reports no_pipe without SCAI"
+}
 
 $proofPath = Join-Path $env:RUNNER_TEMP "runtime-installed-$Target.json"
 $env:SCAI_RELEASE_SMOKE_EVIDENCE = $proofPath

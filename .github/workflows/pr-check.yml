@@ -1037,12 +1037,34 @@ jobs:
           SCAI_ENCRYPTED_DIAGNOSTIC_PATH: ${{ inputs.diagnostic_public_key_base64 != '' && format('{0}/scai-cargo-test-diagnostic.json', runner.temp) || '' }}
         run: bash "$GITHUB_WORKSPACE/gate/scripts/run-confidential.sh" cargo-test cargo test --manifest-path src-tauri/Cargo.toml --lib --features local-meet
 
+      # Presence S3 (Quell-Repo docs/presence-wsl-hook.md): Hook-Helfer und sein
+      # Schwärzungs-Kern sind eigene Workspace-Mitglieder; `--lib` des App-Pakets
+      # erfasst ihre eigenen Tests nicht.
+      - name: cargo test Agenten-Hook (Helfer + Schwärzungs-Kern)
+        id: agent_hook_test
+        if: hashFiles('src/src-tauri/crates/scai-agent-hook/Cargo.toml') != ''
+        working-directory: src
+        shell: bash
+        env:
+          SCAI_ENCRYPTED_DIAGNOSTIC_PUBLIC_KEY_BASE64: ${{ inputs.diagnostic_public_key_base64 }}
+          SCAI_ENCRYPTED_DIAGNOSTIC_PATH: ${{ inputs.diagnostic_public_key_base64 != '' && format('{0}/scai-agent-hook-test-diagnostic.json', runner.temp) || '' }}
+        run: bash "$GITHUB_WORKSPACE/gate/scripts/run-confidential.sh" agent-hook-test cargo test --locked --manifest-path src-tauri/Cargo.toml -p scai-agent-hook -p scai-agent-hook-core --all-features
+
       - name: Verschlüsselte Cargo-Test-Fehlerdiagnostik bereitstellen
         if: failure() && steps.cargo_test.outcome == 'failure' && inputs.diagnostic_public_key_base64 != ''
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4, immutable
         with:
           name: scai-cargo-test-encrypted-diagnostic-${{ github.run_id }}
           path: ${{ runner.temp }}/scai-cargo-test-diagnostic.json
+          if-no-files-found: error
+          retention-days: 1
+
+      - name: Verschlüsselte Agenten-Hook-Test-Fehlerdiagnostik bereitstellen
+        if: failure() && steps.agent_hook_test.outcome == 'failure' && inputs.diagnostic_public_key_base64 != ''
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4, immutable
+        with:
+          name: scai-agent-hook-test-encrypted-diagnostic-${{ github.run_id }}
+          path: ${{ runner.temp }}/scai-agent-hook-test-diagnostic.json
           if-no-files-found: error
           retention-days: 1
 
@@ -1423,9 +1445,60 @@ jobs:
       # Kein Paket, Tag oder Release: dieses Gate kompiliert exakt die nativen
       # Versandfeatures, damit der private Trace-Pin nicht erst im Release auffällt.
       - name: SCAI mit nativer Trace-/Meet-Engine prüfen
+        id: native_cargo_check
         working-directory: src
         shell: bash
+        env:
+          SCAI_ENCRYPTED_DIAGNOSTIC_PUBLIC_KEY_BASE64: ${{ inputs.diagnostic_public_key_base64 }}
+          SCAI_ENCRYPTED_DIAGNOSTIC_PATH: ${{ inputs.diagnostic_public_key_base64 != '' && format('{0}/scai-native-cargo-check-diagnostic.json', runner.temp) || '' }}
         run: bash "$GITHUB_WORKSPACE/gate/scripts/run-confidential.sh" native-cargo-check cargo check --locked --manifest-path src-tauri/Cargo.toml --features local-meet
+
+      - name: Verschlüsselte native Cargo-Check-Fehlerdiagnostik bereitstellen
+        if: failure() && steps.native_cargo_check.outcome == 'failure' && inputs.diagnostic_public_key_base64 != ''
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4, immutable
+        with:
+          name: scai-native-cargo-check-encrypted-diagnostic-${{ matrix.label }}-${{ github.run_id }}
+          path: ${{ runner.temp }}/scai-native-cargo-check-diagnostic.json
+          if-no-files-found: error
+          retention-days: 1
+
+      # Presence S3: Pipe, Prozess-/Token-Prüfung und der Helfer selbst laufen
+      # auf echtem Windows — Pipe-Rundreise mit echter DACL als Test, danach
+      # startet das gebaute Programm ohne SCAI und meldet sauber `no_pipe`.
+      - name: Agenten-Hook-Helfer auf Windows testen und starten
+        id: agent_hook_windows
+        if: matrix.label == 'windows-x64' && hashFiles('src/src-tauri/crates/scai-agent-hook/Cargo.toml') != ''
+        working-directory: src
+        shell: bash
+        env:
+          SCAI_ENCRYPTED_DIAGNOSTIC_PUBLIC_KEY_BASE64: ${{ inputs.diagnostic_public_key_base64 }}
+          SCAI_ENCRYPTED_DIAGNOSTIC_PATH: ${{ inputs.diagnostic_public_key_base64 != '' && format('{0}/scai-agent-hook-windows-diagnostic.json', runner.temp) || '' }}
+        run: |
+          set -euo pipefail
+          bash "$GITHUB_WORKSPACE/gate/scripts/run-confidential.sh" agent-hook-windows-test \
+            cargo test --locked --manifest-path src-tauri/Cargo.toml -p scai-agent-hook --all-features
+          bash "$GITHUB_WORKSPACE/gate/scripts/run-confidential.sh" agent-hook-windows-build \
+            node scripts/agent-hook/stage.mjs --target x86_64-pc-windows-msvc
+          helper=src-tauri/binaries/scai-agent-hook-x86_64-pc-windows-msvc.exe
+          "$helper" --version | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$'
+          set +e
+          ping=$("$helper" --ping)
+          code=$?
+          set -e
+          if [ "$code" != "1" ] || [ "$ping" != "no_pipe" ]; then
+            echo "::error::scai-agent-hook --ping ohne SCAI meldete nicht no_pipe"
+            exit 1
+          fi
+          echo "PASS agent-hook windows-x64 (Test, Bau, Start ohne SCAI)"
+
+      - name: Verschlüsselte Agenten-Hook-Windows-Fehlerdiagnostik bereitstellen
+        if: failure() && steps.agent_hook_windows.outcome == 'failure' && inputs.diagnostic_public_key_base64 != ''
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4, immutable
+        with:
+          name: scai-agent-hook-windows-encrypted-diagnostic-${{ github.run_id }}
+          path: ${{ runner.temp }}/scai-agent-hook-windows-diagnostic.json
+          if-no-files-found: error
+          retention-days: 1
 
       # Ein zusätzlicher src/bin-Helfer darf nie wieder als Tauri-Produkt im
       # Installer landen. Cargo-Metadata muss exakt subunit-scai aus main.rs zeigen.
