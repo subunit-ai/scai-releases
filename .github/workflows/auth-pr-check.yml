@@ -94,7 +94,30 @@ jobs:
         run: |
           set -euo pipefail
           sudo apt-get update
-          sudo apt-get install -y postgresql-client
+          # Extract immutable-version server/client packages; never run their postinst.
+          # This creates no default cluster and starts/stops no PostgreSQL service.
+          pg_version=$(apt-cache madison postgresql-16 | awk '$3 ~ /^16\.14-/ {print $3; exit}')
+          test -n "$pg_version" || { echo 'PostgreSQL16.14 package prerequisite unavailable' >&2; exit 65; }
+          mkdir -m 700 "$RUNNER_TEMP/auth-pg-packages" "$RUNNER_TEMP/auth-pg16"
+          for package in postgresql-16 postgresql-client-16; do
+            (cd "$RUNNER_TEMP/auth-pg-packages" && apt-get download "$package=$pg_version")
+          done
+          pg_debs=("$RUNNER_TEMP/auth-pg-packages/"*.deb)
+          test "${#pg_debs[@]}" -eq 2
+          mapfile -t pg_libs < <(dpkg-deb --field "${pg_debs[0]}" Depends; dpkg-deb --field "${pg_debs[1]}" Depends)
+          mapfile -t pg_libs < <(printf '%s\n' "${pg_libs[@]}" | tr ',' '\n' | sed -n 's/^ *\(lib[a-z0-9.+-]*\).*/\1/p' | LC_ALL=C sort -u)
+          test "${#pg_libs[@]}" -gt 0
+          sudo apt-get install --no-install-recommends -y "${pg_libs[@]}"
+          for package in "${pg_debs[@]}"; do dpkg-deb --extract "$package" "$RUNNER_TEMP/auth-pg16"; done
+          pg_bin="$RUNNER_TEMP/auth-pg16/usr/lib/postgresql/16/bin"
+          test -x "$pg_bin/psql"
+          export PATH="$pg_bin:$PATH"
+          printf '%s\n' "$pg_bin" >> "$GITHUB_PATH"
+          test -x /opt/google/chrome/chrome || { echo 'Owned CTAP2 proof requires installed Chrome' >&2; exit 65; }
+          npm install --prefix "$RUNNER_TEMP/auth-browser" --no-save --ignore-scripts --package-lock=false playwright@1.61.0
+          echo "AUTH_CI_PROOF_BUN=$(command -v bun)" >> "$GITHUB_ENV"
+          echo "AUTH_CI_PROOF_PG_BIN=$RUNNER_TEMP/auth-pg16/usr/lib/postgresql/16/bin" >> "$GITHUB_ENV"
+          echo "VAULT_STEPUP_PLAYWRIGHT_MODULE=$RUNNER_TEMP/auth-browser/node_modules/playwright/index.mjs" >> "$GITHUB_ENV"
           openssl genpkey -algorithm ED25519 -out "$RUNNER_TEMP/auth-cutover-discovery-private.pem" >/dev/null 2>&1
           openssl pkey -pubout -in "$RUNNER_TEMP/auth-cutover-discovery-private.pem" -out "$RUNNER_TEMP/auth-cutover-discovery-public.pem" >/dev/null 2>&1
           chmod 600 "$RUNNER_TEMP/auth-cutover-discovery-private.pem" "$RUNNER_TEMP/auth-cutover-discovery-public.pem"
