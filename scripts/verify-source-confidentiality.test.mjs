@@ -21,6 +21,48 @@ test("current public source workflows fail closed on source confidentiality", ()
   assert.deepEqual(validateSourceConfidentiality(fixtures, assetSelector), []);
 });
 
+function meetStep(name) {
+  const steps = fixtures["pr-check.yml"].split(/^      - name: /m);
+  const matches = steps.filter(step => step.startsWith(`${name}\n`));
+  assert.equal(matches.length, 1, `exactly one ${name} step`);
+  return matches[0];
+}
+
+test("Meet proof stays mandatory and pairs optional encryption with its own envelope", () => {
+  const proof = meetStep("Meet-Plugin visuell und interaktiv beweisen");
+  assert.match(proof, /^        id: meet_visual_proof$/m);
+  assert.match(proof, /^        working-directory: src$/m);
+  assert.match(proof, /^          PROOF_RUN_ID: ci$/m);
+  assert.match(proof, /^          SCAI_ENCRYPTED_DIAGNOSTIC_PUBLIC_KEY_BASE64: \$\{\{ inputs\.diagnostic_public_key_base64 \}\}$/m);
+  assert.ok(proof.includes("SCAI_ENCRYPTED_DIAGNOSTIC_PATH: ${{ inputs.diagnostic_public_key_base64 != '' && format('{0}/scai-meet-diagnostic.json', runner.temp) || '' }}"));
+  assert.match(proof, /^        run: bash "\$GITHUB_WORKSPACE\/gate\/scripts\/run-confidential\.sh" meet-visual-proof node scripts\/verify-meet-plugin\.mjs$/m);
+  assert.doesNotMatch(proof, /^        (?:if|continue-on-error|timeout-minutes):/m);
+  assert.equal(fixtures["pr-check.yml"].match(/^        id: meet_visual_proof$/gm)?.length, 1);
+});
+
+test("Meet encrypted upload requires its own failure and recipient with one-day retention", () => {
+  const upload = meetStep("Verschlüsselte Meet-Fehlerdiagnostik bereitstellen");
+  assert.match(upload, /^        if: failure\(\) && steps\.meet_visual_proof\.outcome == 'failure' && inputs\.diagnostic_public_key_base64 != ''$/m);
+  assert.match(upload, /^        uses: actions\/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4, immutable$/m);
+  assert.match(upload, /^          name: scai-meet-encrypted-diagnostic-\$\{\{ github\.run_id \}\}$/m);
+  assert.match(upload, /^          path: \$\{\{ runner\.temp \}\}\/scai-meet-diagnostic\.json$/m);
+  assert.match(upload, /^          if-no-files-found: error$/m);
+  assert.match(upload, /^          retention-days: 1$/m);
+  assert.doesNotMatch(upload, /^        continue-on-error:/m);
+});
+
+test("public Meet uploads exclude session databases, fixture source and raw diagnostics", () => {
+  const screenshots = meetStep("Meet-Proof-Screenshots sichern");
+  assert.match(screenshots, /^        if: always\(\)$/m);
+  assert.match(screenshots, /^        uses: actions\/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4, immutable$/m);
+  assert.match(screenshots, /^          path: ~\/\.cache\/u1-shots\/scai-meet-plugin\/ci\/\*\*\/\*\.png$/m);
+  assert.equal(screenshots.match(/^          path:/gm)?.length, 1);
+  assert.doesNotMatch(screenshots, /^            \S/m, "no multiline extra upload paths");
+  const uploads = fixtures["pr-check.yml"].split(/^      - name: /m)
+    .filter(step => step.includes("uses: actions/upload-artifact@") && /scai-meet/.test(step));
+  assert.equal(uploads.length, 2, "only PNG screenshots and the encrypted failure envelope");
+});
+
 test("u1-chat test diagnostics reject missing keys, public plaintext and broad uploads", () => {
   const name = "u1-chat-pr-check.yml";
   const cases = [
