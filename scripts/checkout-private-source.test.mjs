@@ -172,3 +172,38 @@ fi
   assert.equal(existsSync(join(runnerTemp, "scai-u1-chat-known-hosts")), false);
   cleanup(testRoot);
 });
+
+for (const component of ['sonar-tauri', 'bridge-tauri', 'trace-tauri']) test(`Sonar-Quellen verlangen je einen eigenen Deploy-Key: ${component}`, () => {
+  const result = invoke([component, `git@github.com:subunit-ai/${component}.git`, SHA], { SOURCE_DEPLOY_KEY: '' });
+  assert.equal(result.status, 65);
+  cleanup(result.testRoot);
+});
+for (const [name, tagSha, fetchStatus, status] of [
+  ['leichter oder annotierter Tag stimmt', SHA, 0, 0],
+  ['Tag zeigt auf anderen Commit', 'b'.repeat(40), 0, 67],
+  ['Tag fehlt oder Transport scheitert', SHA, 1, 1],
+]) test(`Komponenten-Drift-Guard: ${name}`, t => {
+  const root = mkdtempSync(join(tmpdir(), 'sonar-tag-checkout-'));
+  t.after(() => cleanup(root));
+  const bin = join(root, 'bin'), runnerTemp = join(root, 'runner'), workspace = join(root, 'workspace');
+  for (const path of [bin, runnerTemp, workspace]) mkdirSync(path);
+  const gitLog = join(root, 'git.log');
+  writeMock(bin, 'ssh-keyscan', "printf '%s\\n' 'github.com ssh-ed25519 AAAAPINNED'");
+  writeMock(bin, 'ssh-keygen', "printf '%s\\n' '256 SHA256:+DiY3wvvV6TuJJhbpZisF/zLDA0zPMSvHdkr4UvCOqU github.com (ED25519)'");
+  writeMock(bin, 'git', `
+printf '%s\\n' "$*" >> "$MOCK_GIT_LOG"
+if [ "\${1:-}" = init ]; then mkdir -p "\${3:?}/.git";
+elif [ "\${3:-}" = rev-parse ]; then
+  if [ "\${4:-}" = 'FETCH_HEAD^{commit}' ]; then printf '%s\\n' "$MOCK_TAG_SHA"; else printf '%s\\n' "$MOCK_SOURCE_SHA"; fi
+elif [ "\${3:-}" = fetch ] && [[ "$*" == *refs/tags/* ]]; then exit "$MOCK_TAG_STATUS";
+fi`);
+  const secret = 'PRIVATE_DEPLOY_KEY_CANARY';
+  const result = spawnSync('bash', [HELPER, 'bridge-tauri', 'git@github.com:subunit-ai/bridge-tauri.git', SHA, 'v0.4.9'], {
+    encoding: 'utf8', env: { ...process.env, PATH: `${bin}:${process.env.PATH}`, RUNNER_TEMP: runnerTemp, GITHUB_WORKSPACE: workspace, SOURCE_DEPLOY_KEY: secret, MOCK_GIT_LOG: gitLog, MOCK_SOURCE_SHA: SHA, MOCK_TAG_SHA: tagSha, MOCK_TAG_STATUS: String(fetchStatus) },
+  });
+  assert.equal(result.status, status, result.stdout + result.stderr);
+  assert.doesNotMatch(result.stdout + result.stderr, new RegExp(secret));
+  assert.match(readFileSync(gitLog, 'utf8'), /fetch --depth 1 -- origin refs\/tags\/v0\.4\.9/);
+  assert.equal(existsSync(join(runnerTemp, 'scai-bridge-tauri-deploy-key')), false);
+  assert.equal(existsSync(join(runnerTemp, 'scai-bridge-tauri-known-hosts')), false);
+});

@@ -6,11 +6,11 @@ import { dirname, join, resolve } from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
 
-import { validatePrRequest, validateSourceConfidentiality } from "./verify-source-confidentiality.mjs";
+import { validatePrRequest, validateSourceConfidentiality, validateSonarHelpers } from "./verify-source-confidentiality.mjs";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const fixtures = Object.fromEntries(
-  ["pr-check.yml", "build-all.yml", "windows-arm-smoke.yml", "u1-chat-pr-check.yml", "auth-pr-check.yml", "atlas-pr-check.yml", "fleet-source-check.yml", "native-cli-hermetic.yml"].map((name) => [
+  ["sonar-build.yml", "pr-check.yml", "build-all.yml", "windows-arm-smoke.yml", "u1-chat-pr-check.yml", "auth-pr-check.yml", "atlas-pr-check.yml", "fleet-source-check.yml", "native-cli-hermetic.yml"].map((name) => [
     name,
     readFileSync(join(ROOT, ".github/workflows", name), "utf8"),
   ]),
@@ -1261,4 +1261,64 @@ for(const field of ['SOURCE_SHA','REQUEST_ID'])test(`Radar rejects absent ${fiel
  const block=fixtures['pr-check.yml'];const start=block.indexOf('      - name: Restored radar contract beweisen');
  const prefix=block.slice(0,start),rest=block.slice(start).replace(`          ${field}: \${{ needs.preflight.outputs.${value} }}\n`,'');
  assert.ok(validateSourceConfidentiality({...fixtures,'pr-check.yml':prefix+rest},assetSelector).some(e=>e.includes('radar')));
+});
+
+// Mutationen an jeder vertraulichen Grenze müssen die geschlossene Sonar-Policy brechen.
+for (const [name, mutate] of [
+  ['automatischer Trigger', s => s.replace('  workflow_dispatch:', '  push:')],
+  ['schreibende CI-Permissions', s => s.replace('contents: read', 'contents: write')],
+  ['parallele Release-Gruppe', s => s.replace('group: sonar-release', 'group: sonar-${{ inputs.tag }}')],
+  ['Build ohne Preflight', s => s.replace('needs: preflight', 'needs: []')],
+  ['Publish trotz roter Matrix', s => s.replace('needs: [preflight, build]', 'needs: preflight')],
+  ['Quellcode-Upload', s => s.replace('path: ${{ runner.temp }}/sonar-installers/', 'path: private/')],
+  ['Sidecar-Upload', s => s.replace('path: ${{ runner.temp }}/sonar-installers/', 'path: private/sonar-tauri/src-tauri/binaries/')],
+  ['Klartext-Diagnose', s => s.replace('path: ${{ runner.temp }}/sonar-diagnostic.json', 'path: private/build.log')],
+  ['Screenshot-Upload', s => s.replace('path: ${{ runner.temp }}/sonar-diagnostic.json', 'path: private/screenshot.png')],
+  ['lange Retention', s => s.replace('retention-days: 1', 'retention-days: 7')],
+  ['öffentlicher Build', s => s.replace('bash gate/scripts/run-confidential.sh sonar-tauri ', '')],
+  ['öffentliche Installation', s => s.replace('bash gate/scripts/run-confidential.sh sonar-frontend ', '')],
+  ['fehlender Deploy-Key', s => s.replace('secrets.SONAR_SOURCE_DEPLOY_KEY', 'secrets.GITHUB_TOKEN')],
+  ['fremdes App-Token-Ziel', s => s.replace('repositories: sonar-releases', 'repositories: sonar-tauri')],
+  ['unpinned Action', s => s.replace('create-github-app-token@fee1f7d63c2ff003460e3d139729b119787bc349', 'create-github-app-token@v2')],
+  ['kein Tag-Drift-Guard', s => s.replace('"$SOURCE_SHA" "$COMPONENT_TAG"', '"$SOURCE_SHA"')],
+  ['mutable Source', s => s.replace('needs.preflight.outputs.source_sha', 'inputs.source_sha')],
+  ['private Build-Caches', s => s + '\n      - uses: actions/cache@' + 'a'.repeat(40) + '\n'],
+  ['Clobber', s => s.replace('publish "$RUNNER_TEMP/sonar-installers"', 'publish "$RUNNER_TEMP/sonar-installers" --clobber')],
+  ['tauri-action-Release', s => s + '\n      - uses: tauri-apps/tauri-action@' + 'a'.repeat(40) + '\n'],
+  ['set-x', s => s.replace('run: bash gate/scripts/run-confidential.sh sonar-tauri', 'run: set -x; bash gate/scripts/run-confidential.sh sonar-tauri')],
+  ['Build-Fehler ignorieren', s => s.replace('name: Tauri-Bundles und Updater-Signaturen bauen', 'name: Tauri-Bundles und Updater-Signaturen bauen\n        continue-on-error: true')],
+  ['Upload ungeprüfter Dateien', s => s.replace('run-confidential.sh sonar-collect', 'run-confidential.sh ungeprüft')],
+  ['fehlende Signaturprüfung', s => s.replace('run-confidential.sh sonar-manifest', 'run-confidential.sh ungeprüft')],
+  ['Diagnose ohne Einmalschlüssel', s => s.replace("if: failure() && inputs.diagnostic_public_key_base64 != ''", 'if: always()')],
+  ['zusätzlicher YAML-Bypass', s => s.replace('jobs:', 'env:\n  ACTIONS_STEP_DEBUG: true\njobs:')],
+]) test(`Sonar-Policy sperrt ${name}`, () => {
+  const original = fixtures['sonar-build.yml'];
+  const changed = mutate(original);
+  assert.notEqual(changed, original);
+  assert.ok(validateSourceConfidentiality({ ...fixtures, 'sonar-build.yml': changed }, assetSelector).some(e => e.startsWith('sonar-build.yml:')));
+});
+test('Sonar-Policy verlangt den Workflow auch bei fehlendem Inventareintrag', () => {
+  const { 'sonar-build.yml': omitted, ...rest } = fixtures;
+  assert.ok(omitted);
+  assert.ok(validateSourceConfidentiality(rest, assetSelector).some(e => e.startsWith('sonar-build.yml:')));
+});
+
+test('Sonar-Policy bindet auch die ausgeführten Helfer an den geprüften Vertrag', () => {
+  const helpers = Object.fromEntries(['sonar-build.sh', 'sonar-minisign.sh', 'sonar-release.mjs'].map(name => [name, readFileSync(join(ROOT, 'scripts', name), 'utf8')]));
+  assert.deepEqual(validateSonarHelpers(helpers), []);
+  for (const name of Object.keys(helpers)) {
+    assert.ok(validateSonarHelpers({ ...helpers, [name]: helpers[name] + '\n# ungeprüfte Änderung\n' }).some(e => e.includes(name)));
+    assert.ok(validateSonarHelpers({ ...helpers, [name]: undefined }).some(e => e.includes(name)));
+  }
+  for (const [name, before, after] of [
+    ['sonar-build.sh', 'bun install --frozen-lockfile', 'bun install'],
+    ['sonar-build.sh', "bun_target=bun-windows-x64", "bun_target=bun-windows-arm64"],
+    ['sonar-minisign.sh', 'sha256sum -c -', 'true'],
+    ['sonar-release.mjs', "checkRemote(releaseTag);", "// Vorflug übersprungen"],
+    ['sonar-release.mjs', "['release', 'upload', releaseTag", "['release', 'upload', '--clobber', releaseTag"],
+    ['sonar-release.mjs', "verify(join(directory, name), Buffer.from(signature, 'base64'));", "// Signaturprüfung übersprungen"],
+  ]) {
+    assert.ok(helpers[name].includes(before));
+    assert.ok(validateSonarHelpers({ ...helpers, [name]: helpers[name].replace(before, after) }).some(e => e.includes(name)));
+  }
 });

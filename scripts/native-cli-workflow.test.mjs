@@ -10,7 +10,7 @@ import {NATIVE_CLI_WORKFLOW} from './native-cli-workflow-policy.mjs';
 import {validateSourceConfidentiality} from './verify-source-confidentiality.mjs';
 import {validateNativeCliProofMode,validateNativeCliRequest} from './validate-native-cli-request.mjs';
 const workflow='native-cli-hermetic.yml';
-const files=['pr-check.yml','build-all.yml','windows-arm-smoke.yml','u1-chat-pr-check.yml','auth-pr-check.yml','atlas-pr-check.yml','fleet-source-check.yml',workflow];
+const files=['sonar-build.yml','pr-check.yml','build-all.yml','windows-arm-smoke.yml','u1-chat-pr-check.yml','auth-pr-check.yml','atlas-pr-check.yml','fleet-source-check.yml',workflow];
 const fixtures=Object.fromEntries(files.map(name=>[name,readFileSync(new URL(`../.github/workflows/${name}`,import.meta.url),'utf8')]));
 const selector=readFileSync(new URL('./validate-release-assets.sh',import.meta.url),'utf8');
 const {publicKey,privateKey}=generateKeyPairSync('rsa',{modulusLength:3072});const publicBase64=Buffer.from(publicKey.export({type:'spki',format:'pem'})).toString('base64');

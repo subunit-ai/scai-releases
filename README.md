@@ -123,3 +123,9 @@ Disk-Image-Mount kontrollieren; installiert wird weiterhin der App-Bundle bzw. d
 Dieser interne Bundle ist ausdrücklich **nicht kundentauglich**: Solange Developer ID,
 Notarisierung und Gatekeeper-Abnahme fehlen, dient er ausschließlich dem physischen TCC-/Capture-
 Canary auf unserem eigenen Mac.
+
+`sonar-build.yml` baut einen exakten privaten Sonar-Commit mit gebundenen Bridge-/Trace-Pins
+vertraulich auf fünf Targets. Nur fertige Installer, Updater-Payloads, Signaturen und
+`latest.json` gelangen nach `subunit-ai/sonar-releases`; vorhandene Tags/Releases und
+nicht monotone Versionen werden abgewiesen. Fehlerdiagnosen sind nur mit dem optionalen
+Einmal-RSA-Schlüssel verschlüsselt und für einen Tag verfügbar.
