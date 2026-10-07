@@ -55,3 +55,57 @@ for (const target of TARGETS) test(`Tauri ${target}: Updater-Key ist Pflicht, Bu
   const tauri = h.calls().find(c => c.tool === 'bun');
   assert.deepEqual(tauri.args, ['run', 'tauri', 'build', '--target', target, '--bundles', target.includes('apple') ? 'app,dmg' : target.includes('windows') ? 'nsis' : 'deb']);
 });
+
+for (const [name, selfSigned, identityOutput, trustStatus, identityStatus, expected] of [
+  ['Apple-issued valid identity', false, 'valid', 99, 0, 0],
+  ['self-signed valid identity', true, 'valid', 0, 0, 0],
+  ['self-signed trust failure', true, 'valid', 1, 0, 1],
+  ['Apple-issued missing identity', false, 'missing', 99, 0, 65],
+  ['self-signed missing identity', true, 'missing', 0, 0, 65],
+  ['similar identity is not exact', false, 'similar', 99, 0, 65],
+  ['invalid identity annotation', false, 'invalid', 99, 0, 65],
+  ['identity query failure', false, 'valid', 99, 1, 1],
+]) test(`mac-sign: ${name}`, t => {
+  const root = mkdtempSync(join(tmpdir(), 'sonar-sign-test-'));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  const bin = join(root, 'bin'), log = join(root, 'security.log');
+  mkdirSync(bin);
+  const mock = (name, body) => {
+    const file = join(bin, name);
+    writeFileSync(file, `#!/usr/bin/env bash\nset -euo pipefail\n${body}\n`);
+    chmodSync(file, 0o755);
+  };
+  mock('openssl', `
+case "$1" in
+  rand) echo fixture-password ;;
+  x509)
+    if [[ "$*" == *-subject* ]]; then echo 'subject=CN=Fixture';
+    elif [ "$MOCK_SELF_SIGNED" = true ]; then echo 'issuer=CN=Fixture';
+    else echo 'issuer=CN=Apple Development CA'; fi ;;
+  *) exit 99 ;;
+esac`);
+  mock('sudo', 'exec "$@"');
+  mock('security', `
+printf '%s\\n' "$*" >> "$MOCK_LOG"
+case "$1" in
+  find-certificate) echo certificate-fixture ;;
+  add-trusted-cert) exit "$MOCK_TRUST_STATUS" ;;
+  find-identity)
+    [ "$*" = "find-identity -v -p codesigning $RUNNER_TEMP/sonar-build.keychain-db" ]
+    case "$MOCK_IDENTITY" in
+      valid) printf '  1) ABCDEF0123456789 "%s"\\n  1 valid identities found\\n' "$APPLE_SIGNING_IDENTITY" ;;
+      missing) echo '  0 valid identities found' ;;
+      similar) printf '  1) ABCDEF "%s other"\\n' "$APPLE_SIGNING_IDENTITY" ;;
+      invalid) printf '  1) ABCDEF "%s" (CSSMERR_TP_CERT_EXPIRED)\\n' "$APPLE_SIGNING_IDENTITY" ;;
+    esac
+    exit "$MOCK_IDENTITY_STATUS" ;;
+esac`);
+  const result = spawnSync('bash', [join(ROOT, 'scripts/sonar-build.sh'), 'mac-sign'], {
+    encoding: 'utf8', env: { ...process.env, PATH: `${bin}:${process.env.PATH}`, RUNNER_TEMP: root, GITHUB_WORKSPACE: root, APPLE_CERTIFICATE: Buffer.from('fixture').toString('base64'), APPLE_SIGNING_IDENTITY: 'Apple Development: Fixture (TEAM)', MOCK_LOG: log, MOCK_SELF_SIGNED: String(selfSigned), MOCK_TRUST_STATUS: String(trustStatus), MOCK_IDENTITY_STATUS: String(identityStatus), MOCK_IDENTITY: identityOutput },
+  });
+  assert.equal(result.status, expected, result.stdout + result.stderr);
+  const calls = readFileSync(log, 'utf8');
+  assert.equal(calls.includes('add-trusted-cert'), selfSigned);
+  assert.equal(calls.includes('find-identity -v -p codesigning'), !(selfSigned && trustStatus));
+  if (expected === 65) assert.match(result.stderr, /identity is not valid/);
+});

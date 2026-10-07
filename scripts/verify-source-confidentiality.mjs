@@ -403,7 +403,7 @@ export function validateSonarWorkflow(workflow) {
 
 // Die Upload- und Release-Logik liegt in Helfern; auch diese gehören zur Allowlist.
 const SONAR_HELPER_SHA256 = {
-  "sonar-build.sh": "715b97849802e491a796a5b57bdd4374e6aad3e47cfbc3846abb6b445f6c0cbe",
+  "sonar-build.sh": "c097e04499d5de831359a3e81e7e23cb3d394df7d0c08e5182119ccb4491dd88",
   "sonar-minisign.sh": "366958a33688dbea00fe52b49be5a5429971a58cf2f8f887267509c5bb91bc73",
   "sonar-release.mjs": "19c94cfabdef604c5352812b04d012760f4ac814e55bb4b892b8402d44824294",
 };
