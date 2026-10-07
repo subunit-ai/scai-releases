@@ -235,7 +235,7 @@ printf '%s\\n' "$*" >> "$MOCK_SSH_LOG"
 case "$2" in "$HOME/.ssh/scai-sonar-tauri-deploy-key."*) ;; *) exit 99 ;; esac
 [ -f "$2" ]
 [ "$(cat "$2")" = PRIVATE_DEPLOY_KEY_CANARY ]
-[ "$(stat -f '%Lp' "$2" 2>/dev/null || stat -c '%a' "$2")" = 600 ]
+[ "$(stat -c '%a' "$2" 2>/dev/null || stat -f '%Lp' "$2")" = 600 ]
 grep -F 'github.com ssh-ed25519 AAAAPINNED scai-checkout-' "$HOME/.ssh/known_hosts" >/dev/null
 if [ "$MOCK_FAILURE" = fetch ]; then echo 'PRIVATE_FETCH_ERROR_CANARY' >&2; exit 128; fi`);
     writeMock(bin, 'git', `
