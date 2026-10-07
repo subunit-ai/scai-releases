@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // Geschlossener Sonar-Vertrag: nur Installer, Updater-Payloads und deren Signaturen.
-import { appendFileSync, copyFileSync, lstatSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
+import { appendFileSync, copyFileSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, unlinkSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createHash, createPublicKey } from 'node:crypto';
@@ -70,6 +70,65 @@ export function targetAssets(releaseTag, target) {
   return [name, `${name}.sig`];
 }
 export const assetNames = releaseTag => [...TARGETS.flatMap(t => targetAssets(releaseTag, t)), 'latest.json'].sort();
+
+export function verifyFrontend(source) {
+  const config = json(join(source, 'src-tauri/tauri.conf.json'));
+  if (config.build?.frontendDist !== '../dist' || (config.bundle?.resources && Object.keys(config.bundle.resources).length)) {
+    throw Error('Ungeprüfter Frontend- oder Ressourcenpfad');
+  }
+  const visit = directory => {
+    const stat = lstatSync(directory);
+    if (!stat.isDirectory() || stat.isSymbolicLink()) throw Error('Ungültiges Frontend-Verzeichnis');
+    for (const name of readdirSync(directory)) {
+      const path = join(directory, name), entry = lstatSync(path);
+      if (entry.isSymbolicLink()) throw Error('Frontend-Symlink');
+      if (entry.isDirectory()) visit(path);
+      else {
+        if (!entry.isFile() || /\.(?:map|[cm]?tsx?|jsx|rs|log)$/i.test(name)) throw Error('Quelltext oder Diagnose im Frontend');
+        if (/\.(?:[cm]?js|css|html)$/i.test(name) && /(?:\/\/[#@]|\/\*[#@])\s*sourceMappingURL\s*=/.test(readFileSync(path, 'utf8'))) {
+          throw Error('Frontend enthält Sourcemap-Verweis');
+        }
+      }
+    }
+  };
+  visit(join(source, 'dist'));
+  regular(join(source, 'dist/index.html'));
+}
+
+export function assertTargetInventory(directory, releaseTag, target) {
+  const stat = lstatSync(directory);
+  if (!stat.isDirectory() || stat.isSymbolicLink()) throw Error('Ungültiges Installer-Verzeichnis');
+  const expected = targetAssets(releaseTag, target).sort();
+  if (JSON.stringify(readdirSync(directory).sort()) !== JSON.stringify(expected)) throw Error('Unerlaubtes Target-Inventar');
+  for (const name of expected) regular(join(directory, name));
+  return expected.map(name => join(resolve(directory), name));
+}
+
+// Never trust a filename/glob to prove that a diagnostic was encrypted. Seal
+// every matching byte again; plaintext or forged inner envelopes stay private.
+function sealDiagnostics(root, key, output) {
+  validateRequest('a'.repeat(40), 'v0.0.0', key);
+  if (!key) throw Error('Diagnose-Empfänger fehlt');
+  const files = [], maxBytes = 64 * 1024 * 1024;
+  let bytes = 0;
+  for (const name of readdirSync(root).sort().filter(n => /^sonar-diagnostic(?:-[A-Za-z0-9._-]+)?\.json$/.test(n))) {
+    const path = join(root, name);
+    regular(path);
+    bytes += lstatSync(path).size;
+    if (bytes > maxBytes) throw Error('Diagnose zu groß');
+    files.push({ name, data_base64: readFileSync(path).toString('base64') });
+  }
+  if (!files.length) return;
+  const sealed = mkdtempSync(join(root, 'sonar-sealed-diagnostic.'));
+  const payload = join(sealed, 'payload'), envelope = join(sealed, 'envelope.json');
+  try {
+    writeFileSync(payload, JSON.stringify({ schema_version: 1, files }), { flag: 'wx', mode: 0o600 });
+    execFileSync(process.execPath, [join(fileURLToPath(new URL('.', import.meta.url)), 'encrypt-confidential-log.mjs'), payload, envelope, key], { stdio: 'pipe' });
+    appendFileSync(output, `path=${envelope}\n`);
+  } finally {
+    try { unlinkSync(payload); } catch (error) { if (error.code !== 'ENOENT') throw error; }
+  }
+}
 
 function collect(source, directory, releaseTag, target) {
   // Nur die fertigen Bundle-Dateien lesen; weder target/release noch binaries/ hochladen.
@@ -156,6 +215,12 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
       appendFileSync(process.env.GITHUB_OUTPUT, Object.entries(pins).map(([k, v]) => `${k}=${v}\n`).join(''));
     } else if (mode === 'check-remote') checkRemote(releaseTag);
     else if (mode === 'collect') collect(args[0], args[1], releaseTag, args[2]);
+    else if (mode === 'frontend-proof') verifyFrontend(args[0]);
+    else if (mode === 'delivery') {
+      const paths = assertTargetInventory(args[0], releaseTag, args[1]);
+      appendFileSync(process.env.GITHUB_OUTPUT, `paths<<SONAR_INSTALLER_PATHS\n${paths.join('\n')}\nSONAR_INSTALLER_PATHS\n`);
+    }
+    else if (mode === 'seal-diagnostics') sealDiagnostics(process.env.RUNNER_TEMP, process.env.SCAI_ENCRYPTED_DIAGNOSTIC_PUBLIC_KEY_BASE64, process.env.GITHUB_OUTPUT);
     else if (mode === 'prepare') prepare(args[0], args[1], releaseTag);
     else if (mode === 'publish') publish(args[0], releaseTag);
     else throw Error('Unbekannter Sonar-Modus');

@@ -6,7 +6,7 @@ import { fileURLToPath } from 'node:url';
 import { spawnSync, execFileSync } from 'node:child_process';
 import { generateKeyPairSync } from 'node:crypto';
 import test from 'node:test';
-import { REPOSITORY, TARGETS, validateRequest, validateSource, assertRemoteState, targetAssets, assetNames, assertInventory, createManifest } from './sonar-release.mjs';
+import { REPOSITORY, TARGETS, validateRequest, validateSource, assertRemoteState, targetAssets, assetNames, assertInventory, assertTargetInventory, verifyFrontend, createManifest } from './sonar-release.mjs';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const SHA = 'a'.repeat(40), TAG = 'v1.2.3';
@@ -23,6 +23,75 @@ function fixture(t) {
 function invoke(mode, args, env) {
   return spawnSync('node', [join(ROOT, 'scripts/sonar-release.mjs'), mode, ...args], { encoding: 'utf8', env: { ...process.env, TAG, ...env } });
 }
+
+for (const target of TARGETS) test(`Upload barrier ${target}: exact files, no source/log/symlink extras`, t => {
+  const { root } = fixture(t), directory = join(root, 'delivery'); mkdirSync(directory);
+  for (const name of targetAssets(TAG, target)) writeFileSync(join(directory, name), 'installer');
+  assert.deepEqual(assertTargetInventory(directory, TAG, target).map(path => path.slice(directory.length + 1)).sort(), targetAssets(TAG, target).sort());
+  for (const name of ['private.ts', 'debug.map', 'build.log', 'sidecar.exe', '.hidden']) {
+    writeFileSync(join(directory, name), 'PRIVATE_CANARY');
+    assert.throws(() => assertTargetInventory(directory, TAG, target));
+    rmSync(join(directory, name));
+  }
+  const alias = join(root, 'alias'); symlinkSync(directory, alias);
+  assert.throws(() => assertTargetInventory(alias, TAG, target));
+  const name = targetAssets(TAG, target)[0]; rmSync(join(directory, name));
+  symlinkSync(join(root, 'private-source'), join(directory, name));
+  assert.throws(() => assertTargetInventory(directory, TAG, target));
+});
+
+for (const bad of ['map', 'inline-map', 'external-map', 'ts', 'nested-rs', 'log', 'symlink', 'dist-symlink', 'resources', 'frontend-path']) test(`Frontend confidentiality rejects ${bad}`, t => {
+  const { root } = fixture(t), source = join(root, 'source');
+  mkdirSync(join(source, 'src-tauri'), { recursive: true }); mkdirSync(join(source, 'dist'));
+  const cfg = { build: { frontendDist: '../dist' } };
+  writeFileSync(join(source, 'src-tauri/tauri.conf.json'), JSON.stringify(cfg));
+  writeFileSync(join(source, 'dist/index.html'), '<script src="/assets/compiled.js"></script>');
+  mkdirSync(join(source, 'dist/assets')); writeFileSync(join(source, 'dist/assets/compiled.js'), 'console.log("compiled")');
+  assert.doesNotThrow(() => verifyFrontend(source));
+  if (bad === 'map') writeFileSync(join(source, 'dist/assets/compiled.js.map'), '{"sourcesContent":["PRIVATE_CANARY"]}');
+  if (bad === 'inline-map' || bad === 'external-map') writeFileSync(join(source, 'dist/assets/compiled.js'), `//# sourceMappingURL=${bad === 'inline-map' ? 'data:application/json;base64,UElWQVRF' : 'https://example.invalid/private.map'}`);
+  if (bad === 'ts' || bad === 'nested-rs' || bad === 'log') writeFileSync(join(source, `dist/assets/private.${bad === 'nested-rs' ? 'rs' : bad}`), 'PRIVATE_CANARY');
+  if (bad === 'symlink') symlinkSync(join(source, 'src-tauri'), join(source, 'dist/private'));
+  if (bad === 'dist-symlink') { rmSync(join(source, 'dist'), { recursive: true }); symlinkSync(join(source, 'src-tauri'), join(source, 'dist')); }
+  if (bad === 'resources') cfg.bundle = { resources: ['../src/**'] };
+  if (bad === 'frontend-path') cfg.build.frontendDist = '../src';
+  writeFileSync(join(source, 'src-tauri/tauri.conf.json'), JSON.stringify(cfg));
+  assert.throws(() => verifyFrontend(source));
+});
+
+test('diagnostic upload re-encrypts every byte, including plaintext/forged glob matches, and keeps nested failures', t => {
+  const { root } = fixture(t), output = join(root, 'output');
+  const { publicKey, privateKey } = generateKeyPairSync('rsa', { modulusLength: 3072 });
+  const key = Buffer.from(publicKey.export({ type: 'spki', format: 'pem' })).toString('base64');
+  const original = ['sonar-diagnostic.json', 'sonar-diagnostic-checkout-sonar-tauri-fetch-1.json', 'sonar-diagnostic-sonar-checkout-2.json'];
+  for (const name of original) writeFileSync(join(root, name), 'PRIVATE_CANARY:'+name);
+  writeFileSync(join(root, 'unrelated.json'), 'DO_NOT_UPLOAD');
+  const result = invoke('seal-diagnostics', [], { RUNNER_TEMP: root, GITHUB_OUTPUT: output, SCAI_ENCRYPTED_DIAGNOSTIC_PUBLIC_KEY_BASE64: key });
+  assert.equal(result.status, 0, result.stderr);
+  const path = readFileSync(output, 'utf8').trim().slice('path='.length);
+  const envelope = readFileSync(path, 'utf8');
+  assert.doesNotMatch(envelope, /PRIVATE_CANARY|sonar-diagnostic|DO_NOT_UPLOAD/);
+  assert.deepEqual(readdirSync(dirname(path)), ['envelope.json']);
+  const priv = join(root, 'recipient.pem'), plaintext = join(root, 'decoded');
+  writeFileSync(priv, privateKey.export({ type: 'pkcs8', format: 'pem' }));
+  execFileSync(process.execPath, [join(ROOT, 'scripts/decrypt-confidential-envelope.mjs'), path, plaintext, priv]);
+  const bundle = JSON.parse(readFileSync(plaintext, 'utf8'));
+  assert.deepEqual(bundle.files.map(f => f.name).sort(), original.sort());
+  for (const file of bundle.files) assert.equal(Buffer.from(file.data_base64, 'base64').toString(), 'PRIVATE_CANARY:'+file.name);
+});
+
+for (const kind of ['missing-key', 'weak-key', 'symlink', 'directory', 'empty', 'oversize']) test(`diagnostic sealing fails closed: ${kind}`, t => {
+  const { root } = fixture(t), output = join(root, 'output'), diagnostic = join(root, 'sonar-diagnostic.json');
+  const { publicKey } = generateKeyPairSync('rsa', { modulusLength: kind === 'weak-key' ? 2048 : 3072 });
+  const key = Buffer.from(publicKey.export({ type: 'spki', format: 'pem' })).toString('base64');
+  if (kind === 'directory') mkdirSync(diagnostic);
+  else if (kind === 'symlink') symlinkSync(join(root, 'assets'), diagnostic);
+  else writeFileSync(diagnostic, kind === 'empty' ? '' : kind === 'oversize' ? Buffer.alloc(64 * 1024 * 1024 + 1) : 'PRIVATE_CANARY');
+  const result = invoke('seal-diagnostics', [], { RUNNER_TEMP: root, GITHUB_OUTPUT: output, SCAI_ENCRYPTED_DIAGNOSTIC_PUBLIC_KEY_BASE64: kind === 'missing-key' ? '' : key });
+  assert.notEqual(result.status, 0);
+  assert.doesNotMatch(result.stdout + result.stderr, /PRIVATE_CANARY/);
+  assert.equal(existsSync(output), false);
+});
 
 test('Sonar-Auftrag validiert SHA, stabile SemVer und einmaligen RSA-Schlüssel fail-closed', () => {
   assert.deepEqual(validateRequest(SHA, TAG), { source_sha: SHA, tag: TAG });

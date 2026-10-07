@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { spawnSync } from "node:child_process";
@@ -26,6 +26,82 @@ function invoke(args, env = {}) {
 function cleanup(testRoot) {
   rmSync(testRoot, { recursive: true, force: true });
 }
+
+for (const platform of ['Linux', 'MINGW64_NT-10.0']) {
+  for (const failure of ['success', 'init', 'fetch', 'detach', 'drift', 'TERM', 'KILL', 'keygen']) {
+    test(`Credential lifecycle (${platform}, ${failure})`, t => {
+      const root = mkdtempSync(join(tmpdir(), 'checkout-lifecycle-'));
+      t.after(() => cleanup(root));
+      const bin = join(root, 'bin'), runner = join(root, 'runner'), workspace = join(root, 'workspace'), testHome = join(root, 'home');
+      for (const path of [bin, runner, workspace, join(testHome, '.ssh')]) mkdirSync(path, { recursive: true });
+      const output = join(root, 'env'), githubEnv = join(root, 'github-env');
+      writeFileSync(githubEnv, 'UNCHANGED\n');
+      const outsideKey = join(root, 'outside-key');
+      writeFileSync(outsideKey, 'PRESERVE');
+      // The previous Unix helper followed this predictable symlink and left
+      // the credential in its target after removing only the symlink.
+      symlinkSync(outsideKey, join(runner, 'scai-sonar-tauri-deploy-key'));
+      writeMock(bin, 'uname', 'echo "$MOCK_PLATFORM"');
+      writeMock(bin, 'cygpath', 'printf "%s\\n" "$2"');
+      writeMock(bin, 'ssh-keyscan', "echo 'github.com ssh-ed25519 AAAAPINNED'");
+      writeMock(bin, 'ssh-keygen', `
+[ "\${SOURCE_DEPLOY_KEY+x}" != x ]
+if [ "$MOCK_FAILURE" = keygen ]; then exit 19; fi
+echo '256 SHA256:+DiY3wvvV6TuJJhbpZisF/zLDA0zPMSvHdkr4UvCOqU github.com (ED25519)'`);
+      writeMock(bin, 'git', `
+[ "\${SOURCE_DEPLOY_KEY+x}" != x ]
+case "$1" in
+  init)
+    if [ "$MOCK_FAILURE" = TERM ]; then kill -TERM "$PPID"; exit 0; fi
+    if [ "$MOCK_FAILURE" = KILL ]; then kill -KILL "$PPID"; exit 0; fi
+    if [ "$MOCK_FAILURE" = init ]; then exit 20; fi
+    mkdir -p "$3/.git" ;;
+  -C)
+    if [ "$3" = fetch ] || [ "$3" = checkout ]; then
+      if [ "$MOCK_FAILURE" = fetch ] && [ "$3" = fetch ]; then exit 21; fi
+      if [ "$MOCK_FAILURE" = detach ] && [ "$3" = checkout ]; then exit 22; fi
+    fi
+    if [ "$3" = rev-parse ]; then
+      if [ "$MOCK_FAILURE" = drift ]; then printf '%040d\\n' 1; else echo "$MOCK_SHA"; fi
+    fi ;;
+esac`);
+      const env = { ...process.env, PATH: `${bin}:${process.env.PATH}`, HOME: testHome, RUNNER_TEMP: runner, GITHUB_WORKSPACE: workspace, GITHUB_ENV: githubEnv, GITHUB_OUTPUT: output, SOURCE_DEPLOY_KEY: 'PRIVATE_DEPLOY_KEY_CANARY', MOCK_FAILURE: failure, MOCK_PLATFORM: platform, MOCK_SHA: SHA };
+      const result = spawnSync('bash', [HELPER, 'sonar-tauri', 'git@github.com:subunit-ai/sonar-tauri.git', SHA], { env, encoding: 'utf8', timeout: 10000 });
+      if (failure === 'KILL') assert.equal(result.signal, 'SIGKILL');
+      else assert.equal(result.status, { success: 0, init: 20, fetch: 21, detach: 22, drift: 67, TERM: 143, keygen: 19 }[failure], result.stdout + result.stderr);
+      assert.doesNotMatch(result.stdout + result.stderr, /PRIVATE_DEPLOY_KEY_CANARY|scai-checkout-credentials/);
+      const credentialRoot = platform === 'Linux' ? runner : join(testHome, '.ssh');
+      const leases = readdirSync(credentialRoot).filter(n => n.startsWith('scai-checkout-credentials.'));
+      assert.equal(leases.length, failure === 'KILL' ? 1 : 0);
+      if (failure === 'KILL') {
+        assert.equal(statSync(join(credentialRoot, leases[0])).mode & 0o777, 0o700);
+        assert.equal(statSync(join(credentialRoot, leases[0], 'key')).mode & 0o777, 0o600);
+      }
+      const swept = spawnSync('bash', [HELPER, '--cleanup-credentials'], { env, encoding: 'utf8' });
+      assert.equal(swept.status, 0, swept.stderr);
+      assert.deepEqual(readdirSync(credentialRoot).filter(n => n.startsWith('scai-checkout-credentials.')), []);
+      assert.equal(readFileSync(githubEnv, 'utf8'), 'UNCHANGED\n');
+      assert.equal(readFileSync(outsideKey, 'utf8'), 'PRESERVE');
+      assert.equal(existsSync(output), false);
+    });
+  }
+}
+
+test('credential barrier refuses symlink leases and unexpected contents', t => {
+  const root = mkdtempSync(join(tmpdir(), 'checkout-sweep-'));
+  t.after(() => cleanup(root));
+  const testHome = join(root, 'home'); mkdirSync(testHome);
+  const outside = join(root, 'outside'); mkdirSync(outside);
+  writeFileSync(join(outside, 'key'), 'PRESERVE');
+  const lease = join(root, 'scai-checkout-credentials.fixture');
+  symlinkSync(outside, lease);
+  const run = () => spawnSync('bash', [HELPER, '--cleanup-credentials'], { encoding: 'utf8', env: { ...process.env, HOME: testHome, RUNNER_TEMP: root } });
+  assert.notEqual(run().status, 0);
+  assert.equal(readFileSync(join(outside, 'key'), 'utf8'), 'PRESERVE');
+  rmSync(lease); mkdirSync(lease); writeFileSync(join(lease, 'unexpected'), 'PRESERVE');
+  assert.notEqual(run().status, 0);
+  assert.equal(readFileSync(join(lease, 'unexpected'), 'utf8'), 'PRESERVE');
+});
 
 function writeMock(binDir, name, body) {
   const target = join(binDir, name);
@@ -231,12 +307,21 @@ if [ "$MOCK_FAILURE" = host ]; then echo '256 SHA256:WRONG github.com (ED25519)'
 else echo '256 SHA256:+DiY3wvvV6TuJJhbpZisF/zLDA0zPMSvHdkr4UvCOqU github.com (ED25519)'; fi`);
     writeMock(bin, 'ssh', `
 printf '%s\\n' "$*" >> "$MOCK_SSH_LOG"
-[ "$#" = 6 ] && [ "$1" = -i ] && [ "$3" = -o ] && [ "$4" = IdentitiesOnly=yes ] && [ "$5" = -o ] && [ "$6" = StrictHostKeyChecking=yes ]
-case "$2" in "$HOME/.ssh/scai-sonar-tauri-deploy-key."*) ;; *) exit 99 ;; esac
+[ "$#" = 14 ] && [ "$1" = -i ] && [ "$3" = -F ] && [ "$4" = /dev/null ]
+[ "$5" = -o ] && [ "$6" = IdentitiesOnly=yes ] && [ "$7" = -o ]
+[ "$9" = -o ] && [ "\${10}" = GlobalKnownHostsFile=/dev/null ]
+[ "\${11}" = -o ] && [ "\${12}" = HostKeyAlgorithms=ssh-ed25519 ]
+[ "\${13}" = -o ] && [ "\${14}" = StrictHostKeyChecking=yes ]
+case "$2" in "$HOME/.ssh/scai-checkout-credentials."*/key) ;; *) exit 99 ;; esac
 [ -f "$2" ]
 [ "$(cat "$2")" = PRIVATE_DEPLOY_KEY_CANARY ]
-[ "$(stat -c '%a' "$2" 2>/dev/null || stat -f '%Lp' "$2")" = 600 ]
-grep -F 'github.com ssh-ed25519 AAAAPINNED scai-checkout-' "$HOME/.ssh/known_hosts" >/dev/null
+node - "$2" <<'NODE'
+const fs = require('node:fs'), assert = require('node:assert/strict');
+assert.equal(fs.statSync(process.argv[2]).mode & 0o777, 0o600);
+NODE
+[ "\${SOURCE_DEPLOY_KEY+x}" != x ]
+[ "$8" = "UserKnownHostsFile=\${2%/key}/known_hosts" ]
+[ "$(cat "\${8#UserKnownHostsFile=}")" = 'github.com ssh-ed25519 AAAAPINNED' ]
 if [ "$MOCK_FAILURE" = fetch ]; then echo 'PRIVATE_FETCH_ERROR_CANARY' >&2; exit 128; fi`);
     writeMock(bin, 'git', `
 printf '%s\\n' "$*" >> "$MOCK_GIT_LOG"
@@ -252,8 +337,10 @@ elif [ "\${3:-}" = rev-parse ]; then printf '%s\\n' "$MOCK_SOURCE_SHA"; fi`);
     });
     assert.equal(result.status, failure === 'host' ? 68 : failure === 'fetch' ? 128 : 0, result.stdout + result.stderr);
     assert.doesNotMatch(result.stdout + result.stderr, /PRIVATE_DEPLOY_KEY_CANARY|PRIVATE_FETCH_ERROR_CANARY/);
-    assert.equal(readFileSync(hosts, 'utf8'), previousHosts);
-    assert.deepEqual(readdirSync(join(testHome, '.ssh')), ['known_hosts']);
+    if (failure === 'no-hosts') assert.equal(existsSync(hosts), false);
+    else assert.equal(readFileSync(hosts, 'utf8'), previousHosts);
+    assert.deepEqual(readdirSync(join(testHome, '.ssh')), failure === 'no-hosts' ? [] : ['known_hosts']);
+    assert.deepEqual(readdirSync(runner).filter(n => n.startsWith('scai-checkout-credentials.')), []);
     assert.equal(existsSync(join(runner, 'scai-sonar-tauri-known-hosts')), false);
     if (failure !== 'host') assert.equal(readFileSync(sshLog, 'utf8').trim().split('\n').length, 1);
   });

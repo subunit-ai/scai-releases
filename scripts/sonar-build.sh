@@ -5,6 +5,7 @@ set +x
 mode=${1:?}
 target=${2:-}
 source_root="$GITHUB_WORKSPACE/private/sonar-tauri"
+gate_root=$(cd -- "$(dirname -- "$0")" && pwd)
 case "$mode" in
   linux-deps)
     sudo apt-get update
@@ -97,7 +98,11 @@ NODE
       x86_64-unknown-linux-gnu) bundles=deb ;;
       *) exit 64 ;;
     esac
-    if bun run tauri build --target "$target" --bundles "$bundles"; then
+    # Inspect the exact dist consumed by Tauri. Prevent its hook from rebuilding
+    # unchecked frontend files after the source/sourcemap gate.
+    bun run build
+    node "$gate_root/sonar-release.mjs" frontend-proof "$source_root"
+    if bun run tauri build --target "$target" --bundles "$bundles" --config '{"build":{"beforeBuildCommand":""}}'; then
       echo "PASS Tauri build and updater signing (exit 0)."
     else
       status=$?
@@ -136,6 +141,7 @@ NODE
     ;;
   cleanup)
     # Ausschließlich von diesem Job erzeugte temporäre Checkouts/Signierdateien entfernen.
+    bash "$gate_root/checkout-private-source.sh" --cleanup-credentials
     if [ -f "$RUNNER_TEMP/sonar-build.keychain-db" ]; then security delete-keychain "$RUNNER_TEMP/sonar-build.keychain-db"; fi
     rm -rf "$GITHUB_WORKSPACE/private"
     rm -f "$RUNNER_TEMP/sonar-sign.p12" "$RUNNER_TEMP/sonar-sign.pem"

@@ -13,6 +13,9 @@ function harness(t) {
   t.after(() => rmSync(root, { recursive: true, force: true }));
   const bin = join(root, 'bin'), workspace = join(root, 'workspace'), source = join(workspace, 'private/sonar-tauri'), runner = join(root, 'runner');
   for (const path of [bin, join(source, 'scripts'), join(source, 'src-tauri/binaries'), join(workspace, 'private/bridge-tauri'), join(workspace, 'private/trace-tauri'), runner]) mkdirSync(path, { recursive: true });
+  mkdirSync(join(source, 'dist'));
+  writeFileSync(join(source, 'dist/index.html'), '<html>compiled frontend</html>');
+  writeFileSync(join(source, 'src-tauri/tauri.conf.json'), JSON.stringify({ build: { frontendDist: '../dist' } }));
   const log = join(root, 'calls.jsonl');
   for (const tool of ['bun', 'cargo', 'rustup', 'pwsh', 'codesign']) {
     const file = join(bin, tool);
@@ -21,7 +24,7 @@ const fs=require('node:fs'), path=require('node:path');const args=process.argv.s
 fs.appendFileSync(process.env.MOCK_LOG,JSON.stringify({tool:path.basename(process.argv[1]),args,cwd:process.cwd()})+'\\n');
 if(args[0]==='build'&&args.includes('--compile')) fs.writeFileSync(args[args.indexOf('--outfile')+1],'compiled fixture');
 if(path.basename(process.argv[1])==='cargo') {const target=args[args.indexOf('--target')+1]; const out=path.join(process.cwd(),'forge-control/target',target,'release');fs.mkdirSync(out,{recursive:true});fs.writeFileSync(path.join(out,'forge-control'+(target.includes('windows')?'.exe':'')),'native fixture');}
-if(path.basename(process.argv[1])==='bun'&&args[0]==='run') process.exit(Number(process.env.MOCK_BUILD_STATUS||0));
+if(path.basename(process.argv[1])==='bun'&&args[0]==='run'&&args[1]==='tauri') process.exit(Number(process.env.MOCK_BUILD_STATUS||0));
 if(path.basename(process.argv[1])==='codesign') {
   if(args.includes('--verify')) process.exit(Number(process.env.MOCK_VERIFY_STATUS||0));
   if(args.includes('-dv')) {
@@ -60,8 +63,8 @@ for (const target of TARGETS) test(`Tauri ${target}: Updater-Key ist Pflicht, Bu
   assert.notEqual(h.run('tauri', target).status, 0);
   if (target.includes('apple')) assert.notEqual(h.run('tauri', target, { TAURI_SIGNING_PRIVATE_KEY: 'fixture' }).status, 0);
   assert.equal(h.run('tauri', target, { TAURI_SIGNING_PRIVATE_KEY: 'fixture', APPLE_SIGNING_IDENTITY: 'Subunit Echo Signing' }).status, 0);
-  const tauri = h.calls().find(c => c.tool === 'bun');
-  assert.deepEqual(tauri.args, ['run', 'tauri', 'build', '--target', target, '--bundles', target.includes('apple') ? 'app,dmg' : target.includes('windows') ? 'nsis' : 'deb']);
+  const tauri = h.calls().find(c => c.tool === 'bun' && c.args[1] === 'tauri');
+  assert.deepEqual(tauri.args, ['run', 'tauri', 'build', '--target', target, '--bundles', target.includes('apple') ? 'app,dmg' : target.includes('windows') ? 'nsis' : 'deb', '--config', '{"build":{"beforeBuildCommand":""}}']);
 });
 
 for (const [name, selfSigned, identityOutput, trustStatus, identityStatus, expected] of [
@@ -136,7 +139,7 @@ for (const target of TARGETS.filter(target => target.includes('apple'))) {
     const calls = h.calls();
     assert.equal(calls.filter(call => call.args.includes('--verify')).length, env.MOCK_BUILD_STATUS ? 0 : 1);
     assert.equal(calls.filter(call => call.args.includes('-dv')).length, env.MOCK_BUILD_STATUS || env.MOCK_VERIFY_STATUS ? 0 : 1);
-    if (!env.MOCK_BUILD_STATUS) assert.deepEqual(calls[1].args.slice(0, -1), ['--verify', '--deep', '--strict', '--verbose=2']);
+    if (!env.MOCK_BUILD_STATUS) assert.deepEqual(calls[2].args.slice(0, -1), ['--verify', '--deep', '--strict', '--verbose=2']);
     if (name === 'Authority suffix is not an exact match') assert.match(result.stderr, /Authority=Apple Root CA/);
   });
 }
