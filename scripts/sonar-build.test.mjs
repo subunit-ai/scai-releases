@@ -24,7 +24,13 @@ const fs=require('node:fs'), path=require('node:path');const args=process.argv.s
 fs.appendFileSync(process.env.MOCK_LOG,JSON.stringify({tool:path.basename(process.argv[1]),args,cwd:process.cwd()})+'\\n');
 if(args[0]==='build'&&args.includes('--compile')) fs.writeFileSync(args[args.indexOf('--outfile')+1],'compiled fixture');
 if(path.basename(process.argv[1])==='cargo') {const target=args[args.indexOf('--target')+1]; const out=path.join(process.cwd(),'forge-control/target',target,'release');fs.mkdirSync(out,{recursive:true});fs.writeFileSync(path.join(out,'forge-control'+(target.includes('windows')?'.exe':'')),'native fixture');}
-if(path.basename(process.argv[1])==='bun'&&args[0]==='run'&&args[1]==='tauri') process.exit(Number(process.env.MOCK_BUILD_STATUS||0));
+if(path.basename(process.argv[1])==='bun'&&args[0]==='run'&&args[1]==='tauri') {
+  const file=path.join(process.cwd(),'dist/index.html');
+  if(process.env.MOCK_FRONTEND_MUTATION) {
+    fs.writeFileSync(file,'changed during native build');
+  }
+  process.exit(Number(process.env.MOCK_BUILD_STATUS||0));
+}
 if(path.basename(process.argv[1])==='codesign') {
   if(args.includes('--verify')) process.exit(Number(process.env.MOCK_VERIFY_STATUS||0));
   if(args.includes('-dv')) {
@@ -64,7 +70,15 @@ for (const target of TARGETS) test(`Tauri ${target}: Updater-Key ist Pflicht, Bu
   if (target.includes('apple')) assert.notEqual(h.run('tauri', target, { TAURI_SIGNING_PRIVATE_KEY: 'fixture' }).status, 0);
   assert.equal(h.run('tauri', target, { TAURI_SIGNING_PRIVATE_KEY: 'fixture', APPLE_SIGNING_IDENTITY: 'Subunit Echo Signing' }).status, 0);
   const tauri = h.calls().find(c => c.tool === 'bun' && c.args[1] === 'tauri');
-  assert.deepEqual(tauri.args, ['run', 'tauri', 'build', '--target', target, '--bundles', target.includes('apple') ? 'app,dmg' : target.includes('windows') ? 'nsis' : 'deb', '--config', '{"build":{"beforeBuildCommand":""}}']);
+  assert.deepEqual(tauri.args, ['run', 'tauri', 'build', '--target', target, '--bundles', target.includes('apple') ? 'app,dmg' : target.includes('windows') ? 'nsis' : 'deb', '--config', '{"build":{"beforeBuildCommand":"","beforeBundleCommand":"","frontendDist":"../dist"},"bundle":{"resources":[]}}']);
+});
+
+for (const target of TARGETS) test(`Tauri ${target}: changed frontend blocks packaging`, t => {
+  const h = harness(t);
+  const result = h.run('tauri', target, { TAURI_SIGNING_PRIVATE_KEY: 'fixture', APPLE_SIGNING_IDENTITY: 'Subunit Echo Signing', MOCK_FRONTEND_MUTATION: 'change' });
+  assert.equal(result.status, 1, result.stdout + result.stderr);
+  assert.doesNotMatch(result.stdout, /PASS Tauri build/);
+  assert.equal(h.calls().filter(call => call.tool === 'codesign').length, 0);
 });
 
 for (const [name, selfSigned, identityOutput, trustStatus, identityStatus, expected] of [

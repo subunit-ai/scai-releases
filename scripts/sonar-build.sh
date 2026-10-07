@@ -93,16 +93,14 @@ NODE
     test -n "${TAURI_SIGNING_PRIVATE_KEY:-}"
     cd "$source_root"
     case "$target" in
-      *apple-darwin) bundles=app,dmg; test -n "${APPLE_SIGNING_IDENTITY:-}" ;;
-      *windows-msvc) bundles=nsis ;;
-      x86_64-unknown-linux-gnu) bundles=deb ;;
+      *apple-darwin) test -n "${APPLE_SIGNING_IDENTITY:-}" ;;
+      *windows-msvc|x86_64-unknown-linux-gnu) : ;;
       *) exit 64 ;;
     esac
-    # Inspect the exact dist consumed by Tauri. Prevent its hook from rebuilding
-    # unchecked frontend files after the source/sourcemap gate.
+    # Build once, then bind the exact ../dist and config before AND after Tauri.
+    # The guarded helper disables both rebuild hooks and pins frontendDist.
     bun run build
-    node "$gate_root/sonar-release.mjs" frontend-proof "$source_root"
-    if bun run tauri build --target "$target" --bundles "$bundles" --config '{"build":{"beforeBuildCommand":""}}'; then
+    if node "$gate_root/sonar-release.mjs" frontend-build "$source_root" "$target"; then
       echo "PASS Tauri build and updater signing (exit 0)."
     else
       status=$?
