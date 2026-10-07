@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { spawnSync } from "node:child_process";
@@ -208,33 +208,53 @@ fi`);
   assert.equal(existsSync(join(runnerTemp, 'scai-bridge-tauri-known-hosts')), false);
 });
 
-for (const platform of ['MINGW64_NT-10.0', 'MSYS_NT-10.0', 'CYGWIN_NT-10.0']) test(`Windows checkout normalizes and shell-quotes paths (${platform})`, t => {
-  const root = mkdtempSync(join(tmpdir(), "checkout-win-' space-"));
-  t.after(() => cleanup(root));
-  const bin = join(root, 'bin'), runner = join(root, 'runner temp'), workspace = join(root, 'work space');
-  for (const path of [bin, runner, workspace]) mkdirSync(path);
-  writeMock(bin, 'uname', 'printf "%s\\n" "$MOCK_PLATFORM"');
-  writeMock(bin, 'cygpath', `
+for (const platform of ['MINGW64_NT-10.0', 'MSYS_NT-10.0', 'CYGWIN_NT-10.0']) {
+  for (const failure of ['none', 'host', 'fetch', 'no-newline', 'no-hosts']) test(`Windows Git Bash recipe (${platform}, ${failure})`, t => {
+    const root = mkdtempSync(join(tmpdir(), "checkout-win-' space-"));
+    t.after(() => cleanup(root));
+    const bin = join(root, 'bin'), runner = join(root, 'runner temp'), workspace = join(root, 'work space'), testHome = join(root, 'test home');
+    for (const path of [bin, runner, workspace, join(testHome, '.ssh')]) mkdirSync(path, { recursive: true });
+    const hosts = join(testHome, '.ssh/known_hosts'), gitLog = join(root, 'git.log'), sshLog = join(root, 'ssh.log');
+    const previousHosts = failure === 'no-hosts' ? '' : 'github.com ssh-ed25519 PREEXISTING\nother.example ssh-ed25519 ORIGINAL' + (failure === 'no-newline' ? '' : '\n');
+    if (failure !== 'no-hosts') writeFileSync(hosts, previousHosts);
+    writeMock(bin, 'uname', 'printf "%s\\n" "$MOCK_PLATFORM"');
+    writeMock(bin, 'cygpath', `
 [ "$1" = -u ]
 case "$2" in
-  'D:\\a\\_temp') printf '%s\\n' "$MOCK_RUNNER" ;;
   'D:\\a\\work space') printf '%s\\n' "$MOCK_WORKSPACE" ;;
+  "$MOCK_RUNNER") printf '%s\\n' "$MOCK_RUNNER" ;;
   *) exit 99 ;;
 esac`);
-  writeMock(bin, 'ssh-keyscan', "printf '%s\\n' 'github.com ssh-ed25519 AAAAPINNED'");
-  writeMock(bin, 'ssh-keygen', "printf '%s\\n' '256 SHA256:+DiY3wvvV6TuJJhbpZisF/zLDA0zPMSvHdkr4UvCOqU github.com (ED25519)'");
-  writeMock(bin, 'ssh', 'exit 99'); // PATH ssh must not be used by Git on Windows.
-  writeMock(bin, 'git', `
+    writeMock(bin, 'ssh-keyscan', "printf '%s\\n' 'github.com ssh-ed25519 AAAAPINNED'");
+    writeMock(bin, 'ssh-keygen', `
+if [ "$MOCK_FAILURE" = host ]; then echo '256 SHA256:WRONG github.com (ED25519)';
+else echo '256 SHA256:+DiY3wvvV6TuJJhbpZisF/zLDA0zPMSvHdkr4UvCOqU github.com (ED25519)'; fi`);
+    writeMock(bin, 'ssh', `
+printf '%s\\n' "$*" >> "$MOCK_SSH_LOG"
+[ "$#" = 6 ] && [ "$1" = -i ] && [ "$3" = -o ] && [ "$4" = IdentitiesOnly=yes ] && [ "$5" = -o ] && [ "$6" = StrictHostKeyChecking=yes ]
+case "$2" in "$HOME/.ssh/scai-sonar-tauri-deploy-key."*) ;; *) exit 99 ;; esac
+[ -f "$2" ]
+[ "$(cat "$2")" = PRIVATE_DEPLOY_KEY_CANARY ]
+[ "$(stat -f '%Lp' "$2" 2>/dev/null || stat -c '%a' "$2")" = 600 ]
+grep -F 'github.com ssh-ed25519 AAAAPINNED scai-checkout-' "$HOME/.ssh/known_hosts" >/dev/null
+if [ "$MOCK_FAILURE" = fetch ]; then echo 'PRIVATE_FETCH_ERROR_CANARY' >&2; exit 128; fi`);
+    writeMock(bin, 'git', `
+printf '%s\\n' "$*" >> "$MOCK_GIT_LOG"
 if [ "$1" = init ]; then mkdir -p "$3/.git";
 elif [ "\${3:-}" = fetch ]; then
-  bash -c 'set -- '"$GIT_SSH_COMMAND"'; [ "$#" = 9 ] && [ "$1" = /usr/bin/ssh ] && [ "$2" = -i ] && [ "$3" = "$MOCK_RUNNER/scai-sonar-tauri-deploy-key" ] && [ "$5" = IdentitiesOnly=yes ] && [ "$7" = "UserKnownHostsFile=$MOCK_RUNNER/scai-sonar-tauri-known-hosts" ] && [ "$9" = StrictHostKeyChecking=yes ]'
-  test -f "$MOCK_RUNNER/scai-sonar-tauri-deploy-key"
+  grep -F 'config core.autocrlf false' "$MOCK_GIT_LOG" >/dev/null
+  grep -F 'config core.eol lf' "$MOCK_GIT_LOG" >/dev/null
+  case "$GIT_SSH_COMMAND" in 'ssh -i '*) ;; *) exit 99 ;; esac
+  bash -c "$GIT_SSH_COMMAND"
 elif [ "\${3:-}" = rev-parse ]; then printf '%s\\n' "$MOCK_SOURCE_SHA"; fi`);
-  const result = spawnSync('bash', [HELPER, 'sonar-tauri', 'git@github.com:subunit-ai/sonar-tauri.git', SHA], {
-    encoding: 'utf8', env: { ...process.env, PATH: `${bin}:${process.env.PATH}`, GITHUB_WORKSPACE: 'D:\\a\\work space', RUNNER_TEMP: 'D:\\a\\_temp', MOCK_PLATFORM: platform, MOCK_RUNNER: runner, MOCK_WORKSPACE: workspace, MOCK_SOURCE_SHA: SHA, SOURCE_DEPLOY_KEY: 'fixture' },
+    const result = spawnSync('bash', [HELPER, 'sonar-tauri', 'git@github.com:subunit-ai/sonar-tauri.git', SHA], {
+      encoding: 'utf8', env: { ...process.env, PATH: `${bin}:${process.env.PATH}`, HOME: testHome, GITHUB_WORKSPACE: 'D:\\a\\work space', RUNNER_TEMP: runner, MOCK_PLATFORM: platform, MOCK_RUNNER: runner, MOCK_WORKSPACE: workspace, MOCK_SOURCE_SHA: SHA, SOURCE_DEPLOY_KEY: 'PRIVATE_DEPLOY_KEY_CANARY', MOCK_GIT_LOG: gitLog, MOCK_SSH_LOG: sshLog, MOCK_FAILURE: failure },
+    });
+    assert.equal(result.status, failure === 'host' ? 68 : failure === 'fetch' ? 128 : 0, result.stdout + result.stderr);
+    assert.doesNotMatch(result.stdout + result.stderr, /PRIVATE_DEPLOY_KEY_CANARY|PRIVATE_FETCH_ERROR_CANARY/);
+    assert.equal(readFileSync(hosts, 'utf8'), previousHosts);
+    assert.deepEqual(readdirSync(join(testHome, '.ssh')), ['known_hosts']);
+    assert.equal(existsSync(join(runner, 'scai-sonar-tauri-known-hosts')), false);
+    if (failure !== 'host') assert.equal(readFileSync(sshLog, 'utf8').trim().split('\n').length, 1);
   });
-  assert.equal(result.status, 0, result.stdout + result.stderr);
-  assert.equal(existsSync(join(workspace, 'private/sonar-tauri/.git')), true);
-  assert.equal(existsSync(join(runner, 'scai-sonar-tauri-deploy-key')), false);
-  assert.equal(existsSync(join(runner, 'scai-sonar-tauri-known-hosts')), false);
-});
+}

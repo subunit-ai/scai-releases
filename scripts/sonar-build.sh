@@ -97,10 +97,41 @@ NODE
       x86_64-unknown-linux-gnu) bundles=deb ;;
       *) exit 64 ;;
     esac
-    bun run tauri build --target "$target" --bundles "$bundles"
+    if bun run tauri build --target "$target" --bundles "$bundles"; then
+      echo "PASS Tauri build and updater signing (exit 0)."
+    else
+      status=$?
+      echo "::error::Tauri build and updater signing failed (exit $status)." >&2
+      exit "$status"
+    fi
     if [[ "$target" == *apple-darwin ]]; then
-      codesign --verify --strict --deep "src-tauri/target/$target/release/bundle/macos/Sonar.app"
-      codesign -dv "src-tauri/target/$target/release/bundle/macos/Sonar.app" 2>&1 | grep -F "Authority=$APPLE_SIGNING_IDENTITY"
+      app="src-tauri/target/$target/release/bundle/macos/Sonar.app"
+      # Same hard verification as build-all.yml, including nested sidecars.
+      if codesign --verify --deep --strict --verbose=2 "$app"; then
+        echo "PASS macOS bundle and nested-code signature verification (exit 0)."
+      else
+        status=$?
+        echo "::error::macOS bundle and nested-code signature verification failed (exit $status)." >&2
+        exit "$status"
+      fi
+      # Authority lines require verbose display. Keep tool status separate from
+      # the exact identity comparison and never echo display metadata or paths.
+      if signature=$(codesign -dv --verbose=4 "$app" 2>&1); then
+        echo "PASS macOS signature metadata query (exit 0)."
+      else
+        status=$?
+        echo "::error::macOS signature metadata query failed (exit $status)." >&2
+        exit "$status"
+      fi
+      authorities=$(printf '%s\n' "$signature" | { grep '^Authority=' || true; })
+      if printf '%s\n' "$authorities" | grep -Fxq "Authority=$APPLE_SIGNING_IDENTITY"; then
+        echo "PASS macOS signing Authority matches the requested identity (exit 0)."
+      else
+        status=$?
+        echo "::error::macOS signing Authority mismatch (exit $status); found Authority lines:" >&2
+        if [ -n "$authorities" ]; then printf '%s\n' "$authorities" >&2; fi
+        exit "$status"
+      fi
     fi
     ;;
   cleanup)

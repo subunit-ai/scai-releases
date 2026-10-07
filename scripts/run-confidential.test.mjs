@@ -118,3 +118,70 @@ test("invalid diagnostic keys fail closed without claiming that an envelope was 
   assert.equal(existsSync(join(sealed.runnerTemp, "diagnostic.json")), false);
   assertNoRetainedLogs(sealed.runnerTemp);
 });
+
+function decryptEnvelope(path, privateKey) {
+  const envelope = JSON.parse(readFileSync(path, 'utf8'));
+  const key = privateDecrypt({ key: privateKey, padding: constants.RSA_PKCS1_OAEP_PADDING, oaepHash: 'sha256' }, Buffer.from(envelope.wrapped_key, 'base64'));
+  const decipher = createDecipheriv('aes-256-gcm', key, Buffer.from(envelope.iv, 'base64'));
+  decipher.setAuthTag(Buffer.from(envelope.tag, 'base64'));
+  const plaintext = Buffer.concat([decipher.update(Buffer.from(envelope.ciphertext, 'base64')), decipher.final()]);
+  assert.equal(createHash('sha256').update(plaintext).digest('hex'), envelope.plaintext_sha256);
+  return plaintext.toString('utf8');
+}
+
+test('nested failures and repeated labels preserve every encrypted envelope without public plaintext', () => {
+  const { publicKey, privateKey } = generateKeyPairSync('rsa', { modulusLength: 3072 });
+  const result = invoke('outer', `
+bash "$TEST_RUNNER" same-label bash -c 'echo PRIVATE_FIRST_FETCH_CANARY; exit 128'
+cp "$SCAI_ENCRYPTED_DIAGNOSTIC_PATH" "$RUNNER_TEMP/original-envelope"
+bash "$TEST_RUNNER" same-label bash -c 'echo PRIVATE_SECOND_FETCH_CANARY; exit 128'
+exit 128`, runnerTemp => ({
+    TEST_RUNNER: RUNNER,
+    SCAI_ENCRYPTED_DIAGNOSTIC_PUBLIC_KEY_BASE64: Buffer.from(publicKey.export({ type: 'spki', format: 'pem' })).toString('base64'),
+    SCAI_ENCRYPTED_DIAGNOSTIC_PATH: join(runnerTemp, 'sonar-diagnostic.json'),
+  }));
+  assert.equal(result.status, 128, result.stdout + result.stderr);
+  assert.doesNotMatch(result.stdout + result.stderr, /PRIVATE_(FIRST|SECOND)_FETCH_CANARY/);
+  const paths = readdirSync(result.runnerTemp).filter(name => name.endsWith('.json')).sort();
+  assert.deepEqual(paths, ['sonar-diagnostic-outer-1.json', 'sonar-diagnostic-same-label-1.json', 'sonar-diagnostic.json']);
+  assert.equal(decryptEnvelope(join(result.runnerTemp, 'sonar-diagnostic.json'), privateKey), 'PRIVATE_FIRST_FETCH_CANARY\n');
+  assert.equal(decryptEnvelope(join(result.runnerTemp, 'sonar-diagnostic-same-label-1.json'), privateKey), 'PRIVATE_SECOND_FETCH_CANARY\n');
+  assert.match(decryptEnvelope(join(result.runnerTemp, 'sonar-diagnostic-outer-1.json'), privateKey), /same-label failed with exit 128/);
+  assert.deepEqual(readFileSync(join(result.runnerTemp, 'sonar-diagnostic.json')), readFileSync(join(result.runnerTemp, 'original-envelope')));
+  assert.equal(readdirSync(result.runnerTemp).some(name => name.startsWith('scai-sealed.')), false);
+  assertNoRetainedLogs(result.runnerTemp);
+});
+
+test('concurrent confidential failures atomically retain separate complete envelopes', () => {
+  const { publicKey, privateKey } = generateKeyPairSync('rsa', { modulusLength: 3072 });
+  const result = invoke('parallel-outer', `
+bash "$TEST_RUNNER" parallel bash -c 'echo PRIVATE_CONCURRENT_A; exit 7' &
+first=$!
+bash "$TEST_RUNNER" parallel bash -c 'echo PRIVATE_CONCURRENT_B; exit 9' &
+second=$!
+wait "$first"
+wait "$second"
+exit 11`, runnerTemp => ({
+    TEST_RUNNER: RUNNER,
+    SCAI_ENCRYPTED_DIAGNOSTIC_PUBLIC_KEY_BASE64: Buffer.from(publicKey.export({ type: 'spki', format: 'pem' })).toString('base64'),
+    SCAI_ENCRYPTED_DIAGNOSTIC_PATH: join(runnerTemp, 'sonar-diagnostic.json'),
+  }));
+  assert.equal(result.status, 11, result.stdout + result.stderr);
+  const paths = readdirSync(result.runnerTemp).filter(name => name.endsWith('.json'));
+  assert.equal(paths.length, 3);
+  const plaintexts = paths.map(name => decryptEnvelope(join(result.runnerTemp, name), privateKey));
+  assert.ok(plaintexts.includes('PRIVATE_CONCURRENT_A\n'));
+  assert.ok(plaintexts.includes('PRIVATE_CONCURRENT_B\n'));
+  assert.doesNotMatch(result.stdout + result.stderr, /PRIVATE_CONCURRENT/);
+  assertNoRetainedLogs(result.runnerTemp);
+});
+
+for (const path of ['not-an-envelope.log', '../escaped.json', 'nested/../../escaped.json']) test(`diagnostic destination rejects ${path}`, () => {
+  const result = invoke('invalid-path', 'echo PRIVATE_PATH_CANARY; exit 1', runnerTemp => ({
+    SCAI_ENCRYPTED_DIAGNOSTIC_PUBLIC_KEY_BASE64: 'fixture',
+    SCAI_ENCRYPTED_DIAGNOSTIC_PATH: `${runnerTemp}/${path}`,
+  }));
+  assert.equal(result.status, 64);
+  assert.doesNotMatch(result.stdout + result.stderr, /PRIVATE_PATH_CANARY/);
+  assertNoRetainedLogs(result.runnerTemp);
+});
