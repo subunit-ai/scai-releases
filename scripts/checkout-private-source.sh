@@ -5,14 +5,19 @@
 set -euo pipefail
 set +x
 
-if [ "$#" -ne 3 ]; then
-  echo "usage: checkout-private-source.sh <component> <repository> <source-sha>" >&2
+if [ "$#" -lt 3 ] || [ "$#" -gt 4 ]; then
+  echo "usage: checkout-private-source.sh <component> <repository> <source-sha> [component-tag]" >&2
   exit 64
 fi
 
 component=$1
 source_repo=$2
 source_sha=$3
+component_tag=${4:-}
+if [ -n "$component_tag" ] && ! printf '%s' "$component_tag" | grep -Eq '^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$'; then
+  echo "Ungültiges Komponenten-Tag" >&2
+  exit 64
+fi
 
 case "$component:$source_repo" in
   u1-chat:git@github.com:subunit-ai/u1-chat.git) ;;
@@ -21,6 +26,9 @@ case "$component:$source_repo" in
   subunit-scai:git@github.com:subunit-ai/subunit-scai.git) ;;
   echo:git@github.com:subunit-ai/echo.git) ;;
   subunit-notch:git@github.com:subunit-ai/subunit-notch.git) ;;
+  sonar-tauri:git@github.com:subunit-ai/sonar-tauri.git) ;;
+  bridge-tauri:git@github.com:subunit-ai/bridge-tauri.git) ;;
+  trace-tauri:git@github.com:subunit-ai/trace-tauri.git) ;;
   *)
     echo "component/repository is not allowlisted" >&2
     exit 64
@@ -86,6 +94,17 @@ actual_sha=$(git -C "$destination" rev-parse HEAD)
 if [ "$actual_sha" != "$source_sha" ]; then
   echo "::error title=Private checkout drift::$component expected $source_sha but received $actual_sha."
   exit 67
+fi
+
+# Tag-Objekte (auch annotierte Tags) zum Commit auflösen, solange der read-only Key lebt.
+if [ -n "$component_tag" ]; then
+  bash "$script_dir/run-confidential.sh" "checkout-$component-tag" \
+    git -C "$destination" fetch --depth 1 -- origin "refs/tags/$component_tag"
+  tag_sha=$(git -C "$destination" rev-parse 'FETCH_HEAD^{commit}')
+  if [ "$tag_sha" != "$source_sha" ]; then
+    echo "::error::Komponenten-Tag stimmt nicht mit dem Pin überein."
+    exit 67
+  fi
 fi
 
 git -C "$destination" remote remove origin

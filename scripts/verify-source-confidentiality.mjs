@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { createHash } from "node:crypto";
 import { NATIVE_CLI_WORKFLOW } from "./native-cli-workflow-policy.mjs";
 import { appendFileSync, readFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
@@ -387,8 +388,39 @@ function hasClosedServiceLogging(workflow) {
   });
 }
 
+// Geschlossene Sonar-Grammatik: jede Änderung an Triggern, Matrix, Befehlen, Secrets,
+// Upload-Pfaden oder Abhängigkeiten braucht ein neues geprüftes Vertrags-Digest.
+// So können zusätzliche YAML-Keys, Aliase oder übersprungene Schutzschritte die
+// positive Allowlist nicht durch scheinbar sichere Textfragmente umgehen.
+const SONAR_WORKFLOW_SHA256 = "813390364ed9dfb4fff6e3e9c9b5e2fbfeccc2cf4c9197afe108f1bc3e6eb4bb";
+export function validateSonarWorkflow(workflow) {
+  if (typeof workflow !== "string"
+      || createHash("sha256").update(workflow).digest("hex") !== SONAR_WORKFLOW_SHA256) {
+    return ["sonar-build.yml: geschlossener Vertrag verletzt (dispatch-only, Deploy-Key-Pins, vertrauliche Builds, nur Installer/verschlüsselte Diagnosen, kein Überschreiben, App-Token nur sonar-releases)"];
+  }
+  return [];
+}
+
+// Die Upload- und Release-Logik liegt in Helfern; auch diese gehören zur Allowlist.
+const SONAR_HELPER_SHA256 = {
+  "sonar-build.sh": "715b97849802e491a796a5b57bdd4374e6aad3e47cfbc3846abb6b445f6c0cbe",
+  "sonar-minisign.sh": "366958a33688dbea00fe52b49be5a5429971a58cf2f8f887267509c5bb91bc73",
+  "sonar-release.mjs": "19c94cfabdef604c5352812b04d012760f4ac814e55bb4b892b8402d44824294",
+};
+export function validateSonarHelpers(helpers) {
+  return Object.entries(SONAR_HELPER_SHA256).flatMap(([name, digest]) =>
+    typeof helpers[name] === "string" && createHash("sha256").update(helpers[name]).digest("hex") === digest
+      ? [] : [`sonar-build.yml: ${name} verletzt den geprüften Installer-/Signatur-/Unveränderlichkeitsvertrag`]);
+}
+function loadSonarHelpers() {
+  return Object.fromEntries(Object.keys(SONAR_HELPER_SHA256).map(name => {
+    try { return [name, readFileSync(join(ROOT, "scripts", name), "utf8")]; }
+    catch { return [name, undefined]; }
+  }));
+}
+
 export function validateSourceConfidentiality(workflows, assetSelector) {
-  const errors = [];
+  const errors = [...validateSonarWorkflow(workflows["sonar-build.yml"]), ...validateSonarHelpers(loadSonarHelpers())];
   if (workflows["native-cli-hermetic.yml"] !== NATIVE_CLI_WORKFLOW) errors.push("native-cli-hermetic.yml: exact manual pinned confidential native proof policy required");
   const require = (condition, message) => { if (!condition) errors.push(message); };
 
@@ -873,7 +905,7 @@ export function validateSourceConfidentiality(workflows, assetSelector) {
 
 function loadWorkflows() {
   return Object.fromEntries(
-    ["pr-check.yml", "build-all.yml", "windows-arm-smoke.yml", "u1-chat-pr-check.yml", "native-cli-hermetic.yml", ...PRIVATE_POSTGRES_WORKFLOWS].map((name) => [
+    ["sonar-build.yml", "pr-check.yml", "build-all.yml", "windows-arm-smoke.yml", "u1-chat-pr-check.yml", "native-cli-hermetic.yml", ...PRIVATE_POSTGRES_WORKFLOWS].map((name) => [
       name,
       readFileSync(join(ROOT, ".github/workflows", name), "utf8"),
     ]),
