@@ -62,8 +62,26 @@ NODE
     security import "$p12" -k "$kc" -P "${APPLE_CERTIFICATE_PASSWORD:-}" -T /usr/bin/codesign
     security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$kc_pw" "$kc"
     security find-certificate -c "$APPLE_SIGNING_IDENTITY" -p "$kc" > "$pem"
-    # Self-signed Identität muss tatsächlich vertraut werden; kein stiller ad-hoc-Fallback.
-    sudo security add-trusted-cert -d -r trustRoot -p codeSign -k /Library/Keychains/System.keychain "$pem"
+    subject=$(openssl x509 -in "$pem" -noout -subject -nameopt RFC2253)
+    issuer=$(openssl x509 -in "$pem" -noout -issuer -nameopt RFC2253)
+    # Apple-issued certificates already chain to Apple roots. Only a self-signed
+    # certificate needs trustRoot; trust failures remain fatal in that branch.
+    if [ "${subject#subject=}" = "${issuer#issuer=}" ]; then
+      sudo security add-trusted-cert -d -r trustRoot -p codeSign -k /Library/Keychains/System.keychain "$pem"
+    fi
+    identities=$(security find-identity -v -p codesigning "$kc")
+    if ! printf '%s\n' "$identities" | awk -v identity="$APPLE_SIGNING_IDENTITY" '
+      /^[[:space:]]*[0-9]+\) [[:xdigit:]]+ "/ {
+        name = $0
+        sub(/^[^"]*"/, "", name)
+        sub(/"[[:space:]]*$/, "", name)
+        if (name == identity) found = 1
+      }
+      END { exit !found }
+    '; then
+      echo "::error::Requested macOS codesigning identity is not valid in the build keychain." >&2
+      exit 65
+    fi
     rm -f "$p12" "$pem"
     ;;
   windows-sign)

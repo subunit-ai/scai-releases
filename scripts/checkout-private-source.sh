@@ -47,6 +47,17 @@ fi
 
 workspace=${GITHUB_WORKSPACE:?GITHUB_WORKSPACE is required}
 temp_root=${RUNNER_TEMP:?RUNNER_TEMP is required}
+ssh_bin=ssh
+case "$(uname -s)" in
+  MINGW*|MSYS*|CYGWIN*)
+    workspace=$(cygpath -u "$workspace")
+    temp_root=$(cygpath -u "$temp_root")
+    # Git Bash ships working OpenSSH, including on windows-11-arm.
+    # Never let Git select the Windows System32 OpenSSH executable.
+    ssh_bin=/usr/bin/ssh
+    test -x "$ssh_bin"
+    ;;
+esac
 script_dir=$(dirname -- "$0")
 script_dir=$(cd -- "$script_dir" && pwd)
 private_root="$workspace/private"
@@ -82,7 +93,12 @@ if [ "$host_key_count" != "1" ] || [ "$actual_fingerprint" != "$github_ed25519_f
   exit 68
 fi
 
-export GIT_SSH_COMMAND="ssh -i $key_file -o IdentitiesOnly=yes -o UserKnownHostsFile=$known_hosts -o StrictHostKeyChecking=yes"
+# Git reparses this command through a shell: quote every path, including spaces
+# and apostrophes, rather than relying on the outer assignment's quotes.
+printf -v ssh_command '%q' "$ssh_bin"
+printf -v key_arg '%q' "$key_file"
+printf -v hosts_arg '%q' "UserKnownHostsFile=$known_hosts"
+export GIT_SSH_COMMAND="$ssh_command -i $key_arg -o IdentitiesOnly=yes -o $hosts_arg -o StrictHostKeyChecking=yes"
 git init -q "$destination"
 git -C "$destination" remote add origin "$source_repo"
 bash "$script_dir/run-confidential.sh" "checkout-$component-fetch" \

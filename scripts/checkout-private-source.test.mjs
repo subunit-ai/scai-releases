@@ -207,3 +207,34 @@ fi`);
   assert.equal(existsSync(join(runnerTemp, 'scai-bridge-tauri-deploy-key')), false);
   assert.equal(existsSync(join(runnerTemp, 'scai-bridge-tauri-known-hosts')), false);
 });
+
+for (const platform of ['MINGW64_NT-10.0', 'MSYS_NT-10.0', 'CYGWIN_NT-10.0']) test(`Windows checkout normalizes and shell-quotes paths (${platform})`, t => {
+  const root = mkdtempSync(join(tmpdir(), "checkout-win-' space-"));
+  t.after(() => cleanup(root));
+  const bin = join(root, 'bin'), runner = join(root, 'runner temp'), workspace = join(root, 'work space');
+  for (const path of [bin, runner, workspace]) mkdirSync(path);
+  writeMock(bin, 'uname', 'printf "%s\\n" "$MOCK_PLATFORM"');
+  writeMock(bin, 'cygpath', `
+[ "$1" = -u ]
+case "$2" in
+  'D:\\a\\_temp') printf '%s\\n' "$MOCK_RUNNER" ;;
+  'D:\\a\\work space') printf '%s\\n' "$MOCK_WORKSPACE" ;;
+  *) exit 99 ;;
+esac`);
+  writeMock(bin, 'ssh-keyscan', "printf '%s\\n' 'github.com ssh-ed25519 AAAAPINNED'");
+  writeMock(bin, 'ssh-keygen', "printf '%s\\n' '256 SHA256:+DiY3wvvV6TuJJhbpZisF/zLDA0zPMSvHdkr4UvCOqU github.com (ED25519)'");
+  writeMock(bin, 'ssh', 'exit 99'); // PATH ssh must not be used by Git on Windows.
+  writeMock(bin, 'git', `
+if [ "$1" = init ]; then mkdir -p "$3/.git";
+elif [ "\${3:-}" = fetch ]; then
+  bash -c 'set -- '"$GIT_SSH_COMMAND"'; [ "$#" = 9 ] && [ "$1" = /usr/bin/ssh ] && [ "$2" = -i ] && [ "$3" = "$MOCK_RUNNER/scai-sonar-tauri-deploy-key" ] && [ "$5" = IdentitiesOnly=yes ] && [ "$7" = "UserKnownHostsFile=$MOCK_RUNNER/scai-sonar-tauri-known-hosts" ] && [ "$9" = StrictHostKeyChecking=yes ]'
+  test -f "$MOCK_RUNNER/scai-sonar-tauri-deploy-key"
+elif [ "\${3:-}" = rev-parse ]; then printf '%s\\n' "$MOCK_SOURCE_SHA"; fi`);
+  const result = spawnSync('bash', [HELPER, 'sonar-tauri', 'git@github.com:subunit-ai/sonar-tauri.git', SHA], {
+    encoding: 'utf8', env: { ...process.env, PATH: `${bin}:${process.env.PATH}`, GITHUB_WORKSPACE: 'D:\\a\\work space', RUNNER_TEMP: 'D:\\a\\_temp', MOCK_PLATFORM: platform, MOCK_RUNNER: runner, MOCK_WORKSPACE: workspace, MOCK_SOURCE_SHA: SHA, SOURCE_DEPLOY_KEY: 'fixture' },
+  });
+  assert.equal(result.status, 0, result.stdout + result.stderr);
+  assert.equal(existsSync(join(workspace, 'private/sonar-tauri/.git')), true);
+  assert.equal(existsSync(join(runner, 'scai-sonar-tauri-deploy-key')), false);
+  assert.equal(existsSync(join(runner, 'scai-sonar-tauri-known-hosts')), false);
+});
