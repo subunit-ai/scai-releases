@@ -51,16 +51,30 @@ test("Meet encrypted upload requires its own failure and recipient with one-day 
   assert.doesNotMatch(upload, /^        continue-on-error:/m);
 });
 
-test("public Meet uploads exclude session databases, fixture source and raw diagnostics", () => {
-  const screenshots = meetStep("Meet-Proof-Screenshots sichern");
-  assert.match(screenshots, /^        if: always\(\)$/m);
-  assert.match(screenshots, /^        uses: actions\/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4, immutable$/m);
-  assert.match(screenshots, /^          path: ~\/\.cache\/u1-shots\/scai-meet-plugin\/ci\/\*\*\/\*\.png$/m);
+test("public Meet uploads are encrypted envelopes only (screenshots + failure diagnostics)", () => {
+  const seal = meetStep("Meet-Proof-Screenshots verschlüsseln (öffentliches Repo, nie Klartext)");
+  assert.match(seal, /^        if: always\(\) && inputs\.diagnostic_public_key_base64 != ''$/m);
+  assert.ok(seal.includes('dir="$HOME/.cache/u1-shots/scai-meet-plugin/ci"'));
+  assert.ok(seal.includes("encrypt-confidential-log.mjs"));
+  const screenshots = meetStep("Meet-Proof-Screenshots (verschlüsselt) sichern");
+  assert.match(screenshots, /^        if: always\(\) && steps\.meet_seal\.outcome == 'success'$/m);
+  assert.match(screenshots, /^          path: \$\{\{ runner\.temp \}\}\/scai-meet-encrypted-shots\.json$/m);
   assert.equal(screenshots.match(/^          path:/gm)?.length, 1);
-  assert.doesNotMatch(screenshots, /^            \S/m, "no multiline extra upload paths");
   const uploads = fixtures["pr-check.yml"].split(/^      - name: /m)
     .filter(step => step.includes("uses: actions/upload-artifact@") && /scai-meet/.test(step));
-  assert.equal(uploads.length, 2, "only PNG screenshots and the encrypted failure envelope");
+  assert.equal(uploads.length, 2, "only the encrypted screenshot and failure envelopes");
+});
+
+test("plaintext proof screenshots are rejected in the public repository", () => {
+  for (const [before, after] of [
+    ["path: ${{ runner.temp }}/scai-pages-encrypted-shots.json", "path: ~/.cache/u1-shots/scai-pages/"],
+    ["path: ${{ runner.temp }}/scai-meet-encrypted-shots.json", "path: ~/.cache/u1-shots/scai-meet-plugin/ci/**/*.png"],
+    ["path: ${{ runner.temp }}/scai-revenue-browser-encrypted-shots.json", "path: ${{ runner.temp }}/scai-revenue-browser-proof/"],
+  ]) {
+    assert.ok(fixtures["pr-check.yml"].includes(before), before);
+    const errors = validateSourceConfidentiality({ ...fixtures, "pr-check.yml": fixtures["pr-check.yml"].replace(before, after) }, assetSelector);
+    assert.ok(errors.includes("pr-check.yml: proof screenshots must never be uploaded in plaintext (public repository)"), after);
+  }
 });
 
 test("u1-chat test diagnostics reject missing keys, public plaintext and broad uploads", () => {
@@ -624,13 +638,13 @@ test("Chat-Dock proof cannot upload the private source tree", () => {
   const unsafe = {
     ...fixtures,
     "pr-check.yml": fixtures["pr-check.yml"].replace(
-      "path: ~/.cache/u1-shots/scai-chat-dock/",
-      "path: src/",
+      'dir="$HOME/.cache/u1-shots/scai-chat-dock"',
+      'dir="src"',
     ),
   };
   assert.match(
     validateSourceConfidentiality(unsafe, assetSelector).join("\n"),
-    /Chat-Dock proof may upload only its sanitized screenshot directory/,
+    /Chat-Dock proof may upload only its encrypted screenshot envelope/,
   );
 });
 
@@ -638,13 +652,13 @@ test("Sentinel CRM proof cannot upload the private source tree", () => {
   const unsafe = {
     ...fixtures,
     "pr-check.yml": fixtures["pr-check.yml"].replace(
-      "path: ~/.cache/u1-shots/sentinel-crm-2026/",
-      "path: src/",
+      'dir="$HOME/.cache/u1-shots/sentinel-crm-2026"',
+      'dir="src"',
     ),
   };
   assert.match(
     validateSourceConfidentiality(unsafe, assetSelector).join("\n"),
-    /Sentinel CRM proof may upload only its sanitized screenshot directory/,
+    /Sentinel CRM proof may upload only its encrypted screenshot envelope/,
   );
 });
 
@@ -869,13 +883,13 @@ test("Revenue screenshots can upload only after closed sanitization", () => {
   const rawUpload = {
     ...fixtures,
     "pr-check.yml": fixtures["pr-check.yml"].replace(
-      "path: ${{ runner.temp }}/scai-revenue-browser-proof/",
+      "path: ${{ runner.temp }}/scai-revenue-browser-encrypted-shots.json",
       "path: ${{ runner.temp }}/scai-revenue-source-shots/",
     ),
   };
   const errors = validateSourceConfidentiality(rawUpload, assetSelector).join("\n");
   assert.match(errors, /raw Revenue source proof output must never be uploaded/);
-  assert.match(errors, /may upload only its sanitized fixture screenshot directory/);
+  assert.match(errors, /Revenue proof may upload only its encrypted screenshot envelope/);
 
   const noSanitizer = {
     ...fixtures,
@@ -927,7 +941,7 @@ test("Workgraph harness remains optional, but runs confidentially and sanitizes 
   const rawUpload = {
     ...fixtures,
     "pr-check.yml": fixtures["pr-check.yml"].replace(
-      "path: ${{ runner.temp }}/scai-revenue-browser-proof/",
+      "path: ${{ runner.temp }}/scai-revenue-browser-encrypted-shots.json",
       "path: ~/.cache/u1-shots/scai-workgraph-blackbox/",
     ),
   };

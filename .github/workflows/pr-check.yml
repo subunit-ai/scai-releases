@@ -640,13 +640,28 @@ jobs:
             bash "$GITHUB_WORKSPACE/gate/scripts/run-confidential.sh" revenue-proof-artifacts node "$GITHUB_WORKSPACE/gate/scripts/verify-revenue-proof-artifacts.mjs" --workgraph-only "$HOME/.cache/u1-shots/scai-workgraph-blackbox" "$REVENUE_ARTIFACT_DIR"
           fi
 
-      - name: Revenue-Browser-Proof-Screenshots sichern
-        if: always() && steps.revenue_artifacts.outcome == 'success'
+      - name: Revenue-Browser-Proof-Screenshots verschlüsseln (öffentliches Repo, nie Klartext)
+        id: revenue_browser_seal
+        if: always() && steps.revenue_artifacts.outcome == 'success' && inputs.diagnostic_public_key_base64 != ''
+        continue-on-error: true
+        shell: bash
+        env:
+          SCAI_ENCRYPTED_DIAGNOSTIC_PUBLIC_KEY_BASE64: ${{ inputs.diagnostic_public_key_base64 }}
+        run: |
+          set -euo pipefail
+          dir="$RUNNER_TEMP/scai-revenue-browser-proof"
+          test -d "$dir" && find "$dir" -type f -print -quit | grep -q .
+          tar -czf "$RUNNER_TEMP/scai-revenue-browser-shots.tgz" -C "$(dirname "$dir")" "$(basename "$dir")"
+          node "$GITHUB_WORKSPACE/gate/scripts/encrypt-confidential-log.mjs" "$RUNNER_TEMP/scai-revenue-browser-shots.tgz" "$RUNNER_TEMP/scai-revenue-browser-encrypted-shots.json" "$SCAI_ENCRYPTED_DIAGNOSTIC_PUBLIC_KEY_BASE64"
+          rm -f "$RUNNER_TEMP/scai-revenue-browser-shots.tgz"
+
+      - name: Revenue-Browser-Proof-Screenshots (verschlüsselt) sichern
+        if: always() && steps.revenue_browser_seal.outcome == 'success'
         continue-on-error: true
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4, immutable
         with:
-          name: scai-revenue-browser-proof-${{ github.run_id }}
-          path: ${{ runner.temp }}/scai-revenue-browser-proof/
+          name: scai-revenue-browser-encrypted-shots-${{ github.run_id }}
+          path: ${{ runner.temp }}/scai-revenue-browser-encrypted-shots.json
           if-no-files-found: error
           retention-days: 14
 
@@ -694,13 +709,28 @@ jobs:
 
       # Proof und PNG-Praesenz bleiben harte Gates. Nur GitHubs externe
       # Artefakt-Ablage ist best effort, weil FinalizeArtifact sporadisch 403 liefert.
-      - name: Diagnosepaket-Proof-Screenshots sichern
-        if: always() && steps.support_diagnostics_proof.outcome != 'skipped'
+      - name: Diagnosepaket-Proof-Screenshots verschlüsseln (öffentliches Repo, nie Klartext)
+        id: support_diagnostics_seal
+        if: always() && steps.support_diagnostics_proof.outcome != 'skipped' && inputs.diagnostic_public_key_base64 != ''
+        continue-on-error: true
+        shell: bash
+        env:
+          SCAI_ENCRYPTED_DIAGNOSTIC_PUBLIC_KEY_BASE64: ${{ inputs.diagnostic_public_key_base64 }}
+        run: |
+          set -euo pipefail
+          dir="$HOME/.cache/u1-shots/scai-support-diagnostics"
+          test -d "$dir" && find "$dir" -type f -print -quit | grep -q .
+          tar -czf "$RUNNER_TEMP/scai-support-diagnostics-shots.tgz" -C "$(dirname "$dir")" "$(basename "$dir")"
+          node "$GITHUB_WORKSPACE/gate/scripts/encrypt-confidential-log.mjs" "$RUNNER_TEMP/scai-support-diagnostics-shots.tgz" "$RUNNER_TEMP/scai-support-diagnostics-encrypted-shots.json" "$SCAI_ENCRYPTED_DIAGNOSTIC_PUBLIC_KEY_BASE64"
+          rm -f "$RUNNER_TEMP/scai-support-diagnostics-shots.tgz"
+
+      - name: Diagnosepaket-Proof-Screenshots (verschlüsselt) sichern
+        if: always() && steps.support_diagnostics_seal.outcome == 'success'
         continue-on-error: true
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4, immutable
         with:
-          name: scai-support-diagnostics-proof-${{ github.run_id }}
-          path: ~/.cache/u1-shots/scai-support-diagnostics/
+          name: scai-support-diagnostics-encrypted-shots-${{ github.run_id }}
+          path: ${{ runner.temp }}/scai-support-diagnostics-encrypted-shots.json
           if-no-files-found: error
           retention-days: 14
 
@@ -727,13 +757,28 @@ jobs:
         shell: bash
         run: find "$HOME/.cache/u1-shots/scai-pages/" -type f -name '*.png' -print -quit | grep -q .
 
-      - name: Pages-Proof-Screenshots sichern
-        if: always() && steps.pages_proof.outcome != 'skipped'
+      - name: Pages-Proof-Screenshots verschlüsseln (öffentliches Repo, nie Klartext)
+        id: pages_seal
+        if: always() && steps.pages_proof.outcome != 'skipped' && inputs.diagnostic_public_key_base64 != ''
+        continue-on-error: true
+        shell: bash
+        env:
+          SCAI_ENCRYPTED_DIAGNOSTIC_PUBLIC_KEY_BASE64: ${{ inputs.diagnostic_public_key_base64 }}
+        run: |
+          set -euo pipefail
+          dir="$HOME/.cache/u1-shots/scai-pages"
+          test -d "$dir" && find "$dir" -type f -print -quit | grep -q .
+          tar -czf "$RUNNER_TEMP/scai-pages-shots.tgz" -C "$(dirname "$dir")" "$(basename "$dir")"
+          node "$GITHUB_WORKSPACE/gate/scripts/encrypt-confidential-log.mjs" "$RUNNER_TEMP/scai-pages-shots.tgz" "$RUNNER_TEMP/scai-pages-encrypted-shots.json" "$SCAI_ENCRYPTED_DIAGNOSTIC_PUBLIC_KEY_BASE64"
+          rm -f "$RUNNER_TEMP/scai-pages-shots.tgz"
+
+      - name: Pages-Proof-Screenshots (verschlüsselt) sichern
+        if: always() && steps.pages_seal.outcome == 'success'
         continue-on-error: true
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4, immutable
         with:
-          name: scai-pages-proof-${{ github.run_id }}
-          path: ~/.cache/u1-shots/scai-pages/
+          name: scai-pages-encrypted-shots-${{ github.run_id }}
+          path: ${{ runner.temp }}/scai-pages-encrypted-shots.json
           if-no-files-found: error
           retention-days: 14
 
@@ -777,14 +822,29 @@ jobs:
         shell: bash
         run: bash "$GITHUB_WORKSPACE/gate/scripts/run-confidential.sh" meet-visual-proof node scripts/verify-meet-plugin.mjs
 
-      - name: Meet-Proof-Screenshots sichern
-        if: always()
+      - name: Meet-Proof-Screenshots verschlüsseln (öffentliches Repo, nie Klartext)
+        id: meet_seal
+        if: always() && inputs.diagnostic_public_key_base64 != ''
+        continue-on-error: true
+        shell: bash
+        env:
+          SCAI_ENCRYPTED_DIAGNOSTIC_PUBLIC_KEY_BASE64: ${{ inputs.diagnostic_public_key_base64 }}
+        run: |
+          set -euo pipefail
+          dir="$HOME/.cache/u1-shots/scai-meet-plugin/ci"
+          test -d "$dir" && find "$dir" -type f -print -quit | grep -q .
+          tar -czf "$RUNNER_TEMP/scai-meet-shots.tgz" -C "$(dirname "$dir")" "$(basename "$dir")"
+          node "$GITHUB_WORKSPACE/gate/scripts/encrypt-confidential-log.mjs" "$RUNNER_TEMP/scai-meet-shots.tgz" "$RUNNER_TEMP/scai-meet-encrypted-shots.json" "$SCAI_ENCRYPTED_DIAGNOSTIC_PUBLIC_KEY_BASE64"
+          rm -f "$RUNNER_TEMP/scai-meet-shots.tgz"
+
+      - name: Meet-Proof-Screenshots (verschlüsselt) sichern
+        if: always() && steps.meet_seal.outcome == 'success'
         continue-on-error: true
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4, immutable
         with:
-          name: scai-meet-proof-${{ github.run_id }}
-          path: ~/.cache/u1-shots/scai-meet-plugin/ci/**/*.png
-          if-no-files-found: warn
+          name: scai-meet-encrypted-shots-${{ github.run_id }}
+          path: ${{ runner.temp }}/scai-meet-encrypted-shots.json
+          if-no-files-found: error
           retention-days: 14
 
       - name: Verschlüsselte Meet-Fehlerdiagnostik bereitstellen
@@ -809,14 +869,29 @@ jobs:
         shell: bash
         run: bash "$GITHUB_WORKSPACE/gate/scripts/run-confidential.sh" aenderungsjournal-proof node scripts/verify-aenderungsjournal.mjs
 
-      - name: Aenderungsjournal-Proof-Screenshots sichern
-        if: always() && steps.aenderungsjournal_proof.outcome != 'skipped'
+      - name: Aenderungsjournal-Proof-Screenshots verschlüsseln (öffentliches Repo, nie Klartext)
+        id: aenderungsjournal_seal
+        if: always() && steps.aenderungsjournal_proof.outcome != 'skipped' && inputs.diagnostic_public_key_base64 != ''
+        continue-on-error: true
+        shell: bash
+        env:
+          SCAI_ENCRYPTED_DIAGNOSTIC_PUBLIC_KEY_BASE64: ${{ inputs.diagnostic_public_key_base64 }}
+        run: |
+          set -euo pipefail
+          dir="$HOME/.cache/u1-shots/scai-aenderungsjournal"
+          test -d "$dir" && find "$dir" -type f -print -quit | grep -q .
+          tar -czf "$RUNNER_TEMP/scai-aenderungsjournal-shots.tgz" -C "$(dirname "$dir")" "$(basename "$dir")"
+          node "$GITHUB_WORKSPACE/gate/scripts/encrypt-confidential-log.mjs" "$RUNNER_TEMP/scai-aenderungsjournal-shots.tgz" "$RUNNER_TEMP/scai-aenderungsjournal-encrypted-shots.json" "$SCAI_ENCRYPTED_DIAGNOSTIC_PUBLIC_KEY_BASE64"
+          rm -f "$RUNNER_TEMP/scai-aenderungsjournal-shots.tgz"
+
+      - name: Aenderungsjournal-Proof-Screenshots (verschlüsselt) sichern
+        if: always() && steps.aenderungsjournal_seal.outcome == 'success'
         continue-on-error: true
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4, immutable
         with:
-          name: scai-aenderungsjournal-proof-${{ github.run_id }}
-          path: ~/.cache/u1-shots/scai-aenderungsjournal/
-          if-no-files-found: warn
+          name: scai-aenderungsjournal-encrypted-shots-${{ github.run_id }}
+          path: ${{ runner.temp }}/scai-aenderungsjournal-encrypted-shots.json
+          if-no-files-found: error
           retention-days: 14
 
       - name: Verschlüsselte Änderungsjournal-Fehlerdiagnostik bereitstellen
@@ -843,13 +918,28 @@ jobs:
         shell: bash
         run: find "$HOME/.cache/u1-shots/scai-chat-dock/" -type f -name '*.png' -print -quit | grep -q .
 
-      - name: Chat-Dock-Proof-Screenshots sichern
-        if: always() && steps.chat_dock_proof.outcome != 'skipped'
+      - name: Chat-Dock-Proof-Screenshots verschlüsseln (öffentliches Repo, nie Klartext)
+        id: chat_dock_seal
+        if: always() && steps.chat_dock_proof.outcome != 'skipped' && inputs.diagnostic_public_key_base64 != ''
+        continue-on-error: true
+        shell: bash
+        env:
+          SCAI_ENCRYPTED_DIAGNOSTIC_PUBLIC_KEY_BASE64: ${{ inputs.diagnostic_public_key_base64 }}
+        run: |
+          set -euo pipefail
+          dir="$HOME/.cache/u1-shots/scai-chat-dock"
+          test -d "$dir" && find "$dir" -type f -print -quit | grep -q .
+          tar -czf "$RUNNER_TEMP/scai-chat-dock-shots.tgz" -C "$(dirname "$dir")" "$(basename "$dir")"
+          node "$GITHUB_WORKSPACE/gate/scripts/encrypt-confidential-log.mjs" "$RUNNER_TEMP/scai-chat-dock-shots.tgz" "$RUNNER_TEMP/scai-chat-dock-encrypted-shots.json" "$SCAI_ENCRYPTED_DIAGNOSTIC_PUBLIC_KEY_BASE64"
+          rm -f "$RUNNER_TEMP/scai-chat-dock-shots.tgz"
+
+      - name: Chat-Dock-Proof-Screenshots (verschlüsselt) sichern
+        if: always() && steps.chat_dock_seal.outcome == 'success'
         continue-on-error: true
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4, immutable
         with:
-          name: scai-chat-dock-proof-${{ github.run_id }}
-          path: ~/.cache/u1-shots/scai-chat-dock/
+          name: scai-chat-dock-encrypted-shots-${{ github.run_id }}
+          path: ${{ runner.temp }}/scai-chat-dock-encrypted-shots.json
           if-no-files-found: error
           retention-days: 14
 
@@ -877,13 +967,28 @@ jobs:
         shell: bash
         run: find "$HOME/.cache/u1-shots/sentinel-crm-2026/" -type f -name '*.png' -print -quit | grep -q .
 
-      - name: Sentinel-CRM-Proof-Screenshots sichern
-        if: always() && steps.sentinel_crm_proof.outcome != 'skipped'
+      - name: Sentinel-CRM-Proof-Screenshots verschlüsseln (öffentliches Repo, nie Klartext)
+        id: sentinel_crm_seal
+        if: always() && steps.sentinel_crm_proof.outcome != 'skipped' && inputs.diagnostic_public_key_base64 != ''
+        continue-on-error: true
+        shell: bash
+        env:
+          SCAI_ENCRYPTED_DIAGNOSTIC_PUBLIC_KEY_BASE64: ${{ inputs.diagnostic_public_key_base64 }}
+        run: |
+          set -euo pipefail
+          dir="$HOME/.cache/u1-shots/sentinel-crm-2026"
+          test -d "$dir" && find "$dir" -type f -print -quit | grep -q .
+          tar -czf "$RUNNER_TEMP/scai-sentinel-crm-shots.tgz" -C "$(dirname "$dir")" "$(basename "$dir")"
+          node "$GITHUB_WORKSPACE/gate/scripts/encrypt-confidential-log.mjs" "$RUNNER_TEMP/scai-sentinel-crm-shots.tgz" "$RUNNER_TEMP/scai-sentinel-crm-encrypted-shots.json" "$SCAI_ENCRYPTED_DIAGNOSTIC_PUBLIC_KEY_BASE64"
+          rm -f "$RUNNER_TEMP/scai-sentinel-crm-shots.tgz"
+
+      - name: Sentinel-CRM-Proof-Screenshots (verschlüsselt) sichern
+        if: always() && steps.sentinel_crm_seal.outcome == 'success'
         continue-on-error: true
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4, immutable
         with:
-          name: scai-sentinel-crm-proof-${{ github.run_id }}
-          path: ~/.cache/u1-shots/sentinel-crm-2026/
+          name: scai-sentinel-crm-encrypted-shots-${{ github.run_id }}
+          path: ${{ runner.temp }}/scai-sentinel-crm-encrypted-shots.json
           if-no-files-found: error
           retention-days: 14
 
@@ -908,13 +1013,28 @@ jobs:
         shell: bash
         run: find "$HOME/.cache/u1-shots/sentinel-forecast/" -type f -name '*.png' -print -quit | grep -q .
 
-      - name: Sentinel-Forecast-Screenshots sichern
-        if: always() && steps.forecast_proof.outcome != 'skipped'
+      - name: Sentinel-Forecast-Screenshots verschlüsseln (öffentliches Repo, nie Klartext)
+        id: sentinel_forecast_seal
+        if: always() && steps.forecast_proof.outcome != 'skipped' && inputs.diagnostic_public_key_base64 != ''
+        continue-on-error: true
+        shell: bash
+        env:
+          SCAI_ENCRYPTED_DIAGNOSTIC_PUBLIC_KEY_BASE64: ${{ inputs.diagnostic_public_key_base64 }}
+        run: |
+          set -euo pipefail
+          dir="$HOME/.cache/u1-shots/sentinel-forecast"
+          test -d "$dir" && find "$dir" -type f -print -quit | grep -q .
+          tar -czf "$RUNNER_TEMP/scai-sentinel-forecast-shots.tgz" -C "$(dirname "$dir")" "$(basename "$dir")"
+          node "$GITHUB_WORKSPACE/gate/scripts/encrypt-confidential-log.mjs" "$RUNNER_TEMP/scai-sentinel-forecast-shots.tgz" "$RUNNER_TEMP/scai-sentinel-forecast-encrypted-shots.json" "$SCAI_ENCRYPTED_DIAGNOSTIC_PUBLIC_KEY_BASE64"
+          rm -f "$RUNNER_TEMP/scai-sentinel-forecast-shots.tgz"
+
+      - name: Sentinel-Forecast-Screenshots (verschlüsselt) sichern
+        if: always() && steps.sentinel_forecast_seal.outcome == 'success'
         continue-on-error: true
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4, immutable
         with:
-          name: scai-sentinel-forecast-proof-${{ github.run_id }}
-          path: ~/.cache/u1-shots/sentinel-forecast/
+          name: scai-sentinel-forecast-encrypted-shots-${{ github.run_id }}
+          path: ${{ runner.temp }}/scai-sentinel-forecast-encrypted-shots.json
           if-no-files-found: error
           retention-days: 14
 
@@ -933,13 +1053,28 @@ jobs:
         shell: bash
         run: find "$HOME/.cache/u1-shots/sentinel-routing/" -type f -name '*.png' -print -quit | grep -q .
 
-      - name: Sentinel-Routing-Screenshots sichern
-        if: always() && steps.routing_proof.outcome != 'skipped'
+      - name: Sentinel-Routing-Screenshots verschlüsseln (öffentliches Repo, nie Klartext)
+        id: sentinel_routing_seal
+        if: always() && steps.routing_proof.outcome != 'skipped' && inputs.diagnostic_public_key_base64 != ''
+        continue-on-error: true
+        shell: bash
+        env:
+          SCAI_ENCRYPTED_DIAGNOSTIC_PUBLIC_KEY_BASE64: ${{ inputs.diagnostic_public_key_base64 }}
+        run: |
+          set -euo pipefail
+          dir="$HOME/.cache/u1-shots/sentinel-routing"
+          test -d "$dir" && find "$dir" -type f -print -quit | grep -q .
+          tar -czf "$RUNNER_TEMP/scai-sentinel-routing-shots.tgz" -C "$(dirname "$dir")" "$(basename "$dir")"
+          node "$GITHUB_WORKSPACE/gate/scripts/encrypt-confidential-log.mjs" "$RUNNER_TEMP/scai-sentinel-routing-shots.tgz" "$RUNNER_TEMP/scai-sentinel-routing-encrypted-shots.json" "$SCAI_ENCRYPTED_DIAGNOSTIC_PUBLIC_KEY_BASE64"
+          rm -f "$RUNNER_TEMP/scai-sentinel-routing-shots.tgz"
+
+      - name: Sentinel-Routing-Screenshots (verschlüsselt) sichern
+        if: always() && steps.sentinel_routing_seal.outcome == 'success'
         continue-on-error: true
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4, immutable
         with:
-          name: scai-sentinel-routing-proof-${{ github.run_id }}
-          path: ~/.cache/u1-shots/sentinel-routing/
+          name: scai-sentinel-routing-encrypted-shots-${{ github.run_id }}
+          path: ${{ runner.temp }}/scai-sentinel-routing-encrypted-shots.json
           if-no-files-found: error
           retention-days: 14
 

@@ -484,14 +484,30 @@ export function validateSourceConfidentiality(workflows, assetSelector) {
   require(!/^\s+path:\s*trace-src\/?\s*$/m.test(pr), "pr-check.yml: the private Trace source tree must never be uploaded as an artifact");
   require(!/^\s+path:.*scai-revenue-source-shots/m.test(pr), "pr-check.yml: raw Revenue source proof output must never be uploaded as an artifact");
   require(!/^\s+path:.*\.cache\/u1-shots\/scai-workgraph-blackbox/m.test(pr), "pr-check.yml: raw Workgraph source proof output must never be uploaded as an artifact");
+  // Öffentliches Repo: Proof-Screenshots NUR als verschlüsselter Umschlag (TJ 2026-10-07:
+  // öffentlich nur Installer, nichts Erkennbares — auch keine „bereinigten“ UI-Bilder).
+  // Jeder Klartext-Upload aus u1-shots, *-proof/-Ordnern oder als PNG ist verboten.
+  const prSteps = pr.split(/^      - name: /m);
   require(
-    /name: Chat-Dock-Proof-Screenshots sichern[\s\S]{0,450}?path: ~\/\.cache\/u1-shots\/scai-chat-dock\//.test(pr),
-    "pr-check.yml: Chat-Dock proof may upload only its sanitized screenshot directory",
+    !prSteps.some((step) => step.includes("uses: actions/upload-artifact@")
+      && /^\s+path:.*(?:\.cache\/u1-shots|-proof\/|\.png)/m.test(step)),
+    "pr-check.yml: proof screenshots must never be uploaded in plaintext (public repository)",
   );
-  require(
-    /name: Sentinel-CRM-Proof-Screenshots sichern[\s\S]{0,450}?path: ~\/\.cache\/u1-shots\/sentinel-crm-2026\//.test(pr),
-    "pr-check.yml: Sentinel CRM proof may upload only its sanitized screenshot directory",
-  );
+  const sealedShots = (label, key, dir) => {
+    const seal = prSteps.find((step) => step.includes(`dir="${dir}"`) && step.includes("encrypt-confidential-log.mjs")) ?? "";
+    const upload = prSteps.find((step) => step.includes("uses: actions/upload-artifact@")
+      && step.includes(`path: \${{ runner.temp }}/scai-${key}-encrypted-shots.json`)) ?? "";
+    require(
+      seal.includes("inputs.diagnostic_public_key_base64 != ''")
+        && seal.includes(`"$RUNNER_TEMP/scai-${key}-encrypted-shots.json"`)
+        && upload.includes(`name: scai-${key}-encrypted-shots-\${{ github.run_id }}`),
+      `pr-check.yml: ${label} proof may upload only its encrypted screenshot envelope`,
+    );
+    return seal;
+  };
+  sealedShots("Chat-Dock", "chat-dock", "$HOME/.cache/u1-shots/scai-chat-dock");
+  sealedShots("Sentinel CRM", "sentinel-crm", "$HOME/.cache/u1-shots/sentinel-crm-2026");
+  const revenueSeal = sealedShots("Revenue", "revenue-browser", "$RUNNER_TEMP/scai-revenue-browser-proof");
   require(
     (pr.match(/run-confidential\.sh" native-keyring-smoke/g) ?? []).length === 2
       && (pr.match(/--example a1_keyring_smoke/g) ?? []).length === 2,
@@ -753,7 +769,7 @@ export function validateSourceConfidentiality(workflows, assetSelector) {
     "pr-check.yml: Revenue and Workgraph screenshots must pass the public closed artifact sanitizer",
   );
   require(
-    /name: Revenue-Browser-Proof-Screenshots sichern[\s\S]{0,450}?if: always\(\) && steps\.revenue_artifacts\.outcome == 'success'[\s\S]{0,450}?path: \$\{\{ runner\.temp \}\}\/scai-revenue-browser-proof\//.test(pr),
+    revenueSeal.includes("if: always() && steps.revenue_artifacts.outcome == 'success'"),
     "pr-check.yml: Revenue proof may upload only its sanitized fixture screenshot directory",
   );
   require(
