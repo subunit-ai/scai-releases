@@ -1,10 +1,10 @@
 #!/usr/bin/env node
 // Geschlossener Sonar-Vertrag: nur Installer, Updater-Payloads und deren Signaturen.
-import { appendFileSync, copyFileSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, unlinkSync, writeFileSync } from 'node:fs';
-import { join, resolve } from 'node:path';
+import { appendFileSync, closeSync, constants, copyFileSync, fstatSync, lstatSync, mkdirSync, mkdtempSync, openSync, readFileSync, readSync, readdirSync, realpathSync, unlinkSync, writeFileSync } from 'node:fs';
+import { join, resolve, extname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createHash, createPublicKey } from 'node:crypto';
-import { execFileSync } from 'node:child_process';
+import { execFileSync, spawn } from 'node:child_process';
 import { assertMonotonic } from './assert-semver-monotonic.mjs';
 import { exactKeys, releaseAssetUrl } from './release-authorization.mjs';
 
@@ -71,28 +71,153 @@ export function targetAssets(releaseTag, target) {
 }
 export const assetNames = releaseTag => [...TARGETS.flatMap(t => targetAssets(releaseTag, t)), 'latest.json'].sort();
 
-export function verifyFrontend(source) {
-  const config = json(join(source, 'src-tauri/tauri.conf.json'));
-  if (config.build?.frontendDist !== '../dist' || (config.bundle?.resources && Object.keys(config.bundle.resources).length)) {
-    throw Error('Ungeprüfter Frontend- oder Ressourcenpfad');
+export const FRONTEND_LIMITS = Object.freeze({ entries: 4096, depth: 32, fileBytes: 32 * 1024 * 1024, totalBytes: 128 * 1024 * 1024 });
+const frontendExtensions = new Set(['.html', '.js', '.mjs', '.css', '.svg', '.png', '.jpg', '.jpeg', '.gif', '.webp', '.avif', '.ico', '.woff', '.woff2', '.ttf', '.otf', '.wasm']);
+const fingerprint = s => [s.dev, s.ino, s.mode, s.nlink, s.size, s.mtimeNs, s.ctimeNs].map(String);
+const sameStat = (a, b) => JSON.stringify(fingerprint(a)) === JSON.stringify(fingerprint(b));
+const directoryStat = path => {
+  const s = lstatSync(path, { bigint: true });
+  if (!s.isDirectory() || s.isSymbolicLink()) throw Error('Ungültiges Frontend-Verzeichnis');
+  return s;
+};
+// Bound the read as well as the stat: a growing/replaced file must never turn
+// the scanner into an unbounded allocation or make it inspect another inode.
+function frontendBytes(path, before) {
+  if (!before.isFile() || before.nlink !== 1n || before.size > BigInt(FRONTEND_LIMITS.fileBytes)) throw Error('Unzulässige Frontend-Datei/Größe/Hardlink');
+  const fd = openSync(path, constants.O_RDONLY | (constants.O_NOFOLLOW || 0));
+  try {
+    if (!sameStat(before, fstatSync(fd, { bigint: true }))) throw Error('Frontend-Datei ausgetauscht');
+    const data = Buffer.alloc(Number(before.size) + 1);
+    let length = 0, read;
+    while (length < data.length && (read = readSync(fd, data, length, data.length - length, null))) length += read;
+    if (length !== Number(before.size) || !sameStat(before, fstatSync(fd, { bigint: true }))
+        || !sameStat(before, lstatSync(path, { bigint: true }))) throw Error('Frontend-Datei während Prüfung verändert');
+    return data.subarray(0, length);
+  } finally { closeSync(fd); }
+}
+function confidentialMarker(data) {
+  // Byte scan, independent of extension, BOM, alignment and text decoding.
+  // Removing NUL also covers UTF-16 LE/BE and UTF-32 LE/BE in binary assets.
+  const marker = /sourceMappingURL|sourcesContent/i;
+  if (marker.test(data.toString('latin1').replace(/\0/g, ''))) return true;
+  const normalize = text => text.normalize('NFKC').replace(/[\p{White_Space}\p{Cf}\u0000]/gu, '');
+  const scanText = text => marker.test(normalize(normalize(text)
+    .replace(/\\u\{([0-9a-f]{1,6})\}|\\u([0-9a-f]{4})|\\x([0-9a-f]{2})/gi,
+      (match, brace, unicode, hex) => { const n = parseInt(brace || unicode || hex, 16); return n <= 0x10ffff ? String.fromCodePoint(n) : match; })));
+  if (scanText(data.toString('utf8'))) return true;
+  if (data.includes(0)) {
+    for (const offset of [0, 1]) {
+      const aligned = data.subarray(offset, offset + Math.floor((data.length - offset) / 2) * 2);
+      if (scanText(aligned.toString('utf16le')) || scanText(Buffer.from(aligned).swap16().toString('utf16le'))) return true;
+    }
   }
-  const visit = directory => {
-    const stat = lstatSync(directory);
-    if (!stat.isDirectory() || stat.isSymbolicLink()) throw Error('Ungültiges Frontend-Verzeichnis');
-    for (const name of readdirSync(directory)) {
-      const path = join(directory, name), entry = lstatSync(path);
-      if (entry.isSymbolicLink()) throw Error('Frontend-Symlink');
-      if (entry.isDirectory()) visit(path);
+  return false;
+}
+function verifyCrystal(data) {
+  // Sonar's CrystalOverlay loads this exact Draco GLB; no general .glb escape.
+  if (data.length < 20 || !data.subarray(0, 4).equals(Buffer.from('glTF'))
+      || data.readUInt32LE(4) !== 2 || data.readUInt32LE(8) !== data.length) throw Error('Ungültiges Sonar-GLB');
+  let offset = 12, chunks = 0;
+  while (offset < data.length) {
+    if (offset + 8 > data.length) throw Error('Ungültiges Sonar-GLB');
+    const size = data.readUInt32LE(offset), type = data.readUInt32LE(offset + 4);
+    if (size % 4 || offset + 8 + size > data.length || chunks > 1
+        || type !== (chunks === 0 ? 0x4e4f534a : 0x004e4942)) throw Error('Ungültiges Sonar-GLB');
+    if (chunks === 0 && JSON.parse(data.toString('utf8', offset + 8, offset + 8 + size)).asset?.version !== '2.0') throw Error('Ungültiges Sonar-GLB');
+    offset += 8 + size; chunks++;
+  }
+  if (!chunks) throw Error('Ungültiges Sonar-GLB');
+}
+function archiveHeader(data) {
+  // Renaming an archive to an allowed asset extension must not bypass the gate.
+  return ['504b0304', '504b0506', '504b0708', '1f8b08', '377abcaf271c', '526172211a07', 'fd377a585a00', '425a68', '28b52ffd']
+    .some(hex => data.subarray(0, hex.length / 2).equals(Buffer.from(hex, 'hex')))
+    || data.subarray(257, 262).equals(Buffer.from('ustar'));
+}
+export function verifyFrontend(source) {
+  directoryStat(source);
+  source = realpathSync(source);
+  const tauri = join(source, 'src-tauri'); directoryStat(tauri);
+  // Tauri merges platform configs and TAURI_CONFIG, including JSON5/TOML and
+  // kebab-case aliases. Sonar needs none: reject rather than emulate its parser.
+  if (process.env.TAURI_CONFIG !== undefined || readdirSync(tauri).some(name =>
+    /^(?:tauri(?:\.[^.]+)?\.conf\.json5?|Tauri(?:\.[^.]+)?\.toml)$/i.test(name) && name !== 'tauri.conf.json')) throw Error('Ungeprüfte Tauri-Konfiguration');
+  const configPath = join(tauri, 'tauri.conf.json'), configStat = lstatSync(configPath, { bigint: true });
+  const configBytes = frontendBytes(configPath, configStat), config = JSON.parse(configBytes.toString('utf8'));
+  if (config.build?.frontendDist !== '../dist' || Object.keys(config.build).some(k => k.includes('-'))
+      || config.build.runner || config.build.beforeBundleCommand
+      || (config.bundle?.resources && Object.keys(config.bundle.resources).length)) throw Error('Ungeprüfter Frontend- oder Ressourcenpfad');
+  const dist = join(tauri, config.build.frontendDist), records = [];
+  let entries = 0, bytes = 0, index = false;
+  const visit = (directory, relative = '', depth = 0) => {
+    const before = directoryStat(directory);
+    if (depth > FRONTEND_LIMITS.depth) throw Error('Frontend zu tief verschachtelt');
+    // Directory sizes/metadata vary across filesystems; only their path/type bind.
+    records.push([relative, 'directory', 0, null]);
+    for (const name of readdirSync(directory).sort()) {
+      if (++entries > FRONTEND_LIMITS.entries) throw Error('Frontend enthält zu viele Einträge');
+      // No dotfiles, ADS, trailing dots/spaces, Unicode/path-parser differences
+      // or Windows device names, on any runner platform.
+      if (!/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(name) || name.endsWith('.')
+          || /^(?:con|prn|aux|nul|com[0-9]|lpt[0-9])(?:\.|$)/i.test(name)) throw Error('Unzulässiger Frontend-Name');
+      const path = join(directory, name), rel = relative ? `${relative}/${name}` : name;
+      const entry = lstatSync(path, { bigint: true });
+      if (entry.isDirectory()) visit(path, rel, depth + 1);
       else {
-        if (!entry.isFile() || /\.(?:map|[cm]?tsx?|jsx|rs|log)$/i.test(name)) throw Error('Quelltext oder Diagnose im Frontend');
-        if (/\.(?:[cm]?js|css|html)$/i.test(name) && /(?:\/\/[#@]|\/\*[#@])\s*sourceMappingURL\s*=/.test(readFileSync(path, 'utf8'))) {
-          throw Error('Frontend enthält Sourcemap-Verweis');
-        }
+        if (!frontendExtensions.has(extname(name).toLowerCase()) && rel !== 'unitone-crystall.glb') throw Error('Nicht erlaubtes Frontend-Format');
+        bytes += Number(entry.size);
+        if (bytes > FRONTEND_LIMITS.totalBytes) throw Error('Frontend zu groß');
+        const data = frontendBytes(path, entry);
+        if (archiveHeader(data)) throw Error('Archiv im Frontend');
+        if (confidentialMarker(data)) throw Error('Frontend enthält Sourcemap-/Quelltext-Marker');
+        if (rel === 'unitone-crystall.glb') verifyCrystal(data);
+        if (rel === 'index.html') index = data.length > 0;
+        records.push([rel, 'file', data.length, createHash('sha256').update(data).digest('hex')]);
       }
     }
+    if (!sameStat(before, lstatSync(directory, { bigint: true }))) throw Error('Frontend-Verzeichnis während Prüfung verändert');
   };
-  visit(join(source, 'dist'));
-  regular(join(source, 'dist/index.html'));
+  visit(dist);
+  if (!index) throw Error('Frontend index.html fehlt oder ist leer');
+  // Canonical content inventory: relative path, type, size and SHA-256, sorted
+  // by path. Empty directories bind too; symlinks/special files fail above.
+  records.sort((a, b) => a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0);
+  const hash = createHash('sha256').update(JSON.stringify(records)).digest('hex');
+  const configRecord = ['src-tauri/tauri.conf.json', 'file', configBytes.length,
+    createHash('sha256').update(configBytes).digest('hex')];
+  const configHash = createHash('sha256').update(JSON.stringify([configRecord])).digest('hex');
+  return { path: realpathSync(dist), hash, configHash, entries, bytes,
+    binding: JSON.stringify([source, configHash, hash]) };
+}
+function runFrontendBuild(command, args, options) {
+  return new Promise((resolve, reject) => {
+    const child = spawn(command, args, options);
+    child.once('error', reject);
+    child.once('close', (status, signal) => status === 0 && !signal ? resolve() : reject(Object.assign(Error('Tauri-Bau fehlgeschlagen'), { status })));
+  });
+}
+export async function buildFrontend(source, target, run = runFrontendBuild) {
+  if (!TARGETS.includes(target)) throw Error('Unzulässiges Target');
+  const root = realpathSync(source);
+  // Residual risk: a change during the build that is fully restored before
+  // this post-check cannot be reliably detected without kernel enforcement.
+  // Threat model: the build code is ours and Sonar's source revision is pinned.
+  // These checks guarantee equal content at both boundaries, not immutability
+  // throughout the build; filesystem notifications provide no such guarantee.
+  const before = verifyFrontend(source);
+  let failure;
+  try {
+    await run('bun', ['run', 'tauri', 'build', '--target', target, '--bundles', target.endsWith('apple-darwin') ? 'app,dmg' : target.endsWith('windows-msvc') ? 'nsis' : 'deb',
+      '--config', '{"build":{"beforeBuildCommand":"","beforeBundleCommand":"","frontendDist":"../dist"},"bundle":{"resources":[]}}'],
+    { cwd: root, stdio: 'inherit' });
+  } catch (error) { failure = error; }
+  // Re-run the complete allowlist, marker/encoding, GLB and config checks on
+  // the actual post-build state, even when Tauri reports a build failure.
+  const after = verifyFrontend(source);
+  if (before.path !== after.path || before.hash !== after.hash || before.configHash !== after.configHash
+      || before.binding !== after.binding) throw Error('Frontend während Tauri-Bau verändert');
+  if (failure) throw failure;
+  return before.hash;
 }
 
 export function assertTargetInventory(directory, releaseTag, target) {
@@ -216,6 +341,7 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
     } else if (mode === 'check-remote') checkRemote(releaseTag);
     else if (mode === 'collect') collect(args[0], args[1], releaseTag, args[2]);
     else if (mode === 'frontend-proof') verifyFrontend(args[0]);
+    else if (mode === 'frontend-build') await buildFrontend(args[0], args[1]);
     else if (mode === 'delivery') {
       const paths = assertTargetInventory(args[0], releaseTag, args[1]);
       appendFileSync(process.env.GITHUB_OUTPUT, `paths<<SONAR_INSTALLER_PATHS\n${paths.join('\n')}\nSONAR_INSTALLER_PATHS\n`);
@@ -224,9 +350,9 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
     else if (mode === 'prepare') prepare(args[0], args[1], releaseTag);
     else if (mode === 'publish') publish(args[0], releaseTag);
     else throw Error('Unbekannter Sonar-Modus');
-  } catch {
+  } catch (error) {
     // Daten/Exceptions können private Dateipfade oder GitHub-Antworten enthalten.
     console.error('Sonar-Vertrag fehlgeschlagen; Details ausschließlich in vertraulicher Diagnose.');
-    process.exit(1);
+    process.exit(process.argv[2] === 'frontend-build' && Number.isInteger(error.status) && error.status > 0 && error.status < 256 ? error.status : 1);
   }
 }
