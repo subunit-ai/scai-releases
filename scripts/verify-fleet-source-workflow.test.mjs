@@ -58,8 +58,18 @@ test("new raw steps or actions cannot run while private source is present", () =
 test("mutable checkout or missing credential cleanup is rejected", () => {
   const mutable = helper.replace('fetch --depth 1 origin "$source_sha"', 'fetch --depth 1 origin main');
   assert.match(validateFleetSourceWorkflow(workflow, mutable).join("\n"), /exact requested SHA/);
-  const dirty = helper.replace("trap cleanup EXIT HUP INT TERM", "trap cleanup EXIT");
+  const dirty = helper.replace("trap 'exit 143' TERM", "# TERM ignored");
   assert.match(validateFleetSourceWorkflow(workflow, dirty).join("\n"), /clean credentials on every exit/);
+});
+
+for (const [name, before, after, message] of [
+  ['standard host trust', 'GlobalKnownHostsFile=/dev/null', 'GlobalKnownHostsFile=~/.ssh/known_hosts', /isolate the host pin/],
+  ['public key permissions', 'umask 077', 'umask 022', /allocate private credentials/],
+  ['predictable key path', 'mktemp -d "$credential_root/scai-checkout-credentials.XXXXXX"', 'echo "$credential_root/fixed-key"', /allocate private credentials/],
+]) test(`Fleet checkout rejects ${name}`, () => {
+  const unsafe = helper.replace(before, after);
+  assert.notEqual(unsafe, helper);
+  assert.match(validateFleetSourceWorkflow(workflow, unsafe).join('\n'), message);
 });
 
 test("host-key drift and retained private checkouts are rejected", () => {

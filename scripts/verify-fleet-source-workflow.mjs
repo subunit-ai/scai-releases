@@ -87,7 +87,16 @@ export function validateFleetSourceWorkflow(workflow, checkoutHelper) {
   require(checkoutHelper.includes("StrictHostKeyChecking=yes"), "checkout helper must verify the GitHub host key");
   require(checkoutHelper.includes("SHA256:+DiY3wvvV6TuJJhbpZisF/zLDA0zPMSvHdkr4UvCOqU"), "checkout helper must pin GitHub's ED25519 host fingerprint");
   require(checkoutHelper.includes('actual_fingerprint" != "$github_ed25519_fingerprint'), "checkout helper must reject an untrusted GitHub host key");
-  require(checkoutHelper.includes('trap cleanup EXIT HUP INT TERM'), "checkout helper must clean credentials on every exit");
+  require(checkoutHelper.includes('trap cleanup EXIT')
+    && checkoutHelper.includes("trap 'exit 129' HUP")
+    && checkoutHelper.includes("trap 'exit 130' INT")
+    && checkoutHelper.includes("trap 'exit 143' TERM"), "checkout helper must clean credentials on every exit");
+  require(checkoutHelper.includes('UserKnownHostsFile=$known_hosts')
+    && checkoutHelper.includes('GlobalKnownHostsFile=/dev/null')
+    && checkoutHelper.includes('-F /dev/null'), "checkout helper must isolate the host pin from standard SSH trust");
+  require(checkoutHelper.includes('umask 077') && checkoutHelper.includes('mktemp -d "$credential_root/scai-checkout-credentials.XXXXXX"')
+    && checkoutHelper.indexOf('trap cleanup EXIT') < checkoutHelper.indexOf('credential_dir=$(mktemp'),
+    "checkout helper must allocate private credentials only after installing cleanup");
   require(checkoutHelper.includes('remote remove origin'), "checkout helper must remove the private remote after checkout");
 
   return errors;

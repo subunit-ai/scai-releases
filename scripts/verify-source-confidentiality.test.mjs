@@ -1270,15 +1270,15 @@ for (const [name, mutate] of [
   ['parallele Release-Gruppe', s => s.replace('group: sonar-release', 'group: sonar-${{ inputs.tag }}')],
   ['Build ohne Preflight', s => s.replace('needs: preflight', 'needs: []')],
   ['Publish trotz roter Matrix', s => s.replace('needs: [preflight, build]', 'needs: preflight')],
-  ['Quellcode-Upload', s => s.replace('path: ${{ runner.temp }}/sonar-installers/', 'path: private/')],
-  ['Sidecar-Upload', s => s.replace('path: ${{ runner.temp }}/sonar-installers/', 'path: private/sonar-tauri/src-tauri/binaries/')],
-  ['Klartext-Diagnose', s => s.replace('path: ${{ runner.temp }}/sonar-diagnostic*.json', 'path: private/build.log')],
-  ['Screenshot-Upload', s => s.replace('path: ${{ runner.temp }}/sonar-diagnostic*.json', 'path: private/screenshot.png')],
-  ['Diagnose-Glob außerhalb RUNNER_TEMP', s => s.replace('path: ${{ runner.temp }}/sonar-diagnostic*.json', 'path: ${{ github.workspace }}/sonar-diagnostic*.json')],
-  ['Diagnose-Glob mit Traversal', s => s.replace('path: ${{ runner.temp }}/sonar-diagnostic*.json', 'path: ${{ runner.temp }}/../sonar-diagnostic*.json')],
-  ['Diagnose-Glob für Rohlogs', s => s.replace('path: ${{ runner.temp }}/sonar-diagnostic*.json', 'path: ${{ runner.temp }}/sonar-diagnostic*')],
-  ['rekursiver Diagnose-Glob', s => s.replace('path: ${{ runner.temp }}/sonar-diagnostic*.json', 'path: ${{ runner.temp }}/**/*.json')],
-  ['Diagnose ohne verschachtelte Hüllen', s => s.replace('path: ${{ runner.temp }}/sonar-diagnostic*.json', 'path: ${{ runner.temp }}/sonar-diagnostic.json')],
+  ['Quellcode-Upload', s => s.replace('path: ${{ steps.delivery.outputs.paths }}', 'path: private/')],
+  ['Sidecar-Upload', s => s.replace('path: ${{ steps.delivery.outputs.paths }}', 'path: private/sonar-tauri/src-tauri/binaries/')],
+  ['Klartext-Diagnose', s => s.replace('path: ${{ steps.sealed_diagnostic.outputs.path }}', 'path: private/build.log')],
+  ['Screenshot-Upload', s => s.replace('path: ${{ steps.sealed_diagnostic.outputs.path }}', 'path: private/screenshot.png')],
+  ['Diagnose-Glob außerhalb RUNNER_TEMP', s => s.replace('path: ${{ steps.sealed_diagnostic.outputs.path }}', 'path: ${{ github.workspace }}/sonar-diagnostic*.json')],
+  ['Diagnose-Glob mit Traversal', s => s.replace('path: ${{ steps.sealed_diagnostic.outputs.path }}', 'path: ${{ runner.temp }}/../sonar-diagnostic*.json')],
+  ['Diagnose-Glob für Rohlogs', s => s.replace('path: ${{ steps.sealed_diagnostic.outputs.path }}', 'path: ${{ runner.temp }}/sonar-diagnostic*')],
+  ['rekursiver Diagnose-Glob', s => s.replace('path: ${{ steps.sealed_diagnostic.outputs.path }}', 'path: ${{ runner.temp }}/**/*.json')],
+  ['Diagnose ohne verschachtelte Hüllen', s => s.replace('path: ${{ steps.sealed_diagnostic.outputs.path }}', 'path: ${{ runner.temp }}/sonar-diagnostic.json')],
   ['lange Retention', s => s.replace('retention-days: 1', 'retention-days: 7')],
   ['öffentlicher Build', s => s.replace('bash gate/scripts/run-confidential.sh sonar-tauri ', '')],
   ['öffentliche Installation', s => s.replace('bash gate/scripts/run-confidential.sh sonar-frontend ', '')],
@@ -1293,6 +1293,11 @@ for (const [name, mutate] of [
   ['set-x', s => s.replace('run: bash gate/scripts/run-confidential.sh sonar-tauri', 'run: set -x; bash gate/scripts/run-confidential.sh sonar-tauri')],
   ['Build-Fehler ignorieren', s => s.replace('name: Tauri-Bundles und Updater-Signaturen bauen', 'name: Tauri-Bundles und Updater-Signaturen bauen\n        continue-on-error: true')],
   ['Upload ungeprüfter Dateien', s => s.replace('run-confidential.sh sonar-collect', 'run-confidential.sh ungeprüft')],
+  ['Upload ohne Inventarprüfung', s => s.replace('id: delivery', 'id: unchecked_delivery')],
+  ['Räumschranke übersprungen', s => s.replace('if: always()\n        shell: bash\n        run: bash gate/scripts/checkout-private-source.sh --cleanup-credentials', 'if: false\n        shell: bash\n        run: bash gate/scripts/checkout-private-source.sh --cleanup-credentials')],
+  ['Räumschranke ignoriert Fehler', s => s.replace('run: bash gate/scripts/checkout-private-source.sh --cleanup-credentials', 'run: bash gate/scripts/checkout-private-source.sh --cleanup-credentials || true')],
+  ['Diagnose ohne erneute Verschlüsselung', s => s.replace('run: node gate/scripts/sonar-release.mjs seal-diagnostics', 'run: true')],
+  ['Upload ursprünglicher Diagnose-Dateien', s => s.replace('path: ${{ steps.sealed_diagnostic.outputs.path }}', 'path: ${{ runner.temp }}/sonar-diagnostic*.json')],
   ['fehlende Signaturprüfung', s => s.replace('run-confidential.sh sonar-manifest', 'run-confidential.sh ungeprüft')],
   ['Diagnose ohne Einmalschlüssel', s => s.replace("if: failure() && inputs.diagnostic_public_key_base64 != ''", 'if: always()')],
   ['zusätzlicher YAML-Bypass', s => s.replace('jobs:', 'env:\n  ACTIONS_STEP_DEBUG: true\njobs:')],
@@ -1309,7 +1314,7 @@ test('Sonar-Policy verlangt den Workflow auch bei fehlendem Inventareintrag', ()
 });
 
 test('Sonar-Policy bindet auch die ausgeführten Helfer an den geprüften Vertrag', () => {
-  const helpers = Object.fromEntries(['sonar-build.sh', 'sonar-minisign.sh', 'sonar-release.mjs'].map(name => [name, readFileSync(join(ROOT, 'scripts', name), 'utf8')]));
+  const helpers = Object.fromEntries(['sonar-build.sh', 'sonar-minisign.sh', 'sonar-release.mjs', 'checkout-private-source.sh', 'encrypt-confidential-log.mjs'].map(name => [name, readFileSync(join(ROOT, 'scripts', name), 'utf8')]));
   assert.deepEqual(validateSonarHelpers(helpers), []);
   for (const name of Object.keys(helpers)) {
     assert.ok(validateSonarHelpers({ ...helpers, [name]: helpers[name] + '\n# ungeprüfte Änderung\n' }).some(e => e.includes(name)));
@@ -1322,6 +1327,13 @@ test('Sonar-Policy bindet auch die ausgeführten Helfer an den geprüften Vertra
     ['sonar-release.mjs', "checkRemote(releaseTag);", "// Vorflug übersprungen"],
     ['sonar-release.mjs', "['release', 'upload', releaseTag", "['release', 'upload', '--clobber', releaseTag"],
     ['sonar-release.mjs', "verify(join(directory, name), Buffer.from(signature, 'base64'));", "// Signaturprüfung übersprungen"],
+    ['checkout-private-source.sh', 'GlobalKnownHostsFile=/dev/null', 'GlobalKnownHostsFile=~/.ssh/known_hosts'],
+    ['checkout-private-source.sh', 'UserKnownHostsFile=$known_hosts', 'UserKnownHostsFile=$HOME/.ssh/known_hosts'],
+    ['checkout-private-source.sh', 'umask 077', 'umask 022'],
+    ['checkout-private-source.sh', 'mktemp -d "$credential_root/scai-checkout-credentials.XXXXXX"', 'echo "$credential_root/fixed-credentials"'],
+    ['checkout-private-source.sh', 'unset SOURCE_DEPLOY_KEY\n', ': # credential retained\n'],
+    ['sonar-build.sh', 'node "$gate_root/sonar-release.mjs" frontend-proof "$source_root"', 'true'],
+    ['sonar-build.sh', '--config \'{"build":{"beforeBuildCommand":""}}\'', ''],
   ]) {
     assert.ok(helpers[name].includes(before));
     assert.ok(validateSonarHelpers({ ...helpers, [name]: helpers[name].replace(before, after) }).some(e => e.includes(name)));

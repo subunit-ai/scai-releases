@@ -52,6 +52,10 @@ jobs:
           SOURCE_DEPLOY_KEY: ${{ secrets.SONAR_SOURCE_DEPLOY_KEY }}
           SOURCE_SHA: ${{ steps.request.outputs.source_sha }}
         run: bash gate/scripts/run-confidential.sh sonar-checkout bash gate/scripts/checkout-private-source.sh sonar-tauri git@github.com:subunit-ai/sonar-tauri.git "$SOURCE_SHA"
+      - name: Checkout-Credentials vor weiteren Schritten entfernen
+        if: always()
+        shell: bash
+        run: bash gate/scripts/checkout-private-source.sh --cleanup-credentials
       - name: Source-Version und Komponenten-Pins prüfen
         id: source
         shell: bash
@@ -137,6 +141,10 @@ jobs:
           SOURCE_SHA: ${{ needs.preflight.outputs.trace_sha }}
           COMPONENT_TAG: ${{ needs.preflight.outputs.trace_tag }}
         run: bash gate/scripts/run-confidential.sh trace-checkout bash gate/scripts/checkout-private-source.sh trace-tauri git@github.com:subunit-ai/trace-tauri.git "$SOURCE_SHA" "$COMPONENT_TAG"
+      - name: Checkout-Credentials vor weiteren Schritten entfernen
+        if: always()
+        shell: bash
+        run: bash gate/scripts/checkout-private-source.sh --cleanup-credentials
       - name: Lokale Cargo-Pfadabhängigkeit bereitstellen
         shell: bash
         env:
@@ -200,19 +208,30 @@ jobs:
         env:
           SCAI_ENCRYPTED_DIAGNOSTIC_PATH: ${{ inputs.diagnostic_public_key_base64 != '' && format('{0}/sonar-diagnostic.json', runner.temp) || '' }}
         run: bash gate/scripts/run-confidential.sh sonar-cleanup bash gate/scripts/sonar-build.sh cleanup
+      - name: Exaktes Installer-Inventar vor Upload prüfen
+        id: delivery
+        shell: bash
+        env:
+          TARGET: ${{ matrix.target }}
+        run: node gate/scripts/sonar-release.mjs delivery "$RUNNER_TEMP/sonar-installers" "$TARGET"
       - name: Fertige Installer für den Publish-Job übergeben
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: sonar-installers-${{ matrix.target }}
-          path: ${{ runner.temp }}/sonar-installers/
+          path: ${{ steps.delivery.outputs.paths }}
           if-no-files-found: error
           retention-days: 1
-      - name: Ausschließlich verschlüsselte Fehlerdiagnose bereitstellen
+      - name: Diagnose-Dateien vor Upload erneut verschlüsseln
+        id: sealed_diagnostic
         if: failure() && inputs.diagnostic_public_key_base64 != ''
+        shell: bash
+        run: node gate/scripts/sonar-release.mjs seal-diagnostics
+      - name: Ausschließlich verschlüsselte Fehlerdiagnose bereitstellen
+        if: failure() && steps.sealed_diagnostic.outcome == 'success' && steps.sealed_diagnostic.outputs.path != ''
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: sonar-encrypted-diagnostic-${{ matrix.target }}-${{ github.run_id }}
-          path: ${{ runner.temp }}/sonar-diagnostic*.json
+          path: ${{ steps.sealed_diagnostic.outputs.path }}
           if-no-files-found: error
           retention-days: 1
   publish:
@@ -241,6 +260,10 @@ jobs:
           SOURCE_DEPLOY_KEY: ${{ secrets.SONAR_SOURCE_DEPLOY_KEY }}
           SOURCE_SHA: ${{ needs.preflight.outputs.source_sha }}
         run: bash gate/scripts/run-confidential.sh sonar-checkout bash gate/scripts/checkout-private-source.sh sonar-tauri git@github.com:subunit-ai/sonar-tauri.git "$SOURCE_SHA"
+      - name: Checkout-Credentials vor weiteren Schritten entfernen
+        if: always()
+        shell: bash
+        run: bash gate/scripts/checkout-private-source.sh --cleanup-credentials
       - name: Gepinnten Minisign-Verifizierer installieren
         shell: bash
         env:
@@ -273,11 +296,16 @@ jobs:
           SCAI_ENCRYPTED_DIAGNOSTIC_PATH: ${{ inputs.diagnostic_public_key_base64 != '' && format('{0}/sonar-diagnostic.json', runner.temp) || '' }}
           GH_TOKEN: ${{ steps.app.outputs.token }}
         run: bash gate/scripts/run-confidential.sh sonar-publish node gate/scripts/sonar-release.mjs publish "$RUNNER_TEMP/sonar-installers"
-      - name: Ausschließlich verschlüsselte Fehlerdiagnose bereitstellen
+      - name: Diagnose-Dateien vor Upload erneut verschlüsseln
+        id: sealed_diagnostic
         if: failure() && inputs.diagnostic_public_key_base64 != ''
+        shell: bash
+        run: node gate/scripts/sonar-release.mjs seal-diagnostics
+      - name: Ausschließlich verschlüsselte Fehlerdiagnose bereitstellen
+        if: failure() && steps.sealed_diagnostic.outcome == 'success' && steps.sealed_diagnostic.outputs.path != ''
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: sonar-encrypted-diagnostic-publish-${{ github.run_id }}
-          path: ${{ runner.temp }}/sonar-diagnostic*.json
+          path: ${{ steps.sealed_diagnostic.outputs.path }}
           if-no-files-found: error
           retention-days: 1

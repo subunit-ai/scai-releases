@@ -392,9 +392,9 @@ function hasClosedServiceLogging(workflow) {
 // Upload-Pfaden oder Abhängigkeiten braucht ein neues geprüftes Vertrags-Digest.
 // So können zusätzliche YAML-Keys, Aliase oder übersprungene Schutzschritte die
 // positive Allowlist nicht durch scheinbar sichere Textfragmente umgehen.
-// Diagnose-Glob ausschließlich ${ runner.temp }/sonar-diagnostic*.json: alle
-// verschlüsselten Hüllen verschachtelter Fehler, keine Rohlogs oder Verzeichnisse.
-const SONAR_WORKFLOW_SHA256 = "232c7ad45605f421edb6c0801e939996033d6fae4d46bf113aadaf7d27a05707";
+// Diagnose-Upload ausschließlich vom Sealing-Schritt: jeder Glob-Treffer wird
+// erneut verschlüsselt. Installer-Upload nur mit exakt geprüften Dateipfaden.
+const SONAR_WORKFLOW_SHA256 = "cacb122e8658f67aa21c4b1b7e2d8b8fe24f79b070986f1885ea24b4dd06330b";
 export function validateSonarWorkflow(workflow) {
   if (typeof workflow !== "string"
       || createHash("sha256").update(workflow).digest("hex") !== SONAR_WORKFLOW_SHA256) {
@@ -405,9 +405,11 @@ export function validateSonarWorkflow(workflow) {
 
 // Die Upload- und Release-Logik liegt in Helfern; auch diese gehören zur Allowlist.
 const SONAR_HELPER_SHA256 = {
-  "sonar-build.sh": "4de32a2ad0389ce73f95333bb02810347faea30374e5124da8a5608496b16fbb",
+  "encrypt-confidential-log.mjs": "30543468128ed79573db015680dbb602f0aaaecf05d860320594f2eb64388764",
+  "checkout-private-source.sh": "bf20608cfdfc50fc7dbb0b728e948b8a7288b0839dd42a1b0cd59ee570757288",
+  "sonar-build.sh": "1fc7f1f5b39b1547b3aa7fdd28d86f3ce2644ed2392ae6c3b10c1375f6cda329",
   "sonar-minisign.sh": "366958a33688dbea00fe52b49be5a5429971a58cf2f8f887267509c5bb91bc73",
-  "sonar-release.mjs": "19c94cfabdef604c5352812b04d012760f4ac814e55bb4b892b8402d44824294",
+  "sonar-release.mjs": "fe2b7ab3862ce867f2baa1b6bdc53745106a9cf5c61a5309a7694eff6af9a282",
 };
 export function validateSonarHelpers(helpers) {
   return Object.entries(SONAR_HELPER_SHA256).flatMap(([name, digest]) =>

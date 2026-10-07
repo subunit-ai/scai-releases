@@ -4,6 +4,30 @@
 
 set -euo pipefail
 set +x
+umask 077
+
+# A second, fail-closed barrier for a killed checkout. Only this helper's
+# generated credentials are removed; never touch the user's SSH files.
+if [ "$#" -eq 1 ] && [ "$1" = --cleanup-credentials ]; then
+  unset SOURCE_DEPLOY_KEY GIT_SSH_COMMAND
+  temp_root=${RUNNER_TEMP:?RUNNER_TEMP is required}
+  case "$(uname -s)" in
+    MINGW*|MSYS*|CYGWIN*) temp_root=$(cygpath -u "$temp_root") ;;
+  esac
+  for root in "$temp_root" "$HOME/.ssh"; do
+    for lease in "$root"/scai-checkout-credentials.*; do
+      [ -e "$lease" ] || [ -L "$lease" ] || continue
+      if [ -L "$lease" ] || [ ! -d "$lease" ]; then
+        echo "::error::Unexpected checkout credential lease type." >&2
+        exit 70
+      fi
+      rm -f "$lease/key" "$lease/known_hosts"
+      rmdir "$lease"
+    done
+  done
+  echo 'PASS checkout-credentials-removed'
+  exit 0
+fi
 
 if [ "$#" -lt 3 ] || [ "$#" -gt 4 ]; then
   echo "usage: checkout-private-source.sh <component> <repository> <source-sha> [component-tag]" >&2
@@ -60,10 +84,7 @@ script_dir=$(dirname -- "$0")
 script_dir=$(cd -- "$script_dir" && pwd)
 private_root="$workspace/private"
 destination="$private_root/$component"
-key_file="$temp_root/scai-$component-deploy-key"
-known_hosts="$temp_root/scai-$component-known-hosts"
-windows_host_entry=''
-windows_host_separator=''
+credential_dir=''
 github_ed25519_fingerprint="SHA256:+DiY3wvvV6TuJJhbpZisF/zLDA0zPMSvHdkr4UvCOqU"
 
 if [ -e "$destination" ]; then
@@ -71,31 +92,34 @@ if [ -e "$destination" ]; then
   exit 66
 fi
 
-if [ "$windows" = true ]; then
-  mkdir -p "$HOME/.ssh"
-  # A unique key per invocation; never overwrite an existing user's key.
-  key_file=$(mktemp "$HOME/.ssh/scai-$component-deploy-key.XXXXXX")
-fi
-
 # shellcheck disable=SC2329 # invoked by trap
 cleanup() {
-  rm -f "$key_file" "$known_hosts"
-  if [ -n "$windows_host_entry" ]; then
-    # Remove only our uniquely marked line; preserve all pre-existing hosts.
-    node - "$HOME/.ssh/known_hosts" "$windows_host_entry" "$windows_host_separator" <<'NODE'
-const fs = require('node:fs');
-const [path, entry, separator] = process.argv.slice(2);
-const contents = fs.readFileSync(path, 'utf8');
-fs.writeFileSync(path, contents.replace(`${separator}${entry}\n`, ''));
-NODE
+  if [ -n "$credential_dir" ]; then
+    rm -f "$credential_dir/key" "$credential_dir/known_hosts"
+    rmdir "$credential_dir"
   fi
 }
-trap cleanup EXIT HUP INT TERM
+# Install the trap BEFORE allocating or writing any credential.
+trap cleanup EXIT
+trap 'exit 129' HUP
+trap 'exit 130' INT
+trap 'exit 143' TERM
+
+credential_root=$temp_root
+if [ "$windows" = true ]; then
+  mkdir -p "$HOME/.ssh"
+  credential_root="$HOME/.ssh"
+fi
+credential_dir=$(mktemp -d "$credential_root/scai-checkout-credentials.XXXXXX")
+key_file="$credential_dir/key"
+known_hosts="$credential_dir/known_hosts"
 
 mkdir -p "$private_root"
 chmod 700 "$private_root"
 printf '%s\n' "$SOURCE_DEPLOY_KEY" > "$key_file"
 chmod 600 "$key_file"
+# Git/SSH/diagnostic children must not inherit the private key in their env.
+unset SOURCE_DEPLOY_KEY
 # OpenSSH >= 10 (macOS-Runner) schreibt die Banner-Kommentarzeile auf stdout;
 # nur Schluesselzeilen zaehlen, die Pruefung auf genau EINEN gepinnten Schluessel bleibt.
 { ssh-keyscan -t ed25519 github.com 2>/dev/null || true; } | { grep -v '^#' || true; } > "$known_hosts"
@@ -113,17 +137,9 @@ fi
 printf -v ssh_command '%q' "$ssh_bin"
 printf -v key_arg '%q' "$key_file"
 printf -v hosts_arg '%q' "UserKnownHostsFile=$known_hosts"
-if [ "$windows" = true ]; then
-  windows_host_entry="$(cat "$known_hosts") scai-checkout-${key_file##*/}"
-  if [ -s "$HOME/.ssh/known_hosts" ] && [ -n "$(tail -c 1 "$HOME/.ssh/known_hosts")" ]; then
-    windows_host_separator=$'\n'
-  fi
-  printf '%s%s\n' "$windows_host_separator" "$windows_host_entry" >> "$HOME/.ssh/known_hosts"
-  # Match build-all.yml: use Git Bash's PATH ssh and its default known_hosts.
-  export GIT_SSH_COMMAND="ssh -i $key_arg -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes"
-else
-  export GIT_SSH_COMMAND="$ssh_command -i $key_arg -o IdentitiesOnly=yes -o $hosts_arg -o StrictHostKeyChecking=yes"
-fi
+# Git Bash's PATH ssh and slash paths on Windows, with an isolated pin on ALL
+# platforms. Disable global/user config and additional system host trust.
+export GIT_SSH_COMMAND="$ssh_command -i $key_arg -F /dev/null -o IdentitiesOnly=yes -o $hosts_arg -o GlobalKnownHostsFile=/dev/null -o HostKeyAlgorithms=ssh-ed25519 -o StrictHostKeyChecking=yes"
 git init -q "$destination"
 if [ "$windows" = true ]; then
   git -C "$destination" config core.autocrlf false
