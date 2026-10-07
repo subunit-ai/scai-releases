@@ -38,15 +38,27 @@ if [ -n "$diagnostic_path" ]; then
     "$temp_root"/*) ;;
     *) echo "encrypted diagnostic path must stay below RUNNER_TEMP" >&2; exit 64 ;;
   esac
+  case "$diagnostic_path" in
+    *.json) ;;
+    *) echo "encrypted diagnostic path must name a .json envelope" >&2; exit 64 ;;
+  esac
+  case "$diagnostic_path" in
+    */../*|*/./*) echo "encrypted diagnostic path must stay below RUNNER_TEMP" >&2; exit 64 ;;
+  esac
   if [ -L "$diagnostic_path" ]; then
     echo "encrypted diagnostic path must not be a symlink" >&2
     exit 64
   fi
 fi
 
+sealed_dir=''
 # shellcheck disable=SC2329 # invoked by trap
 cleanup() {
   rm -f "$log_file"
+  if [ -n "$sealed_dir" ]; then
+    rm -f "$sealed_dir/envelope"
+    rmdir "$sealed_dir"
+  fi
 }
 trap cleanup EXIT HUP INT TERM
 
@@ -64,9 +76,25 @@ if [ "$status" -eq 0 ]; then
   echo "PASS $label (private-log-sha256=$digest, bytes=$bytes)"
 else
   if [ -n "$diagnostic_path" ]; then
+    # Seal privately first, then publish via an atomic no-replace hard link.
+    # Nested wrappers and repeated labels must retain every failure envelope.
+    sealed_dir=$(mktemp -d "$temp_root/scai-sealed.XXXXXX") || exit 70
     if ! node "$(dirname -- "$0")/encrypt-confidential-log.mjs" \
-      "$log_file" "$diagnostic_path" "$diagnostic_key"; then
+      "$log_file" "$sealed_dir/envelope" "$diagnostic_key"; then
       echo "::error title=Encrypted diagnostic unavailable::Failed to seal $label; private output remains suppressed and no diagnostic may be uploaded."
+      exit 70
+    fi
+    if ! node - "$sealed_dir/envelope" "$diagnostic_path" "$label" <<'NODE'
+const { linkSync } = require('node:fs');
+const [sealed, base, label] = process.argv.slice(2);
+for (let index = 0; ; index += 1) {
+  const output = index === 0 ? base : `${base.slice(0, -5)}-${label}-${index}.json`;
+  try { linkSync(sealed, output); break; }
+  catch (error) { if (error.code !== 'EEXIST') process.exit(70); }
+}
+NODE
+    then
+      echo "::error title=Encrypted diagnostic unavailable::Failed to retain $label; private output remains suppressed."
       exit 70
     fi
     echo "PASS $label: private failure log sealed to the supplied one-time public key."

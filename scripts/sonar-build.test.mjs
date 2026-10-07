@@ -21,7 +21,15 @@ const fs=require('node:fs'), path=require('node:path');const args=process.argv.s
 fs.appendFileSync(process.env.MOCK_LOG,JSON.stringify({tool:path.basename(process.argv[1]),args,cwd:process.cwd()})+'\\n');
 if(args[0]==='build'&&args.includes('--compile')) fs.writeFileSync(args[args.indexOf('--outfile')+1],'compiled fixture');
 if(path.basename(process.argv[1])==='cargo') {const target=args[args.indexOf('--target')+1]; const out=path.join(process.cwd(),'forge-control/target',target,'release');fs.mkdirSync(out,{recursive:true});fs.writeFileSync(path.join(out,'forge-control'+(target.includes('windows')?'.exe':'')),'native fixture');}
-if(path.basename(process.argv[1])==='codesign'&&args.includes('-dv')) process.stderr.write('Authority='+process.env.APPLE_SIGNING_IDENTITY+'\\n');
+if(path.basename(process.argv[1])==='bun'&&args[0]==='run') process.exit(Number(process.env.MOCK_BUILD_STATUS||0));
+if(path.basename(process.argv[1])==='codesign') {
+  if(args.includes('--verify')) process.exit(Number(process.env.MOCK_VERIFY_STATUS||0));
+  if(args.includes('-dv')) {
+    process.stderr.write('Executable=/PRIVATE_SOURCE_PATH/secret.ts\\nIdentifier=fixture\\n');
+    if(args.includes('--verbose=4')) process.stderr.write(process.env.MOCK_AUTHORITIES === undefined ? 'Authority='+process.env.APPLE_SIGNING_IDENTITY+'\\n' : process.env.MOCK_AUTHORITIES);
+    process.exit(Number(process.env.MOCK_DISPLAY_STATUS||0));
+  }
+}
 `);
     chmodSync(file, 0o755);
   }
@@ -109,3 +117,26 @@ esac`);
   assert.equal(calls.includes('find-identity -v -p codesigning'), !(selfSigned && trustStatus));
   if (expected === 65) assert.match(result.stderr, /identity is not valid/);
 });
+
+for (const target of TARGETS.filter(target => target.includes('apple'))) {
+  for (const [name, env, status, message] of [
+    ['build failure', { MOCK_BUILD_STATUS: '19' }, 19, /Tauri build and updater signing failed \(exit 19\)/],
+    ['nested signature failure', { MOCK_VERIFY_STATUS: '23' }, 23, /nested-code signature verification failed \(exit 23\)/],
+    ['metadata query failure', { MOCK_DISPLAY_STATUS: '29' }, 29, /signature metadata query failed \(exit 29\)/],
+    ['Authority missing', { MOCK_AUTHORITIES: '' }, 1, /Authority mismatch \(exit 1\)/],
+    ['Authority suffix is not an exact match', { MOCK_AUTHORITIES: 'Authority=Apple Development: Fixture (TEAM) other\nAuthority=Apple Root CA\n' }, 1, /Authority mismatch \(exit 1\)/],
+    ['Authority prefix is not an Authority line', { MOCK_AUTHORITIES: 'UnexpectedAuthority=Apple Development: Fixture (TEAM)\n' }, 1, /Authority mismatch \(exit 1\)/],
+    ['exact Authority in certificate chain', { MOCK_AUTHORITIES: 'Authority=Apple Development: Fixture (TEAM)\nAuthority=Apple Root CA\n' }, 0, /Authority matches.*exit 0/],
+  ]) test(`macOS post-build ${target}: ${name}`, t => {
+    const h = harness(t);
+    const result = h.run('tauri', target, { TAURI_SIGNING_PRIVATE_KEY: 'fixture', APPLE_SIGNING_IDENTITY: 'Apple Development: Fixture (TEAM)', ...env });
+    assert.equal(result.status, status, result.stdout + result.stderr);
+    assert.match(result.stdout + result.stderr, message);
+    assert.doesNotMatch(result.stdout + result.stderr, /PRIVATE_SOURCE_PATH|secret\.ts|Identifier=/);
+    const calls = h.calls();
+    assert.equal(calls.filter(call => call.args.includes('--verify')).length, env.MOCK_BUILD_STATUS ? 0 : 1);
+    assert.equal(calls.filter(call => call.args.includes('-dv')).length, env.MOCK_BUILD_STATUS || env.MOCK_VERIFY_STATUS ? 0 : 1);
+    if (!env.MOCK_BUILD_STATUS) assert.deepEqual(calls[1].args.slice(0, -1), ['--verify', '--deep', '--strict', '--verbose=2']);
+    if (name === 'Authority suffix is not an exact match') assert.match(result.stderr, /Authority=Apple Root CA/);
+  });
+}
